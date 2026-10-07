@@ -43,3 +43,4 @@ Para desarrollo local usa Node 20 (ver `.nvmrc`). Los contratos se generan en
 - Antes de "listo para auditoría", ejecutar en clon limpio (git clone + npm ci) los mismos pasos del workflow.
 - No modificar infra/ ni ejecutar docker compose: la base local la administra el humano.
 - Despliegue solo desde main, después de la auditoría de código (docs/audit/context/flujo-cierre.md).
+- Antes de "listo para auditoría", construir la imagen Docker del servicio y ejecutarla con PORT=8080: el health gRPC debe responder SERVING desde el contenedor. Un build exitoso no basta.
