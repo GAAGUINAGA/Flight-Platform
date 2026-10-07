@@ -1,0 +1,92 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model FlightInstance {
+  id            String   @id @default(uuid()) @db.Uuid
+  flightNumber  String   @map("flight_number") @db.VarChar(8)
+  departureIata String   @map("departure_iata") @db.Char(3)
+  arrivalIata   String   @map("arrival_iata") @db.Char(3)
+  departureAt   DateTime @map("departure_at") @db.Timestamptz(3)
+  arrivalAt     DateTime @map("arrival_at") @db.Timestamptz(3)
+  aircraft      String?  @db.VarChar(32)
+  closed        Boolean  @default(false)
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  cabins    CabinInventory[]
+  holdLines HoldLine[]
+
+  @@unique([flightNumber, departureAt])
+  @@index([departureIata, arrivalIata, departureAt])
+  @@map("flight_instances")
+}
+
+model CabinInventory {
+  flightInstanceId String @map("flight_instance_id") @db.Uuid
+  cabinClass       String @map("cabin_class") @db.VarChar(16)
+  sellable         Int
+  held             Int    @default(0)
+  sold             Int    @default(0)
+
+  flightInstance FlightInstance @relation(fields: [flightInstanceId], references: [id], onDelete: Cascade)
+
+  @@id([flightInstanceId, cabinClass])
+  @@map("cabin_inventory")
+}
+
+model Hold {
+  id             String   @id @default(uuid()) @db.Uuid
+  ownerId        String   @map("owner_id") @db.VarChar(128)
+  status         String   @db.VarChar(16)
+  expiresAt      DateTime @map("expires_at") @db.Timestamptz(3)
+  idempotencyKey String   @map("idempotency_key") @db.VarChar(128)
+  reservationId  String?  @map("reservation_id") @db.VarChar(128)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  lines    HoldLine[]
+  reserved ReservedInventory[]
+
+  @@unique([ownerId, idempotencyKey])
+  @@index([status, expiresAt])
+  @@map("holds")
+}
+
+model HoldLine {
+  holdId           String @map("hold_id") @db.Uuid
+  flightInstanceId String @map("flight_instance_id") @db.Uuid
+  cabinClass       String @map("cabin_class") @db.VarChar(16)
+  seats            Int
+
+  hold           Hold           @relation(fields: [holdId], references: [id], onDelete: Cascade)
+  flightInstance FlightInstance @relation(fields: [flightInstanceId], references: [id])
+
+  @@id([holdId, flightInstanceId, cabinClass])
+  @@index([flightInstanceId, cabinClass])
+  @@map("hold_lines")
+}
+
+model ReservedInventory {
+  id               String    @id @default(uuid()) @db.Uuid
+  holdId           String    @map("hold_id") @db.Uuid
+  ownerId          String    @map("owner_id") @db.VarChar(128)
+  flightInstanceId String    @map("flight_instance_id") @db.Uuid
+  cabinClass       String    @map("cabin_class") @db.VarChar(16)
+  seats            Int
+  reservationId    String?   @map("reservation_id") @db.VarChar(128)
+  releasedAt       DateTime? @map("released_at") @db.Timestamptz(3)
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  hold Hold @relation(fields: [holdId], references: [id])
+
+  @@index([holdId])
+  @@index([reservationId, ownerId])
+  @@map("reserved_inventory")
+}
