@@ -3,7 +3,7 @@ import tseslint from '@typescript-eslint/eslint-plugin';
 import tsParser from '@typescript-eslint/parser';
 
 export default [
-  { ignores: ['**/dist/**', '**/node_modules/**', '**/generated/**'] },
+  { ignores: ['**/dist/**', '**/node_modules/**', '**/generated/**', '**/prisma-client/**'] },
   eslint.configs.recommended,
   {
     files: ['**/*.ts'],

@@ -7,3 +7,8 @@ coverage/
 !.env.docker.example
 infra/dev-keys/
 *.log
+PROMPT_AUD.md
+PROMPT_DEV.md
+microservices/*/src/infrastructure/persistence/generated/
+microservices/*/src/infrastructure/persistence/prisma-client/
+.claude/settings.local.json

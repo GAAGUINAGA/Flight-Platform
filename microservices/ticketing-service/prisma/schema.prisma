@@ -1,0 +1,54 @@
+generator client {
+  provider = "prisma-client-js"
+  output = "../src/infrastructure/persistence/prisma-client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model Ticket {
+  id String @id @default(uuid()) @db.Uuid
+  bookingId String @map("booking_id") @db.Uuid
+  ownerId String @map("owner_id") @db.VarChar(128)
+  passengerId String @map("passenger_id") @db.VarChar(128)
+  eTicketNumber String? @unique @map("e_ticket_number") @db.VarChar(13)
+  status String @db.VarChar(16)
+  issuedAt DateTime? @map("issued_at") @db.Timestamptz(3)
+  failureReason String? @map("failure_reason") @db.VarChar(128)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  coupons TicketCoupon[]
+  @@index([bookingId, passengerId])
+  @@index([bookingId, ownerId])
+  @@map("tickets")
+}
+
+model TicketCoupon {
+  id String @id @default(uuid()) @db.Uuid
+  ticketId String @map("ticket_id") @db.Uuid
+  segmentId String @map("segment_id") @db.VarChar(128)
+  couponNumber String? @unique @map("coupon_number") @db.VarChar(20)
+  status String @db.VarChar(16)
+  ticket Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  @@unique([ticketId, segmentId])
+  @@index([ticketId])
+  @@map("ticket_coupons")
+}
+
+model IssuanceRequest {
+  id String @id @default(uuid()) @db.Uuid
+  bookingId String @map("booking_id") @db.Uuid
+  requestId String @map("request_id") @db.VarChar(128)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  @@unique([bookingId, requestId])
+  @@map("issuance_requests")
+}
+
+model TicketSequence {
+  prefix String @id @db.Char(3)
+  value BigInt @default(0)
+  @@map("ticket_sequences")
+}
