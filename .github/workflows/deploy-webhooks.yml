@@ -7,6 +7,9 @@ on:
     paths: ['.github/workflows/deploy-webhooks.yml', '.github/workflows/deploy-service.yml', 'microservices/webhooks-service/**', 'packages/shared/**', 'contracts/proto/flightplatform/common/**', 'contracts/proto/flightplatform/webhooks/**', 'package-lock.json', 'tsconfig.base.json']
 jobs:
   deploy:
+    permissions:
+      contents: read
+      id-token: write
     uses: ./.github/workflows/deploy-service.yml
     with:
       service: microservices/webhooks-service
