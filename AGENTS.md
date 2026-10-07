@@ -34,6 +34,15 @@ docker compose -f infra/docker-compose.yml up -d
 Para desarrollo local usa Node 20 (ver `.nvmrc`). Los contratos se generan en
 `packages/contracts`; los servicios gRPC se prueban contra Postgres local.
 
+Antes de ejecutar las pruebas de un servicio en un clon limpio, genera su
+cliente Prisma y construye las utilidades compartidas:
+
+```powershell
+npm run prisma:generate -w @flight-platform/<servicio>
+npm run build -w @flight-platform/shared
+npm test -w @flight-platform/<servicio> -- --runInBand
+```
+
 ## Reglas aprendidas (obligatorias)
 - Un solo developer activo a la vez. Trabaja en una rama `feat/<FASE>-<servicio>` en el checkout principal; sin worktrees.
 - Prisma: `prisma` y `@prisma/client` fijados en `6.12.0` exacto (versiones posteriores traen deepmerge-ts con vulnerabilidad alta).

@@ -1,0 +1,10 @@
+import { rpcString } from '@flight-platform/shared';
+import { z } from 'zod';
+import { WEBHOOK_EVENTS } from '../domain/webhook';
+const ownerId = rpcString(128);
+const payloadData = z.object({ bookingId: rpcString(128).optional(), pnr: rpcString(16).optional(), status: rpcString(64).optional(), refundAmount: z.string().regex(/^\d+\.\d{2}$/).optional() }).strict().optional();
+export const createSubscription = z.object({ ownerId, url: z.string().url().max(2048), events: z.array(z.enum(WEBHOOK_EVENTS)).min(1).max(WEBHOOK_EVENTS.length), secret: rpcString(512).optional() });
+export const listSubscriptions = z.object({ ownerId });
+export const deleteSubscription = z.object({ id: z.string().uuid(), ownerId });
+export const publishEvent = z.object({ ownerId, payload: z.object({ eventId: z.string().uuid().optional(), eventType: z.enum(WEBHOOK_EVENTS), occurredAt: z.string().datetime().optional(), apiVersion: rpcString(32).optional(), data: payloadData }).strict() });
+export const dispatchPending = z.object({});

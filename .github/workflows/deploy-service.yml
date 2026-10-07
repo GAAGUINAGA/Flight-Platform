@@ -52,6 +52,9 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version-file: '.nvmrc', cache: npm }
       - run: npm ci
+      - run: npm run prisma:generate -w "$SERVICE"
+        env:
+          SERVICE: ${{ inputs.service }}
       - run: npm run lint
       - run: npm run build -w @flight-platform/shared
       - run: npm run build -w "$SERVICE"

@@ -1,0 +1,24 @@
+name: Deploy webhooks service
+on:
+  pull_request:
+    paths: ['.github/workflows/deploy-webhooks.yml', '.github/workflows/deploy-service.yml', 'microservices/webhooks-service/**', 'packages/shared/**', 'contracts/proto/flightplatform/common/**', 'contracts/proto/flightplatform/webhooks/**', 'package-lock.json', 'tsconfig.base.json']
+  push:
+    branches: [main]
+    paths: ['.github/workflows/deploy-webhooks.yml', '.github/workflows/deploy-service.yml', 'microservices/webhooks-service/**', 'packages/shared/**', 'contracts/proto/flightplatform/common/**', 'contracts/proto/flightplatform/webhooks/**', 'package-lock.json', 'tsconfig.base.json']
+jobs:
+  deploy:
+    uses: ./.github/workflows/deploy-service.yml
+    with:
+      service: microservices/webhooks-service
+      dockerfile: microservices/webhooks-service/Dockerfile
+      image: us-east1-docker.pkg.dev/project-a1d2e3ba-f6ff-469e-854/flight-platform/webhooks-service:${{ github.sha }}
+      cloud_run_service: webhooks-service
+      project_id: project-a1d2e3ba-f6ff-469e-854
+      region: us-east1
+      runtime_service_account: webhooks-service-runtime@project-a1d2e3ba-f6ff-469e-854.iam.gserviceaccount.com
+      secret_name: internal-api-key
+      extra_secrets: DATABASE_URL=webhooks-database-url:latest,WEBHOOK_SECRET_ENCRYPTION_KEY=webhooks-secret-encryption-key:latest
+      test_command: npx jest microservices/webhooks-service/test/unit --runInBand
+    secrets:
+      workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+      service_account: ${{ secrets.GCP_DEPLOY_SA }}
