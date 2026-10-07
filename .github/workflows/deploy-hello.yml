@@ -28,6 +28,7 @@ jobs:
       region: us-east1
       runtime_service_account: hello-service-runtime@project-a1d2e3ba-f6ff-469e-854.iam.gserviceaccount.com
       secret_name: internal-api-key
+      test_command: npx jest platform/hello --runInBand
     secrets:
       workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
       service_account: ${{ secrets.GCP_DEPLOY_SA }}
