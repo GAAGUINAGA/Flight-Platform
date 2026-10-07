@@ -1,0 +1,33 @@
+name: Deploy hello service
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/deploy-hello.yml'
+      - '.github/workflows/deploy-service.yml'
+      - 'infra/Dockerfile.service'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'tsconfig.base.json'
+      - 'packages/shared/**'
+      - 'platform/hello/**'
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  deploy:
+    uses: ./.github/workflows/deploy-service.yml
+    with:
+      service: platform/hello
+      image: us-east1-docker.pkg.dev/project-a1d2e3ba-f6ff-469e-854/flight-platform/hello-service:${{ github.sha }}
+      cloud_run_service: hello-service
+      project_id: project-a1d2e3ba-f6ff-469e-854
+      region: us-east1
+      runtime_service_account: hello-service-runtime@project-a1d2e3ba-f6ff-469e-854.iam.gserviceaccount.com
+      secret_name: internal-api-key
+    secrets:
+      workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+      service_account: ${{ secrets.GCP_DEPLOY_SA }}
