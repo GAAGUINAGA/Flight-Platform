@@ -50,32 +50,39 @@ export class DomainError extends Error {
   }
 }
 
-export function toRpcException(error: unknown): RpcException {
-  if (error instanceof DomainError) {
-    return new RpcException({ code: GRPC_STATUS_BY_CODE[error.code], details: error.code });
-  }
-  return new RpcException({ code: status.INTERNAL, details: 'INTERNAL_ERROR' });
-}
+export interface SafeGrpcError { code: number; details: string }
 
-function safeRpcException(error: RpcException): RpcException {
-  const payload = error.getError();
+export function safeGrpcError(error: unknown): SafeGrpcError {
+  if (error instanceof DomainError) {
+    return { code: GRPC_STATUS_BY_CODE[error.code], details: error.code };
+  }
+  let payload: unknown;
+  try {
+    payload = typeof error === 'object' && error !== null && 'getError' in error &&
+      typeof error.getError === 'function' ? error.getError() : undefined;
+  } catch {
+    return { code: status.INTERNAL, details: 'INTERNAL_ERROR' };
+  }
   if (typeof payload === 'object' && payload !== null && 'code' in payload && 'details' in payload) {
     const { code, details } = payload;
     if (typeof code === 'number' && typeof details === 'string') {
       if (ERROR_CODES.includes(details as ErrorCode) && GRPC_STATUS_BY_CODE[details as ErrorCode] === code) {
-        return new RpcException({ code, details });
+        return { code, details };
       }
-      if (details === 'UNAUTHENTICATED' && code === status.UNAUTHENTICATED) return new RpcException({ code, details });
-      if (details === 'PERMISSION_DENIED' && code === status.PERMISSION_DENIED) return new RpcException({ code, details });
+      if (details === 'UNAUTHENTICATED' && code === status.UNAUTHENTICATED) return { code, details };
+      if (details === 'PERMISSION_DENIED' && code === status.PERMISSION_DENIED) return { code, details };
     }
   }
-  return toRpcException(error);
+  return { code: status.INTERNAL, details: 'INTERNAL_ERROR' };
+}
+
+export function toRpcException(error: unknown): RpcException {
+  return new RpcException(safeGrpcError(error));
 }
 
 @Catch()
 export class DomainRpcExceptionFilter implements RpcExceptionFilter<unknown> {
   catch(error: unknown): Observable<never> {
-    if (error instanceof RpcException) return throwError(() => safeRpcException(error));
     return throwError(() => toRpcException(error));
   }
 }

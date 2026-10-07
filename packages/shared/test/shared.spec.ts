@@ -7,7 +7,7 @@ import pino from 'pino';
 import { RpcException } from '@nestjs/microservices';
 import {
   decimalToMinor, ERROR_CODES, FixedClock, GRPC_STATUS_BY_CODE, minorToDecimal,
-  buildRequestContext, createGrpcMetadata, requireRole, toRpcException, validate,
+  buildRequestContext, createGrpcMetadata, requireRole, safeGrpcError, toRpcException, validate,
   InternalKeyInterceptor, requestContextFromMetadata, loggerOptions, DomainRpcExceptionFilter,
   GRPC_DEADLINE_MS, withGrpcCallContext, addGrpcHealthCheck, rpcString
 } from '../src/index';
@@ -34,6 +34,22 @@ describe('shared foundations', () => {
       .rejects.toMatchObject({ error: { code: status.INTERNAL, details: 'INTERNAL_ERROR' } });
     await expect(lastValueFrom(new DomainRpcExceptionFilter().catch(new RpcException('private database detail'))))
       .rejects.toMatchObject({ error: { code: status.INTERNAL, details: 'INTERNAL_ERROR' } });
+  });
+
+  it('preserves only safe RPC payloads without relying on instanceof', async () => {
+    class ForeignRpcError {
+      constructor(private readonly payload: object) {}
+      getError() { return this.payload; }
+    }
+    const unauthenticated = new ForeignRpcError({ code: status.UNAUTHENTICATED, details: 'UNAUTHENTICATED' });
+    expect(unauthenticated).not.toBeInstanceOf(RpcException);
+    expect(safeGrpcError(unauthenticated)).toEqual({ code: status.UNAUTHENTICATED, details: 'UNAUTHENTICATED' });
+    await expect(lastValueFrom(new DomainRpcExceptionFilter().catch(unauthenticated)))
+      .rejects.toMatchObject({ error: { code: status.UNAUTHENTICATED, details: 'UNAUTHENTICATED' } });
+    expect(safeGrpcError(new ForeignRpcError({ code: status.UNAUTHENTICATED, details: 'database secret' })))
+      .toEqual({ code: status.INTERNAL, details: 'INTERNAL_ERROR' });
+    expect(safeGrpcError({ getError: () => { throw new Error('private detail'); } }))
+      .toEqual({ code: status.INTERNAL, details: 'INTERNAL_ERROR' });
   });
 
   it('converts money and supports a fixed clock', () => {

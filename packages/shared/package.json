@@ -9,11 +9,13 @@
   },
   "dependencies": {
     "@grpc/grpc-js": "^1.12.0",
-    "@nestjs/common": "^11.0.0",
-    "@nestjs/microservices": "^11.0.0",
     "grpc-health-check": "^2.1.0",
     "nestjs-pino": "^4.0.0",
     "pino": "^9.0.0",
     "zod": "^3.24.0"
+  },
+  "peerDependencies": {
+    "@nestjs/common": "^11.0.0",
+    "@nestjs/microservices": "^11.0.0"
   }
 }
