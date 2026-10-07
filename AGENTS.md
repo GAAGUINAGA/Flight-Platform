@@ -33,3 +33,13 @@ docker compose -f infra/docker-compose.yml up -d
 
 Para desarrollo local usa Node 20 (ver `.nvmrc`). Los contratos se generan en
 `packages/contracts`; los servicios gRPC se prueban contra Postgres local.
+
+## Reglas aprendidas (obligatorias)
+- Un solo developer activo a la vez. Trabaja en una rama `feat/<FASE>-<servicio>` en el checkout principal; sin worktrees.
+- Prisma: `prisma` y `@prisma/client` fijados en `6.12.0` exacto (versiones posteriores traen deepmerge-ts con vulnerabilidad alta).
+- El cliente de Prisma es código generado e ignorado por git: el workflow de CI debe ejecutar `prisma generate` antes de lint, build y test.
+- CI ejecuta solo lint, build, `npm audit --audit-level=high` y pruebas unitarias del servicio. Integración, concurrencia y seguridad se ejecutan en local y en la auditoría (clon limpio con Docker). Nunca `npm test` de toda la raíz en el workflow de un servicio.
+- Las pruebas deben fallar rápido si falta DATABASE_URL y cerrar servidores y conexiones en afterAll aunque beforeAll falle.
+- Antes de "listo para auditoría", ejecutar en clon limpio (git clone + npm ci) los mismos pasos del workflow.
+- No modificar infra/ ni ejecutar docker compose: la base local la administra el humano.
+- Despliegue solo desde main, después de la auditoría de código (docs/audit/context/flujo-cierre.md).
