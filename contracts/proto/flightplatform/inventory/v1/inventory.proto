@@ -11,7 +11,7 @@ service InventoryService {
   rpc CreateHold(CreateHoldRequest) returns (HoldResponse);
   rpc GetHold(GetHoldRequest) returns (HoldResponse);
   rpc ReleaseHold(GetHoldRequest) returns (HoldResponse);
-  rpc ConsumeHold(GetHoldRequest) returns (HoldResponse);
+  rpc ConsumeHold(ConsumeHoldRequest) returns (HoldResponse);
   rpc ReleaseReservedInventory(ReleaseReservedInventoryRequest) returns (flightplatform.common.v1.Empty);
   rpc CloseFlightInstance(GetFlightInstanceRequest) returns (FlightInstanceResponse);
   rpc ExpireHolds(flightplatform.common.v1.Empty) returns (ExpireHoldsResponse);
@@ -66,6 +66,7 @@ message CreateHoldRequest {
   string idempotency_key = 4;
 }
 message GetHoldRequest { string hold_id = 1; string owner_id = 2; }
+message ConsumeHoldRequest { string hold_id = 1; string owner_id = 2; string reservation_id = 3; }
 message HoldResponse {
   string hold_id = 1;
   string owner_id = 2;

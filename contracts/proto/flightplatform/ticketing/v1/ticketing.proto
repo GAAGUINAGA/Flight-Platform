@@ -18,6 +18,7 @@ message IssueTicketsRequest {
   string owner_id = 2;
   repeated flightplatform.common.v1.Passenger passengers = 3;
   repeated flightplatform.common.v1.ItinerarySnapshot itineraries = 4;
+  string request_id = 5;
 }
 message ReissueTicketsRequest {
   string booking_id = 1;

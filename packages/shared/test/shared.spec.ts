@@ -8,7 +8,7 @@ import { RpcException } from '@nestjs/microservices';
 import {
   decimalToMinor, ERROR_CODES, FixedClock, GRPC_STATUS_BY_CODE, minorToDecimal,
   buildRequestContext, createGrpcMetadata, requireRole, safeGrpcError, toRpcException, validate,
-  InternalKeyInterceptor, requestContextFromMetadata, loggerOptions, DomainRpcExceptionFilter,
+  InternalKeyInterceptor, requestContextFromMetadata, loggerOptions, DomainRpcExceptionFilter, DomainError,
   GRPC_DEADLINE_MS, withGrpcCallContext, addGrpcHealthCheck, rpcString
 } from '../src/index';
 import { z } from 'zod';
@@ -19,8 +19,18 @@ describe('shared foundations', () => {
     const codes = contract.match(/ {8}code:\r?\n {10}type: string\r?\n {10}enum:\r?\n((?: {10}- [A-Z_]+\r?\n)+)/)?.[1]
       .match(/ {10}- ([A-Z_]+)/g)?.map(line => line.trim().slice(2));
     expect(codes).toHaveLength(24);
-    expect([...ERROR_CODES].sort()).toEqual([...codes!].sort());
-    expect(Object.keys(GRPC_STATUS_BY_CODE).sort()).toEqual([...codes!].sort());
+    const internalCodes = ['NOT_FOUND'];
+    const expected = [...codes!, ...internalCodes].sort();
+    expect([...ERROR_CODES].sort()).toEqual(expected);
+    expect(Object.keys(GRPC_STATUS_BY_CODE).sort()).toEqual(expected);
+    expect(codes).not.toContain('NOT_FOUND');
+  });
+
+  it('maps internal NOT_FOUND to gRPC NOT_FOUND and preserves it across the RPC boundary', () => {
+    expect(GRPC_STATUS_BY_CODE.NOT_FOUND).toBe(status.NOT_FOUND);
+    expect(safeGrpcError(new DomainError('NOT_FOUND'))).toEqual({ code: status.NOT_FOUND, details: 'NOT_FOUND' });
+    expect(safeGrpcError(new RpcException({ code: status.NOT_FOUND, details: 'NOT_FOUND' })))
+      .toEqual({ code: status.NOT_FOUND, details: 'NOT_FOUND' });
   });
 
   it('hides unexpected failures behind generic INTERNAL', () => {

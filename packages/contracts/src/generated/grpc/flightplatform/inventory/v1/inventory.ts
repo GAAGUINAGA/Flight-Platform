@@ -89,6 +89,12 @@ export interface GetHoldRequest {
   ownerId: string;
 }
 
+export interface ConsumeHoldRequest {
+  holdId: string;
+  ownerId: string;
+  reservationId: string;
+}
+
 export interface HoldResponse {
   holdId: string;
   ownerId: string;
@@ -125,7 +131,7 @@ export interface InventoryServiceClient {
 
   releaseHold(request: GetHoldRequest): Observable<HoldResponse>;
 
-  consumeHold(request: GetHoldRequest): Observable<HoldResponse>;
+  consumeHold(request: ConsumeHoldRequest): Observable<HoldResponse>;
 
   releaseReservedInventory(request: ReleaseReservedInventoryRequest): Observable<Empty>;
 
@@ -161,7 +167,7 @@ export interface InventoryServiceController {
 
   releaseHold(request: GetHoldRequest): Promise<HoldResponse> | Observable<HoldResponse> | HoldResponse;
 
-  consumeHold(request: GetHoldRequest): Promise<HoldResponse> | Observable<HoldResponse> | HoldResponse;
+  consumeHold(request: ConsumeHoldRequest): Promise<HoldResponse> | Observable<HoldResponse> | HoldResponse;
 
   releaseReservedInventory(request: ReleaseReservedInventoryRequest): Promise<Empty> | Observable<Empty> | Empty;
 

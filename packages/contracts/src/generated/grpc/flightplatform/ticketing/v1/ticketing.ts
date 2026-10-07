@@ -21,6 +21,7 @@ export interface IssueTicketsRequest {
   ownerId: string;
   passengers: Passenger[];
   itineraries: ItinerarySnapshot[];
+  requestId: string;
 }
 
 export interface ReissueTicketsRequest {
