@@ -1,0 +1,28 @@
+syntax = "proto3";
+package flightplatform.operations.v1;
+import "flightplatform/common/v1/common.proto";
+
+service OperationsService {
+  rpc GetFlightStatus(GetFlightStatusRequest) returns (flightplatform.common.v1.FlightStatus);
+  rpc RecordOperationalUpdate(RecordOperationalUpdateRequest) returns (flightplatform.common.v1.FlightStatus);
+  rpc CheckIn(CheckInRequest) returns (flightplatform.common.v1.CheckInResponse);
+  rpc ListBoardingPasses(BookingOwnerRequest) returns (BoardingPassListResponse);
+}
+
+message GetFlightStatusRequest { string flight_number = 1; string date = 2; }
+message RecordOperationalUpdateRequest {
+  string flight_instance_id = 1;
+  string status = 2;
+  optional string estimated_departure_at = 3;
+  optional string actual_departure_at = 4;
+  optional string estimated_arrival_at = 5;
+  optional string actual_arrival_at = 6;
+  optional string departure_terminal = 7;
+  optional string arrival_terminal = 8;
+}
+message CheckInRequest { string booking_id = 1; string owner_id = 2; }
+message BookingOwnerRequest { string booking_id = 1; string owner_id = 2; }
+message BoardingPassListResponse {
+  string booking_id = 1;
+  repeated flightplatform.common.v1.BoardingPass boarding_passes = 2;
+}

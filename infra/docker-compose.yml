@@ -1,0 +1,31 @@
+services:
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: flight_platform
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in infra/.env}
+      ROLE_PASSWORD_INVENTORY: ${ROLE_PASSWORD_INVENTORY:?Set ROLE_PASSWORD_INVENTORY in infra/.env}
+      ROLE_PASSWORD_PRICING: ${ROLE_PASSWORD_PRICING:?Set ROLE_PASSWORD_PRICING in infra/.env}
+      ROLE_PASSWORD_ANCILLARIES: ${ROLE_PASSWORD_ANCILLARIES:?Set ROLE_PASSWORD_ANCILLARIES in infra/.env}
+      ROLE_PASSWORD_RESERVATION: ${ROLE_PASSWORD_RESERVATION:?Set ROLE_PASSWORD_RESERVATION in infra/.env}
+      ROLE_PASSWORD_TICKETING: ${ROLE_PASSWORD_TICKETING:?Set ROLE_PASSWORD_TICKETING in infra/.env}
+      ROLE_PASSWORD_OPERATIONS: ${ROLE_PASSWORD_OPERATIONS:?Set ROLE_PASSWORD_OPERATIONS in infra/.env}
+      ROLE_PASSWORD_WEBHOOKS: ${ROLE_PASSWORD_WEBHOOKS:?Set ROLE_PASSWORD_WEBHOOKS in infra/.env}
+      ROLE_PASSWORD_GATEWAY: ${ROLE_PASSWORD_GATEWAY:?Set ROLE_PASSWORD_GATEWAY in infra/.env}
+    ports:
+      - "127.0.0.1:15432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d flight_platform"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./db/roles.sql:/docker-entrypoint-initdb.d/01-roles.sql:ro
+      - ./db/02-role-passwords.sh:/docker-entrypoint-initdb.d/02-role-passwords.sh:ro
+      - ./db/role-passwords.sql:/opt/flight/role-passwords.sql:ro
+      - ./db/postgres-password.sql:/opt/flight/postgres-password.sql:ro
+
+volumes:
+  postgres-data:

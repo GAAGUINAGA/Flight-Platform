@@ -1,0 +1,33 @@
+{
+  "name": "flight-platform",
+  "private": true,
+  "version": "0.1.0",
+  "engines": {
+    "node": ">=20 <21"
+  },
+  "workspaces": [
+    "packages/*",
+    "microservices/*",
+    "platform/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "lint": "eslint . --max-warnings=0",
+    "test": "jest --passWithNoTests",
+    "gen:contracts": "npm run gen --workspace=@flight-platform/contracts",
+    "dev:token": "tsx infra/scripts/dev-token.ts",
+    "format:check": "prettier --check ."
+  },
+  "devDependencies": {
+    "@types/jest": "^30.0.0",
+    "@typescript-eslint/eslint-plugin": "^8.0.0",
+    "@typescript-eslint/parser": "^8.0.0",
+    "eslint": "^9.0.0",
+    "eslint-config-prettier": "^10.0.0",
+    "jest": "^30.0.0",
+    "prettier": "^3.0.0",
+    "ts-jest": "^29.0.0",
+    "tsx": "^4.23.15",
+    "typescript": "^5.0.0"
+  }
+}

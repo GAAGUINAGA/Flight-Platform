@@ -1,0 +1,13 @@
+{
+  "name": "@flight-platform/hello",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": { "build": "tsc -p tsconfig.json" },
+  "dependencies": {
+    "@flight-platform/shared": "0.1.0",
+    "@grpc/grpc-js": "^1.12.0",
+    "@nestjs/microservices": "^11.0.0",
+    "grpc-health-check": "^2.1.0",
+    "zod": "^3.24.0"
+  }
+}

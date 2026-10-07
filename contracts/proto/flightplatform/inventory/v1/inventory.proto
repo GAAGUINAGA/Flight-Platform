@@ -1,0 +1,77 @@
+syntax = "proto3";
+package flightplatform.inventory.v1;
+import "flightplatform/common/v1/common.proto";
+
+service InventoryService {
+  rpc UpsertFlightInstance(UpsertFlightInstanceRequest) returns (FlightInstanceResponse);
+  rpc ListFlightInstances(ListFlightInstancesRequest) returns (ListFlightInstancesResponse);
+  rpc GetFlightInstance(GetFlightInstanceRequest) returns (FlightInstanceResponse);
+  rpc FindFlightInstance(FindFlightInstanceRequest) returns (FlightInstanceResponse);
+  rpc QueryAvailability(QueryAvailabilityRequest) returns (QueryAvailabilityResponse);
+  rpc CreateHold(CreateHoldRequest) returns (HoldResponse);
+  rpc GetHold(GetHoldRequest) returns (HoldResponse);
+  rpc ReleaseHold(GetHoldRequest) returns (HoldResponse);
+  rpc ConsumeHold(GetHoldRequest) returns (HoldResponse);
+  rpc ReleaseReservedInventory(ReleaseReservedInventoryRequest) returns (flightplatform.common.v1.Empty);
+  rpc CloseFlightInstance(GetFlightInstanceRequest) returns (FlightInstanceResponse);
+  rpc ExpireHolds(flightplatform.common.v1.Empty) returns (ExpireHoldsResponse);
+}
+
+message CabinCapacity { flightplatform.common.v1.CabinClass cabin_class = 1; uint32 capacity = 2; }
+message UpsertFlightInstanceRequest {
+  string flight_instance_id = 1;
+  string flight_number = 2;
+  string departure_iata = 3;
+  string arrival_iata = 4;
+  string departure_at = 5;
+  string arrival_at = 6;
+  repeated CabinCapacity cabins = 7;
+  optional string aircraft = 8;
+}
+message FlightInstanceResponse {
+  string flight_instance_id = 1;
+  flightplatform.common.v1.SegmentSnapshot segment = 2;
+  repeated CabinCapacity cabins = 3;
+  bool closed = 4;
+}
+message ListFlightInstancesRequest { flightplatform.common.v1.PageRequest page = 1; optional string date = 2; }
+message ListFlightInstancesResponse {
+  repeated FlightInstanceResponse items = 1;
+  flightplatform.common.v1.PageResponse page = 2;
+}
+message GetFlightInstanceRequest { string flight_instance_id = 1; }
+message FindFlightInstanceRequest { string flight_number = 1; string departure_date = 2; }
+message QueryAvailabilityRequest {
+  string origin = 1;
+  string destination = 2;
+  string departure_date = 3;
+  flightplatform.common.v1.PassengerMix passengers = 4;
+  optional flightplatform.common.v1.CabinClass cabin_class = 5;
+}
+message AvailableFlight {
+  flightplatform.common.v1.SegmentSnapshot segment = 1;
+  flightplatform.common.v1.CabinClass cabin_class = 2;
+  uint32 available_seats = 3;
+}
+message QueryAvailabilityResponse { repeated AvailableFlight flights = 1; }
+message HoldSegment {
+  string flight_instance_id = 1;
+  flightplatform.common.v1.CabinClass cabin_class = 2;
+  uint32 seats = 3;
+}
+message CreateHoldRequest {
+  string owner_id = 1;
+  repeated HoldSegment segments = 2;
+  string expires_at = 3;
+  string idempotency_key = 4;
+}
+message GetHoldRequest { string hold_id = 1; string owner_id = 2; }
+message HoldResponse {
+  string hold_id = 1;
+  string owner_id = 2;
+  string status = 3;
+  string expires_at = 4;
+  repeated HoldSegment segments = 5;
+}
+message ReleaseReservedInventoryRequest { string booking_id = 1; string owner_id = 2; }
+message ExpireHoldsResponse { uint32 expired_count = 1; }

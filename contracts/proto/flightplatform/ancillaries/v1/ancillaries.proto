@@ -1,0 +1,54 @@
+syntax = "proto3";
+package flightplatform.ancillaries.v1;
+import "flightplatform/common/v1/common.proto";
+
+service AncillariesService {
+  rpc GetSeatMapForOffer(GetSeatMapForOfferRequest) returns (flightplatform.common.v1.SeatMap);
+  rpc ReserveSeats(ReserveSeatsRequest) returns (SeatAssignmentsResponse);
+  rpc ConfirmSeats(BookingOwnerRequest) returns (SeatAssignmentsResponse);
+  rpc ReleaseSeats(BookingOwnerRequest) returns (flightplatform.common.v1.Empty);
+  rpc AssignSeatAtCheckIn(AssignSeatAtCheckInRequest) returns (SeatAssignment);
+  rpc GetAssignments(BookingOwnerRequest) returns (SeatAssignmentsResponse);
+  rpc ReserveBaggage(ReserveBaggageRequest) returns (BaggageReservationResponse);
+  rpc GetBaggageOptions(BookingOwnerRequest) returns (BaggageOptionsResponse);
+  rpc PurchaseBaggage(PurchaseBaggageRequest) returns (BaggageAddedResponse);
+  rpc ReleaseAll(BookingOwnerRequest) returns (flightplatform.common.v1.Empty);
+}
+
+message GetSeatMapForOfferRequest { string offer_id = 1; }
+message BookingOwnerRequest { string booking_id = 1; string owner_id = 2; }
+message SeatAssignment {
+  string booking_id = 1;
+  string passenger_id = 2;
+  string segment_id = 3;
+  string seat_number = 4;
+  string status = 5;
+}
+message ReserveSeatsRequest {
+  string booking_id = 1;
+  string owner_id = 2;
+  repeated SeatAssignment assignments = 3;
+}
+message SeatAssignmentsResponse { repeated SeatAssignment assignments = 1; }
+message AssignSeatAtCheckInRequest {
+  string booking_id = 1;
+  string owner_id = 2;
+  string passenger_id = 3;
+  string segment_id = 4;
+  optional string preferred_seat = 5;
+}
+message ReserveBaggageRequest {
+  string booking_id = 1;
+  string owner_id = 2;
+  repeated flightplatform.common.v1.ExtraBaggage baggage = 3;
+}
+message BaggageReservationResponse { string booking_id = 1; string status = 2; }
+message BaggageOptionsResponse { repeated flightplatform.common.v1.BaggageOption options = 1; }
+message PurchaseBaggageRequest {
+  string booking_id = 1;
+  string owner_id = 2;
+  string passenger_id = 3;
+  string itinerary_id = 4;
+  uint32 quantity = 5;
+}
+message BaggageAddedResponse { string passenger_id = 1; string itinerary_id = 2; uint32 total_baggage = 3; }

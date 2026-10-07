@@ -1,0 +1,77 @@
+syntax = "proto3";
+package flightplatform.pricing.v1;
+import "flightplatform/common/v1/common.proto";
+
+service PricingService {
+  rpc UpsertFare(UpsertFareRequest) returns (FareResponse);
+  rpc ListFares(ListFaresRequest) returns (ListFaresResponse);
+  rpc SearchOffers(SearchOffersRequest) returns (SearchOffersResponse);
+  rpc ResolveSegment(ResolveSegmentRequest) returns (ResolveSegmentResponse);
+  rpc HoldOffer(HoldOfferRequest) returns (HoldOfferResponse);
+  rpc GetOfferHold(GetOfferHoldRequest) returns (GetOfferHoldResponse);
+  rpc ReleaseOfferHold(GetOfferHoldRequest) returns (flightplatform.common.v1.Empty);
+  rpc GetPriceLock(GetOfferHoldRequest) returns (PriceLockResponse);
+  rpc QuoteChange(QuoteChangeRequest) returns (QuoteChangeResponse);
+  rpc GetChangeOffer(GetChangeOfferRequest) returns (flightplatform.common.v1.DateChangeOffer);
+  rpc MarkChangeOfferUsed(GetChangeOfferRequest) returns (flightplatform.common.v1.Empty);
+  rpc QuoteCancellation(QuoteCancellationRequest) returns (flightplatform.common.v1.CancellationQuote);
+  rpc GetBaggagePrice(GetBaggagePriceRequest) returns (flightplatform.common.v1.MoneyAmount);
+}
+
+message UpsertFareRequest {
+  string fare_id = 1;
+  string flight_instance_id = 2;
+  flightplatform.common.v1.CabinClass cabin_class = 3;
+  string fare_brand = 4;
+  flightplatform.common.v1.MoneyAmount price = 5;
+  flightplatform.common.v1.FareRules fare_rules = 6;
+  flightplatform.common.v1.BaggageAllowance baggage_allowance = 7;
+  flightplatform.common.v1.MoneyAmount extra_checked_baggage_price = 8;
+}
+message FareResponse { UpsertFareRequest fare = 1; }
+message ListFaresRequest { optional string flight_instance_id = 1; flightplatform.common.v1.PageRequest page = 2; }
+message ListFaresResponse { repeated FareResponse fares = 1; flightplatform.common.v1.PageResponse page = 2; }
+message SearchLeg { string origin = 1; string destination = 2; string departure_date = 3; }
+message SearchOffersRequest { repeated SearchLeg legs = 1; flightplatform.common.v1.PassengerMix passengers = 2; }
+message SearchOffersResponse { uint32 total_offers = 1; repeated flightplatform.common.v1.FlightOffer offers = 2; }
+message ResolveSegmentRequest { string segment_id = 1; }
+message ResolveSegmentResponse { flightplatform.common.v1.SegmentSnapshot segment = 1; }
+message ItinerarySelection {
+  string itinerary_id = 1;
+  flightplatform.common.v1.CabinClass cabin_class = 2;
+  string fare_brand = 3;
+}
+message HoldOfferRequest {
+  string owner_id = 1;
+  string offer_id = 2;
+  repeated ItinerarySelection itinerary_selections = 3;
+  flightplatform.common.v1.PassengerMix passengers_breakdown = 4;
+  string idempotency_key = 5;
+}
+message HoldOfferResponse {
+  string hold_id = 1;
+  string status = 2;
+  string expires_at = 3;
+  uint32 ttl_minutes = 4;
+  flightplatform.common.v1.MoneyAmount locked_price = 5;
+}
+message GetOfferHoldRequest { string hold_id = 1; string owner_id = 2; }
+message GetOfferHoldResponse {
+  string status = 1;
+  optional string expires_at = 2;
+  uint32 remaining_seconds = 3;
+  flightplatform.common.v1.MoneyAmount locked_price = 4;
+}
+message PriceLockResponse {
+  string hold_id = 1;
+  string owner_id = 2;
+  flightplatform.common.v1.MoneyAmount locked_price = 3;
+  repeated ItinerarySelection selections = 4;
+  string expires_at = 5;
+}
+message DateChangeSelection { string itinerary_id = 1; string new_departure_date = 2; }
+message QuoteChangeRequest { string booking_id = 1; string owner_id = 2; repeated DateChangeSelection changes = 3; }
+message QuoteChangeResponse { repeated flightplatform.common.v1.DateChangeOffer offers = 1; }
+message GetChangeOfferRequest { string change_offer_id = 1; string owner_id = 2; }
+message QuoteCancellationRequest { string booking_id = 1; string owner_id = 2; }
+message GetBaggagePriceRequest { string itinerary_id = 1; string fare_brand = 2; }

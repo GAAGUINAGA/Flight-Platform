@@ -1,0 +1,24 @@
+syntax = "proto3";
+package flightplatform.webhooks.v1;
+import "flightplatform/common/v1/common.proto";
+
+service WebhooksService {
+  rpc CreateSubscription(CreateSubscriptionRequest) returns (flightplatform.common.v1.WebhookSubscription);
+  rpc ListSubscriptions(ListSubscriptionsRequest) returns (ListSubscriptionsResponse);
+  rpc DeleteSubscription(DeleteSubscriptionRequest) returns (flightplatform.common.v1.Empty);
+  rpc PublishEvent(PublishEventRequest) returns (PublishEventResponse);
+  rpc DispatchPending(flightplatform.common.v1.Empty) returns (DispatchPendingResponse);
+}
+
+message CreateSubscriptionRequest {
+  string owner_id = 1;
+  string url = 2;
+  repeated string events = 3;
+  optional string secret = 4;
+}
+message ListSubscriptionsRequest { string owner_id = 1; }
+message ListSubscriptionsResponse { repeated flightplatform.common.v1.WebhookSubscription subscriptions = 1; }
+message DeleteSubscriptionRequest { string id = 1; string owner_id = 2; }
+message PublishEventRequest { string owner_id = 1; flightplatform.common.v1.WebhookPayload payload = 2; }
+message PublishEventResponse { string event_id = 1; }
+message DispatchPendingResponse { uint32 dispatched_count = 1; }

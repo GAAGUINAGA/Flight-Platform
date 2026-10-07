@@ -1,0 +1,231 @@
+syntax = "proto3";
+package flightplatform.common.v1;
+
+message Money {
+  string currency = 1;
+  int64 amount_minor = 2;
+}
+
+message MoneyAmount {
+  string currency = 1;
+  optional string base_fare = 2;
+  optional string taxes = 3;
+  string total = 4;
+}
+
+message PassengerMix {
+  uint32 adults = 1;
+  uint32 youths = 2;
+  uint32 children = 3;
+  uint32 infants = 4;
+}
+
+enum CabinClass {
+  CABIN_CLASS_UNSPECIFIED = 0;
+  ECONOMY = 1;
+  PREMIUM_ECONOMY = 2;
+  BUSINESS = 3;
+  FIRST = 4;
+}
+
+enum PassengerType {
+  PASSENGER_TYPE_UNSPECIFIED = 0;
+  ADULT = 1;
+  YOUTH = 2;
+  CHILD = 3;
+  INFANT = 4;
+}
+
+message PageRequest { optional string cursor = 1; uint32 limit = 2; }
+message PageResponse { optional string next_cursor = 1; }
+message Empty {}
+message IdRequest { string id = 1; }
+message BookingRequest { string booking_id = 1; }
+
+message FlightEndpoint {
+  string iata_code = 1;
+  string at = 2;
+  optional string terminal = 3;
+}
+
+message SegmentSnapshot {
+  string segment_id = 1;
+  string flight_instance_id = 2;
+  string flight_number = 3;
+  FlightEndpoint departure = 4;
+  FlightEndpoint arrival = 5;
+  string marketing_carrier = 6;
+  string operating_carrier = 7;
+  optional uint32 layover_minutes = 8;
+  optional string aircraft = 9;
+  optional uint32 duration_minutes = 10;
+  optional string status = 11;
+}
+
+message FareRules { bool is_refundable = 1; bool is_changeable = 2; }
+message BaggageAllowance {
+  optional bool personal_item_included = 1;
+  optional uint32 carry_on_included = 2;
+  optional uint32 checked_baggage_included = 3;
+}
+message PassengerPrice { string passenger_type = 1; MoneyAmount price = 2; }
+message CabinPricing {
+  CabinClass cabin_class = 1;
+  string fare_brand = 2;
+  uint32 available_seats = 3;
+  FareRules fare_rules = 4;
+  BaggageAllowance baggage_allowance = 5;
+  optional MoneyAmount extra_checked_baggage_price = 6;
+  repeated PassengerPrice price_per_passenger_type = 7;
+}
+message ItinerarySnapshot {
+  string itinerary_id = 1;
+  uint32 total_duration_minutes = 2;
+  uint32 stops_count = 3;
+  repeated SegmentSnapshot segments = 4;
+  repeated CabinPricing pricing_options = 5;
+}
+message FlightOffer {
+  string offer_id = 1;
+  string airline_code = 2;
+  string airline_name = 3;
+  repeated ItinerarySnapshot itineraries = 4;
+  MoneyAmount grand_total = 5;
+}
+message Seat { string seat_number = 1; bool is_available = 2; repeated string characteristics = 3; }
+message SeatRow { uint32 row_number = 1; repeated Seat seats = 2; }
+message SeatCabin { string cabin_class = 1; repeated SeatRow rows = 2; }
+message SeatMap { string segment_id = 1; repeated SeatCabin cabins = 2; }
+
+message Contact { string email = 1; string phone = 2; }
+message AssignedSeat { string segment_id = 1; string seat_number = 2; }
+message ExtraBaggage { string itinerary_id = 1; uint32 quantity = 2; }
+message Passenger {
+  string passenger_id = 1;
+  PassengerType passenger_type = 2;
+  optional string associated_adult_id = 3;
+  string first_name = 4;
+  string last_name = 5;
+  string document_type = 6;
+  string document_number = 7;
+  string nationality = 8;
+  optional string document_expiry_date = 9;
+  string birth_date = 10;
+  string gender = 11;
+  Contact contact = 12;
+  repeated AssignedSeat assigned_seats = 13;
+  repeated ExtraBaggage extra_baggage = 14;
+}
+message PaymentReference { string payment_reference = 1; }
+
+message TicketSegment { string segment_id = 1; string status = 2; optional string coupon_number = 3; }
+message Ticket {
+  string ticket_id = 1;
+  string booking_id = 2;
+  string passenger_id = 3;
+  optional string e_ticket_number = 4;
+  string status = 5;
+  optional string issued_at = 6;
+  repeated TicketSegment segments = 7;
+  optional string failure_reason = 8;
+}
+message BookingChange { string changed_at = 1; string description = 2; }
+message BookingSummary {
+  string booking_id = 1;
+  string pnr = 2;
+  string status = 3;
+  string origin = 4;
+  string destination = 5;
+  string departure_date = 6;
+  MoneyAmount grand_total = 7;
+}
+message BookingDetail {
+  string booking_id = 1;
+  string pnr = 2;
+  string status = 3;
+  MoneyAmount grand_total = 4;
+  string created_at = 5;
+  optional string updated_at = 6;
+  repeated ItinerarySnapshot itineraries = 7;
+  repeated Passenger passengers = 8;
+  repeated Ticket tickets = 9;
+  repeated BookingChange changes = 10;
+}
+
+message BaggageOption {
+  string passenger_id = 1;
+  string itinerary_id = 2;
+  MoneyAmount price = 3;
+  uint32 max_allowed = 4;
+  uint32 already_purchased = 5;
+}
+message PriceDifference {
+  string fare_difference = 1;
+  string tax_difference = 2;
+  string change_fee = 3;
+  string total_to_pay = 4;
+}
+message DateChangeOffer {
+  string change_offer_id = 1;
+  string expires_at = 2;
+  repeated SegmentSnapshot segments = 3;
+  PriceDifference price_difference = 4;
+}
+message CancellationQuote {
+  string quote_id = 1;
+  bool is_refundable = 2;
+  string refund_amount = 3;
+  string penalty_amount = 4;
+  string currency = 5;
+  string expires_at = 6;
+}
+
+message WebhookSubscription {
+  string id = 1;
+  string url = 2;
+  repeated string events = 3;
+  string secret = 4;
+}
+message WebhookEventData {
+  optional string booking_id = 1;
+  optional string pnr = 2;
+  optional string status = 3;
+  optional string refund_amount = 4;
+}
+message WebhookPayload {
+  string event_id = 1;
+  string event_type = 2;
+  string occurred_at = 3;
+  string api_version = 4;
+  WebhookEventData data = 5;
+}
+
+message CheckInSegment { string segment_id = 1; optional string seat = 2; string status = 3; }
+message CheckedInPassenger { string passenger_id = 1; string status = 2; repeated CheckInSegment segments = 3; }
+message CheckInResponse { string booking_id = 1; string status = 2; repeated CheckedInPassenger checked_in_passengers = 3; }
+message BoardingPass {
+  string passenger_id = 1;
+  string segment_id = 2;
+  string seat = 3;
+  optional string boarding_group = 4;
+  optional string boarding_position = 5;
+  string barcode = 6;
+  string barcode_type = 7;
+}
+message FlightStatusEndpoint {
+  string iata_code = 1;
+  optional string terminal = 2;
+  string scheduled_at = 3;
+  optional string estimated_at = 4;
+  optional string actual_at = 5;
+}
+message FlightStatus {
+  string flight_number = 1;
+  string date = 2;
+  string marketing_carrier = 3;
+  string operating_carrier = 4;
+  FlightStatusEndpoint departure = 5;
+  FlightStatusEndpoint arrival = 6;
+  optional string aircraft = 7;
+  string status = 8;
+}

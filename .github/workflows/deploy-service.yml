@@ -1,0 +1,75 @@
+name: Deploy service
+
+on:
+  workflow_call:
+    inputs:
+      service:
+        required: true
+        type: string
+      image:
+        required: true
+        type: string
+      cloud_run_service:
+        required: true
+        type: string
+      project_id:
+        required: true
+        type: string
+      region:
+        required: true
+        type: string
+      runtime_service_account:
+        required: true
+        type: string
+      secret_name:
+        required: true
+        type: string
+    secrets:
+      workload_identity_provider:
+        required: false
+      service_account:
+        required: false
+
+jobs:
+  verify-and-deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version-file: '.nvmrc', cache: npm }
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test -- --runInBand
+      - run: npm run build -w "$SERVICE"
+        env:
+          SERVICE: ${{ inputs.service }}
+      - run: npm audit --audit-level=high
+      - uses: google-github-actions/auth@v2
+        if: github.ref == 'refs/heads/main'
+        with:
+          workload_identity_provider: ${{ secrets.workload_identity_provider }}
+          service_account: ${{ secrets.service_account }}
+      - uses: google-github-actions/setup-gcloud@v2
+        if: github.ref == 'refs/heads/main'
+      - name: Build and deploy
+        if: github.ref == 'refs/heads/main'
+        env:
+          SERVICE: ${{ inputs.service }}
+          IMAGE: ${{ inputs.image }}
+          CLOUD_RUN_SERVICE: ${{ inputs.cloud_run_service }}
+          PROJECT_ID: ${{ inputs.project_id }}
+          REGION: ${{ inputs.region }}
+          RUNTIME_SERVICE_ACCOUNT: ${{ inputs.runtime_service_account }}
+          SECRET_NAME: ${{ inputs.secret_name }}
+        run: |
+          gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
+          docker build -f infra/Dockerfile.service --build-arg "SERVICE=${SERVICE}" -t "${IMAGE}" .
+          docker push "${IMAGE}"
+          gcloud run deploy "${CLOUD_RUN_SERVICE}" \
+            --project "${PROJECT_ID}" --region "${REGION}" \
+            --image "${IMAGE}" --service-account "${RUNTIME_SERVICE_ACCOUNT}" \
+            --set-secrets "INTERNAL_API_KEY=${SECRET_NAME}:latest" \
+            --use-http2 --allow-unauthenticated --port 8080 --quiet

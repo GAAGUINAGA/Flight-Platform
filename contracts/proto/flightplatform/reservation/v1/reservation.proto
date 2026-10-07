@@ -1,0 +1,72 @@
+syntax = "proto3";
+package flightplatform.reservation.v1;
+import "flightplatform/common/v1/common.proto";
+
+service ReservationService {
+  rpc CreateReservation(CreateReservationRequest) returns (flightplatform.common.v1.BookingDetail);
+  rpc GetReservation(GetReservationRequest) returns (flightplatform.common.v1.BookingDetail);
+  rpc ListReservations(ListReservationsRequest) returns (ListReservationsResponse);
+  rpc GetReservationSnapshot(GetReservationRequest) returns (flightplatform.common.v1.BookingDetail);
+  rpc ListReservationsByFlightInstance(ListReservationsByFlightInstanceRequest) returns (ListReservationsResponse);
+  rpc GetBaggageOptions(GetReservationRequest) returns (BaggageOptionsResponse);
+  rpc AddBaggage(AddBaggageRequest) returns (BaggageAddedResponse);
+  rpc SearchDateChange(SearchDateChangeRequest) returns (DateChangeSearchResponse);
+  rpc ConfirmDateChange(ConfirmDateChangeRequest) returns (flightplatform.common.v1.BookingDetail);
+  rpc GetCancellationQuote(GetReservationRequest) returns (flightplatform.common.v1.CancellationQuote);
+  rpc CancelReservation(CancelReservationRequest) returns (flightplatform.common.v1.BookingDetail);
+  rpc ResumePending(ResumePendingRequest) returns (ResumePendingResponse);
+}
+
+message CreateReservationRequest {
+  string owner_id = 1;
+  string hold_id = 2;
+  repeated flightplatform.common.v1.Passenger passengers = 3;
+  flightplatform.common.v1.PaymentReference payment = 4;
+  string idempotency_key = 5;
+}
+message GetReservationRequest { string booking_id = 1; string owner_id = 2; }
+message ListReservationsRequest {
+  string owner_id = 1;
+  optional string pnr = 2;
+  flightplatform.common.v1.PageRequest page = 3;
+}
+message ListReservationsResponse {
+  repeated flightplatform.common.v1.BookingSummary items = 1;
+  optional string next_cursor = 2;
+}
+message ListReservationsByFlightInstanceRequest { string flight_instance_id = 1; }
+message BaggageOptionsResponse { repeated flightplatform.common.v1.BaggageOption options = 1; }
+message AddBaggageRequest {
+  string booking_id = 1;
+  string owner_id = 2;
+  string passenger_id = 3;
+  string itinerary_id = 4;
+  uint32 quantity = 5;
+  flightplatform.common.v1.PaymentReference payment = 6;
+  string idempotency_key = 7;
+}
+message BaggageAddedResponse { string passenger_id = 1; string itinerary_id = 2; uint32 total_baggage = 3; }
+message DateChangeSelection { string itinerary_id = 1; string new_departure_date = 2; }
+message SearchDateChangeRequest {
+  string booking_id = 1;
+  string owner_id = 2;
+  repeated DateChangeSelection changes = 3;
+}
+message DateChangeSearchResponse { repeated flightplatform.common.v1.DateChangeOffer offers = 1; }
+message ConfirmDateChangeRequest {
+  string booking_id = 1;
+  string owner_id = 2;
+  string change_offer_id = 3;
+  optional flightplatform.common.v1.PaymentReference payment = 4;
+  repeated flightplatform.common.v1.AssignedSeat assigned_seats = 5;
+  string idempotency_key = 6;
+}
+message CancelReservationRequest {
+  string booking_id = 1;
+  string owner_id = 2;
+  string quote_id = 3;
+  optional string reason = 4;
+  string idempotency_key = 5;
+}
+message ResumePendingRequest { uint32 limit = 1; }
+message ResumePendingResponse { uint32 resumed_count = 1; }

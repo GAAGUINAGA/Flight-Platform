@@ -1,0 +1,36 @@
+syntax = "proto3";
+package flightplatform.ticketing.v1;
+import "flightplatform/common/v1/common.proto";
+
+service TicketingService {
+  rpc IssueTickets(IssueTicketsRequest) returns (TicketListResponse);
+  rpc VoidTickets(BookingOwnerRequest) returns (TicketListResponse);
+  rpc RefundTickets(BookingOwnerRequest) returns (TicketListResponse);
+  rpc ReissueTickets(ReissueTicketsRequest) returns (TicketListResponse);
+  rpc ListTickets(BookingOwnerRequest) returns (TicketListResponse);
+  rpc GetTicket(GetTicketRequest) returns (flightplatform.common.v1.Ticket);
+  rpc GetCouponsForBooking(BookingOwnerRequest) returns (CouponsResponse);
+}
+
+message BookingOwnerRequest { string booking_id = 1; string owner_id = 2; }
+message IssueTicketsRequest {
+  string booking_id = 1;
+  string owner_id = 2;
+  repeated flightplatform.common.v1.Passenger passengers = 3;
+  repeated flightplatform.common.v1.ItinerarySnapshot itineraries = 4;
+}
+message ReissueTicketsRequest {
+  string booking_id = 1;
+  string owner_id = 2;
+  repeated flightplatform.common.v1.ItinerarySnapshot new_itineraries = 3;
+}
+message TicketListResponse { string booking_id = 1; repeated flightplatform.common.v1.Ticket tickets = 2; }
+message GetTicketRequest { string booking_id = 1; string ticket_id = 2; string owner_id = 3; }
+message Coupon {
+  string ticket_id = 1;
+  string passenger_id = 2;
+  string segment_id = 3;
+  string coupon_number = 4;
+  string status = 5;
+}
+message CouponsResponse { repeated Coupon coupons = 1; }
