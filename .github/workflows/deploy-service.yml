@@ -24,6 +24,18 @@ on:
       secret_name:
         required: true
         type: string
+      dockerfile:
+        required: false
+        type: string
+        default: infra/Dockerfile.service
+      extra_secrets:
+        required: false
+        type: string
+        default: ''
+      test_command:
+        required: false
+        type: string
+        default: npx jest ${{ inputs.service }} --runInBand
     secrets:
       workload_identity_provider:
         required: false
@@ -43,10 +55,10 @@ jobs:
       - run: npm ci
       - run: npm run lint
       - run: npm run build -w @flight-platform/shared
-      - run: npm test -- --runInBand
       - run: npm run build -w "$SERVICE"
         env:
           SERVICE: ${{ inputs.service }}
+      - run: ${{ inputs.test_command }}
       - run: npm audit --audit-level=high
       - uses: google-github-actions/auth@v2
         if: github.ref == 'refs/heads/main'
@@ -65,12 +77,14 @@ jobs:
           REGION: ${{ inputs.region }}
           RUNTIME_SERVICE_ACCOUNT: ${{ inputs.runtime_service_account }}
           SECRET_NAME: ${{ inputs.secret_name }}
+          DOCKERFILE: ${{ inputs.dockerfile }}
+          EXTRA_SECRETS: ${{ inputs.extra_secrets }}
         run: |
           gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
-          docker build -f infra/Dockerfile.service --build-arg "SERVICE=${SERVICE}" -t "${IMAGE}" .
+          docker build -f "${DOCKERFILE}" --build-arg "SERVICE=${SERVICE}" -t "${IMAGE}" .
           docker push "${IMAGE}"
           gcloud run deploy "${CLOUD_RUN_SERVICE}" \
             --project "${PROJECT_ID}" --region "${REGION}" \
             --image "${IMAGE}" --service-account "${RUNTIME_SERVICE_ACCOUNT}" \
-            --set-secrets "INTERNAL_API_KEY=${SECRET_NAME}:latest" \
+            --set-secrets "INTERNAL_API_KEY=${SECRET_NAME}:latest${EXTRA_SECRETS:+,${EXTRA_SECRETS}}" \
             --use-http2 --allow-unauthenticated --port 8080 --quiet
