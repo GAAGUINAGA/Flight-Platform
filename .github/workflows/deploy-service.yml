@@ -42,6 +42,7 @@ jobs:
         with: { node-version-file: '.nvmrc', cache: npm }
       - run: npm ci
       - run: npm run lint
+      - run: npm run build -w @flight-platform/shared
       - run: npm test -- --runInBand
       - run: npm run build -w "$SERVICE"
         env:
