@@ -16,32 +16,37 @@ import { IdempotencyInterceptor } from './idempotency.interceptor';
 import { InMemoryGatewayIdempotencyStore } from './idempotency';
 import { Idempotent, JwtAuthGuard, Public, RateLimitGuard, Roles, RolesGuard, Scopes, ScopesGuard } from './security';
 import { GatewayExceptionFilter, asProblem } from './web-errors';
-import { GatewayTestGrpcClient } from './test-grpc';
+import type { GatewayTestGrpcClient } from './test-grpc';
 
 class HealthController { health() { return { status: 'ok' }; } }
 Controller('flights/v1/health')(HealthController); Get()(HealthController.prototype, 'health', Object.getOwnPropertyDescriptor(HealthController.prototype, 'health')!); Public()(HealthController.prototype, 'health', Object.getOwnPropertyDescriptor(HealthController.prototype, 'health')!);
 
-class TestController {
-  constructor(private readonly grpc: GatewayTestGrpcClient) {}
-  async secured(req: Request, body: unknown) {
-    const pii = body as { documentNumber?: unknown; email?: unknown };
-    (req as Request & { log?: { info: (object: unknown, message: string) => void } }).log?.info({ documentNumber: pii?.documentNumber, email: pii?.email, authorization: req.header('authorization') }, 'gateway test request');
-    return this.grpc.execute(req.auth!, String(req.res?.getHeader('X-Correlation-Id') ?? ''));
+async function createTestComponents() {
+  const { GatewayTestGrpcClient } = await import('./test-grpc');
+  class TestController {
+    constructor(private readonly grpc: GatewayTestGrpcClient) {}
+    async secured(req: Request, body: unknown) {
+      const pii = body as { documentNumber?: unknown; email?: unknown };
+      (req as Request & { log?: { info: (object: unknown, message: string) => void } }).log?.info({ documentNumber: pii?.documentNumber, email: pii?.email, authorization: req.header('authorization') }, 'gateway test request');
+      return this.grpc.execute(req.auth!, String(req.res?.getHeader('X-Correlation-Id') ?? ''));
+    }
+    admin() { return { admin: true }; }
+    unexpected() { throw new Error('forced internal failure must never reach the client'); }
   }
-  admin() { return { admin: true }; }
-  unexpected() { throw new Error('forced internal failure must never reach the client'); }
+  Controller('flights/v1/__test')(TestController);
+  Inject(GatewayTestGrpcClient)(TestController, undefined, 0);
+  Post('secured')(TestController.prototype, 'secured', Object.getOwnPropertyDescriptor(TestController.prototype, 'secured')!); Req()(TestController.prototype, 'secured', 0); Body()(TestController.prototype, 'secured', 1); Scopes('flights:read')(TestController.prototype, 'secured', Object.getOwnPropertyDescriptor(TestController.prototype, 'secured')!); Idempotent()(TestController.prototype, 'secured', Object.getOwnPropertyDescriptor(TestController.prototype, 'secured')!);
+  Post('admin')(TestController.prototype, 'admin', Object.getOwnPropertyDescriptor(TestController.prototype, 'admin')!); Roles('admin')(TestController.prototype, 'admin', Object.getOwnPropertyDescriptor(TestController.prototype, 'admin')!);
+  Post('unexpected')(TestController.prototype, 'unexpected', Object.getOwnPropertyDescriptor(TestController.prototype, 'unexpected')!); Scopes('flights:read')(TestController.prototype, 'unexpected', Object.getOwnPropertyDescriptor(TestController.prototype, 'unexpected')!);
+  return { GatewayTestGrpcClient, TestController };
 }
-Controller('flights/v1/__test')(TestController);
-Inject(GatewayTestGrpcClient)(TestController, undefined, 0);
-Post('secured')(TestController.prototype, 'secured', Object.getOwnPropertyDescriptor(TestController.prototype, 'secured')!); Req()(TestController.prototype, 'secured', 0); Body()(TestController.prototype, 'secured', 1); Scopes('flights:read')(TestController.prototype, 'secured', Object.getOwnPropertyDescriptor(TestController.prototype, 'secured')!); Idempotent()(TestController.prototype, 'secured', Object.getOwnPropertyDescriptor(TestController.prototype, 'secured')!);
-Post('admin')(TestController.prototype, 'admin', Object.getOwnPropertyDescriptor(TestController.prototype, 'admin')!); Roles('admin')(TestController.prototype, 'admin', Object.getOwnPropertyDescriptor(TestController.prototype, 'admin')!);
-Post('unexpected')(TestController.prototype, 'unexpected', Object.getOwnPropertyDescriptor(TestController.prototype, 'unexpected')!); Scopes('flights:read')(TestController.prototype, 'unexpected', Object.getOwnPropertyDescriptor(TestController.prototype, 'unexpected')!);
 
 export async function createGatewayApp(config: GatewayConfig) {
+  const testComponents = process.env.NODE_ENV === 'test' ? await createTestComponents() : undefined;
   const providers = [
     { provide: PrismaClient, useFactory: () => new PrismaClient() },
     { provide: PrismaIdempotencyStore, useFactory: (client: PrismaClient) => new PrismaIdempotencyStore(client, config.idempotencyTtlHours), inject: [PrismaClient] },
-    { provide: GatewayTestGrpcClient, useFactory: () => new GatewayTestGrpcClient(config) },
+    ...(testComponents ? [{ provide: testComponents.GatewayTestGrpcClient, useFactory: () => new testComponents.GatewayTestGrpcClient(config) }] : []),
     { provide: JwtAuthGuard, useFactory: (reflector: Reflector) => new JwtAuthGuard(reflector, config), inject: [Reflector] },
     { provide: RolesGuard, useFactory: (reflector: Reflector) => new RolesGuard(reflector), inject: [Reflector] },
     { provide: ScopesGuard, useFactory: (reflector: Reflector) => new ScopesGuard(reflector), inject: [Reflector] },
@@ -51,7 +56,7 @@ export async function createGatewayApp(config: GatewayConfig) {
     GatewayExceptionFilter, { provide: APP_FILTER, useExisting: GatewayExceptionFilter }
   ];
   class GatewayModule {}
-  Module({ imports: [LoggerModule.forRoot({ pinoHttp: loggerOptions })], controllers: process.env.NODE_ENV === 'test' ? [HealthController, TestController] : [HealthController], providers })(GatewayModule);
+  Module({ imports: [LoggerModule.forRoot({ pinoHttp: loggerOptions })], controllers: testComponents ? [HealthController, testComponents.TestController] : [HealthController], providers })(GatewayModule);
   const app = await NestFactory.create(GatewayModule);
   const express = app.getHttpAdapter().getInstance(); express.set('trust proxy', 1);
   express.use(helmet({ hsts: { maxAge: 15552000, includeSubDomains: true } }));

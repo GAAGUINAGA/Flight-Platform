@@ -64,3 +64,4 @@ npm test -w @flight-platform/<servicio> -- --runInBand
 - No modificar bitácoras ni informes de otras fases o sesiones: son historial. Las correcciones se registran en una entrada nueva de la bitácora propia.
 - Nunca leer .env, .env.supabase, infra/.env ni infra/dev-keys por ningún medio (herramienta de lectura, terminal o scripts). Si una prueba necesita una credencial que no está disponible, detenerse y pedírsela al humano.
 - En el clon limpio solo se ejecutan los pasos del workflow de CI (npm ci, prisma generate, lint, build, audit, pruebas unitarias). Las pruebas de integración contra Postgres se ejecutan en el checkout principal, que ya tiene sus .env.
+- Todo Dockerfile se verifica construyéndolo en un clon limpio; un build local con dist o .env presentes no cuenta como verificación.
