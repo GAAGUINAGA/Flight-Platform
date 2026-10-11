@@ -5,6 +5,7 @@ coverage/
 .env.*
 !.env.example
 !.env.docker.example
+!.env.supabase.example
 infra/dev-keys/
 *.log
 PROMPT_AUD.md
