@@ -1,0 +1,21 @@
+name: Gateway CI
+on:
+  pull_request:
+    paths: [platform/api-gateway/**, packages/shared/**, contracts/**, package.json, package-lock.json, .github/workflows/gateway-ci.yml]
+  push:
+    branches: [main]
+    paths: [platform/api-gateway/**, packages/shared/**, contracts/**, package.json, package-lock.json, .github/workflows/gateway-ci.yml]
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version-file: .nvmrc, cache: npm }
+      - run: npm ci
+      - run: npm run prisma:generate -w @flight-platform/api-gateway
+      - run: npm run lint
+      - run: npm run build -w @flight-platform/shared
+      - run: npm run build -w @flight-platform/api-gateway
+      - run: npm audit --audit-level=high
+      - run: npx jest platform/api-gateway/src/gateway.spec.ts --runInBand

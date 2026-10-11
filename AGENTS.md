@@ -31,6 +31,14 @@ npm run gen:contracts
 docker compose -f infra/docker-compose.yml up -d
 ```
 
+Llaves y token de prueba para el Gateway local (ver ADR-4-01; `infra/dev-keys/`
+está ignorado por git y la privada nunca se imprime):
+
+```powershell
+npm run dev:token -- --init-keys
+npm run dev:token -- --sub local-user --app-role customer --scope "flights:read"
+```
+
 Para desarrollo local usa Node 20 (ver `.nvmrc`). Los contratos se generan en
 `packages/contracts`; los servicios gRPC se prueban contra Postgres local.
 
@@ -53,3 +61,6 @@ npm test -w @flight-platform/<servicio> -- --runInBand
 - No modificar infra/ ni ejecutar docker compose: la base local la administra el humano.
 - Despliegue solo desde main, después de la auditoría de código (docs/audit/context/flujo-cierre.md).
 - Antes de "listo para auditoría", construir la imagen Docker del servicio y ejecutarla con PORT=8080: el health gRPC debe responder SERVING desde el contenedor. Un build exitoso no basta.
+- No modificar bitácoras ni informes de otras fases o sesiones: son historial. Las correcciones se registran en una entrada nueva de la bitácora propia.
+- Nunca leer .env, .env.supabase, infra/.env ni infra/dev-keys por ningún medio (herramienta de lectura, terminal o scripts). Si una prueba necesita una credencial que no está disponible, detenerse y pedírsela al humano.
+- En el clon limpio solo se ejecutan los pasos del workflow de CI (npm ci, prisma generate, lint, build, audit, pruebas unitarias). Las pruebas de integración contra Postgres se ejecutan en el checkout principal, que ya tiene sus .env.

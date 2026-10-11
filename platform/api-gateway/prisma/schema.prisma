@@ -1,0 +1,29 @@
+generator client {
+  provider = "prisma-client-js"
+  previewFeatures = ["multiSchema"]
+  output = "../generated/prisma-client"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+  schemas   = ["gateway"]
+}
+
+model IdempotencyKey {
+  id           String   @id @default(uuid())
+  ownerId      String   @map("owner_id")
+  key          String
+  requestHash  String   @map("request_hash")
+  status       String
+  responseCode Int?     @map("response_code")
+  responseBody Json?    @map("response_body")
+  createdAt    DateTime @default(now()) @map("created_at")
+  expiresAt    DateTime @map("expires_at")
+
+  @@unique([ownerId, key])
+  @@index([expiresAt])
+  @@map("idempotency_keys")
+  @@schema("gateway")
+}
