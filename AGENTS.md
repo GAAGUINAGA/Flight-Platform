@@ -79,3 +79,4 @@ npx jest microservices/pricing-service/test/integration/inventory-real.spec.ts -
 - En el clon limpio solo se ejecutan los pasos del workflow de CI (npm ci, prisma generate, lint, build, audit, pruebas unitarias). Las pruebas de integración contra Postgres se ejecutan en el checkout principal, que ya tiene sus .env.
 - Todo Dockerfile se verifica construyéndolo en un clon limpio; un build local con dist o .env presentes no cuenta como verificación.
 - Las pruebas que cargan el .env de otro servicio (p. ej. PRC-12) las ejecuta el humano o el auditor. El developer registra su resultado como verificación del humano en lugar de bloquearse.
+- Comandos contra Supabase (los ejecuta solo el humano): `npx --yes @dotenvx/dotenvx run -f .env.supabase -- <comando>`, desde la carpeta del servicio. Después de cada `migrate deploy` o `seed`, ejecutar `migrate status` y confirmar que el Datasource apunta a pooler.supabase.com.

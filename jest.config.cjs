@@ -6,7 +6,8 @@ module.exports = {
   // after the Gateway build has copied Prisma's generated package.
   modulePathIgnorePatterns: [
     '<rootDir>/platform/api-gateway/(dist|generated)/',
-    '<rootDir>/microservices/pricing-service/dist/'
+    '<rootDir>/microservices/[^/]+/dist/',
+    '<rootDir>/dist/'
   ],
   transform: { '^.+\\.ts$': ['ts-jest', { tsconfig: 'tsconfig.base.json' }] },
   moduleNameMapper: { '^(\\.{1,2}/.*)\\.js$': '$1' }

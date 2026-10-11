@@ -1,0 +1,3 @@
+import { z } from 'zod';
+export const getFlightStatusSchema=z.object({flightNumber:z.string().trim().regex(/^[A-Z0-9]{2}[0-9]{1,4}$/),date:z.string().date()}).strict();
+export const updateSchema=z.object({flightInstanceId:z.string().uuid(),status:z.enum(['SCHEDULED','BOARDING','DELAYED','DEPARTED','ARRIVED','CANCELLED','DIVERTED']),estimatedDepartureAt:z.string().datetime().optional(),actualDepartureAt:z.string().datetime().optional(),estimatedArrivalAt:z.string().datetime().optional(),actualArrivalAt:z.string().datetime().optional(),departureTerminal:z.string().trim().max(16).optional(),arrivalTerminal:z.string().trim().max(16).optional()}).strict();

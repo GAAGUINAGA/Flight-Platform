@@ -1,0 +1,46 @@
+generator client {
+  provider = "prisma-client-js"
+  output = "../src/infrastructure/persistence/prisma-client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model OperationalFlight {
+  id String @id @default(uuid()) @db.Uuid
+  flightInstanceId String @unique @map("flight_instance_id") @db.Uuid
+  flightNumber String @map("flight_number") @db.VarChar(8)
+  date String @db.Char(10)
+  marketingCarrier String @map("marketing_carrier") @db.VarChar(8)
+  operatingCarrier String @map("operating_carrier") @db.VarChar(8)
+  departureIata String @map("departure_iata") @db.Char(3)
+  arrivalIata String @map("arrival_iata") @db.Char(3)
+  scheduledDepartureAt DateTime @map("scheduled_departure_at") @db.Timestamptz(3)
+  scheduledArrivalAt DateTime @map("scheduled_arrival_at") @db.Timestamptz(3)
+  aircraft String? @db.VarChar(32)
+  status String @db.VarChar(16)
+  estimatedDepartureAt DateTime? @map("estimated_departure_at") @db.Timestamptz(3)
+  actualDepartureAt DateTime? @map("actual_departure_at") @db.Timestamptz(3)
+  estimatedArrivalAt DateTime? @map("estimated_arrival_at") @db.Timestamptz(3)
+  actualArrivalAt DateTime? @map("actual_arrival_at") @db.Timestamptz(3)
+  departureTerminal String? @map("departure_terminal") @db.VarChar(16)
+  arrivalTerminal String? @map("arrival_terminal") @db.VarChar(16)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  updates OperationalUpdate[]
+  @@unique([flightNumber, date])
+  @@map("operational_flights")
+}
+model OperationalUpdate {
+  id String @id @default(uuid()) @db.Uuid
+  operationalFlightId String @map("operational_flight_id") @db.Uuid
+  status String @db.VarChar(16)
+  data Json
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  flight OperationalFlight @relation(fields:[operationalFlightId], references:[id], onDelete: Cascade)
+  @@index([operationalFlightId, createdAt])
+  @@map("operational_updates")
+}
