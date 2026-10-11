@@ -32,6 +32,10 @@ on:
         required: false
         type: string
         default: ''
+      extra_env_vars:
+        required: false
+        type: string
+        default: ''
       test_command:
         required: true
         type: string
@@ -81,6 +85,7 @@ jobs:
           SECRET_NAME: ${{ inputs.secret_name }}
           DOCKERFILE: ${{ inputs.dockerfile }}
           EXTRA_SECRETS: ${{ inputs.extra_secrets }}
+          EXTRA_ENV_VARS: ${{ inputs.extra_env_vars }}
         run: |
           gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
           docker build -f "${DOCKERFILE}" --build-arg "SERVICE=${SERVICE}" -t "${IMAGE}" .
@@ -89,4 +94,5 @@ jobs:
             --project "${PROJECT_ID}" --region "${REGION}" \
             --image "${IMAGE}" --service-account "${RUNTIME_SERVICE_ACCOUNT}" \
             --set-secrets "INTERNAL_API_KEY=${SECRET_NAME}:latest${EXTRA_SECRETS:+,${EXTRA_SECRETS}}" \
+            ${EXTRA_ENV_VARS:+--set-env-vars "${EXTRA_ENV_VARS}"} \
             --use-http2 --allow-unauthenticated --port 8080 --quiet

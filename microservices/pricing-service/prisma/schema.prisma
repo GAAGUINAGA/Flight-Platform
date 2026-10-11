@@ -1,0 +1,62 @@
+generator client {
+  provider = "prisma-client-js"
+  output = "../src/infrastructure/persistence/prisma-client"
+  previewFeatures = ["multiSchema"]
+}
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+  schemas = ["pricing"]
+}
+model Fare {
+  id String @id @default(uuid()) @db.Uuid
+  flightInstanceId String @map("flight_instance_id") @db.Uuid
+  cabinClass String @map("cabin_class") @db.VarChar(24)
+  brand String @db.VarChar(32)
+  baseFareMinor Int @map("base_fare_minor")
+  taxesMinor Int @map("taxes_minor")
+  rules Json
+  baggage Json
+  extraBagMinor Int @map("extra_bag_minor")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  @@unique([flightInstanceId, cabinClass, brand])
+  @@schema("pricing")
+  @@map("fares")
+}
+model Offer {
+  id String @id @default(uuid()) @db.Uuid
+  snapshot Json
+  passengerMix Json @map("passenger_mix")
+  expiresAt DateTime @map("expires_at") @db.Timestamptz(3)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  @@index([expiresAt])
+  @@schema("pricing")
+  @@map("offers")
+}
+model PriceLock {
+  holdId String @id @map("hold_id") @db.Uuid
+  ownerId String @map("owner_id") @db.VarChar(128)
+  offerId String @map("offer_id") @db.Uuid
+  lockedPriceMinor Int @map("locked_price_minor")
+  passengerPrices Json @map("passenger_prices")
+  extraBagByItinerary Json @map("extra_bag_by_itinerary")
+  fareSnapshot Json @map("fare_snapshot")
+  expiresAt DateTime @map("expires_at") @db.Timestamptz(3)
+  status String @default("HELD") @db.VarChar(16)
+  @@index([ownerId, expiresAt])
+  @@schema("pricing")
+  @@map("price_locks")
+}
+model ChangeOffer {
+  id String @id @default(uuid()) @db.Uuid
+  bookingId String @map("booking_id") @db.VarChar(128)
+  ownerId String @map("owner_id") @db.VarChar(128)
+  snapshot Json
+  expiresAt DateTime @map("expires_at") @db.Timestamptz(3)
+  usedAt DateTime? @map("used_at") @db.Timestamptz(3)
+  @@index([ownerId, expiresAt])
+  @@schema("pricing")
+  @@map("change_offers")
+}

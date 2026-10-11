@@ -1,6 +1,7 @@
 import { CallOptions, credentials, Metadata } from '@grpc/grpc-js';
 import { ClientGrpc, ClientProxyFactory, Transport } from '@nestjs/microservices';
 import process from 'node:process';
+import { dirname } from 'node:path';
 
 export interface GrpcClientOptions { url: string; grpcTls?: boolean; internalApiKey: string; correlationId: string; ownerId?: string; role?: string }
 
@@ -32,6 +33,7 @@ export function createGrpcClient(options: GrpcServiceOptions): ClientGrpc {
       url: options.url,
       package: options.packageName,
       protoPath: options.protoPath,
+      loader: { includeDirs: [dirname(dirname(dirname(dirname(options.protoPath))))], enums: String, longs: Number, defaults: true, arrays: true, objects: true },
       credentials: grpcChannelCredentials(options.grpcTls ?? process.env.GRPC_TLS === 'true')
     }
   }) as ClientGrpc;

@@ -51,6 +51,18 @@ npm run build -w @flight-platform/shared
 npm test -w @flight-platform/<servicio> -- --runInBand
 ```
 
+Para PRC-12 (Pricing contra Inventory local), antes de ejecutar la prueba en el
+checkout principal genera los dos clientes en este orden. El setup de prueba
+carga `microservices/inventory-service/.env` con dotenv, sin override ni salida
+de valores; en un clon limpio sin ese archivo falla rápido. No dejes servidores
+externos en ejecución:
+
+```powershell
+cd microservices/inventory-service; npx prisma generate; cd ../..
+cd microservices/pricing-service; npx prisma generate; cd ../..
+npx jest microservices/pricing-service/test/integration/inventory-real.spec.ts --runInBand --verbose
+```
+
 ## Reglas aprendidas (obligatorias)
 - Un solo developer activo a la vez. Trabaja en una rama `feat/<FASE>-<servicio>` en el checkout principal; sin worktrees.
 - Prisma: `prisma` y `@prisma/client` fijados en `6.12.0` exacto (versiones posteriores traen deepmerge-ts con vulnerabilidad alta).
@@ -59,9 +71,11 @@ npm test -w @flight-platform/<servicio> -- --runInBand
 - Las pruebas deben fallar rápido si falta DATABASE_URL y cerrar servidores y conexiones en afterAll aunque beforeAll falle.
 - Antes de "listo para auditoría", ejecutar en clon limpio (git clone + npm ci) los mismos pasos del workflow.
 - No modificar infra/ ni ejecutar docker compose: la base local la administra el humano.
+- Las migraciones solo crean o alteran objetos dentro del esquema del servicio. Nunca `CREATE SCHEMA`, `CREATE EXTENSION` ni cambios de permisos: el esquema y los roles los administra el humano (`infra/db/roles.sql`).
 - Despliegue solo desde main, después de la auditoría de código (docs/audit/context/flujo-cierre.md).
 - Antes de "listo para auditoría", construir la imagen Docker del servicio y ejecutarla con PORT=8080: el health gRPC debe responder SERVING desde el contenedor. Un build exitoso no basta.
 - No modificar bitácoras ni informes de otras fases o sesiones: son historial. Las correcciones se registran en una entrada nueva de la bitácora propia.
 - Nunca leer .env, .env.supabase, infra/.env ni infra/dev-keys por ningún medio (herramienta de lectura, terminal o scripts). Si una prueba necesita una credencial que no está disponible, detenerse y pedírsela al humano.
 - En el clon limpio solo se ejecutan los pasos del workflow de CI (npm ci, prisma generate, lint, build, audit, pruebas unitarias). Las pruebas de integración contra Postgres se ejecutan en el checkout principal, que ya tiene sus .env.
 - Todo Dockerfile se verifica construyéndolo en un clon limpio; un build local con dist o .env presentes no cuenta como verificación.
+- Las pruebas que cargan el .env de otro servicio (p. ej. PRC-12) las ejecuta el humano o el auditor. El developer registra su resultado como verificación del humano en lugar de bloquearse.

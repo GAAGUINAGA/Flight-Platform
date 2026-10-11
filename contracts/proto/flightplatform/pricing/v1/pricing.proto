@@ -70,8 +70,19 @@ message PriceLockResponse {
   string expires_at = 5;
 }
 message DateChangeSelection { string itinerary_id = 1; string new_departure_date = 2; }
-message QuoteChangeRequest { string booking_id = 1; string owner_id = 2; repeated DateChangeSelection changes = 3; }
+message QuoteChangeRequest {
+  string booking_id = 1;
+  string owner_id = 2;
+  repeated DateChangeSelection changes = 3;
+  repeated flightplatform.common.v1.ItinerarySnapshot current_itineraries = 4;
+  flightplatform.common.v1.PassengerMix passengers = 5;
+}
 message QuoteChangeResponse { repeated flightplatform.common.v1.DateChangeOffer offers = 1; }
 message GetChangeOfferRequest { string change_offer_id = 1; string owner_id = 2; }
-message QuoteCancellationRequest { string booking_id = 1; string owner_id = 2; }
+message QuoteCancellationRequest {
+  string booking_id = 1;
+  string owner_id = 2;
+  flightplatform.common.v1.MoneyAmount paid_price = 3;
+  flightplatform.common.v1.FareRules fare_rules = 4;
+}
 message GetBaggagePriceRequest { string itinerary_id = 1; string fare_brand = 2; }

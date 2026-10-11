@@ -15,6 +15,7 @@ import {
   Empty,
   FareRules,
   FlightOffer,
+  ItinerarySnapshot,
   MoneyAmount,
   PageRequest,
   PageResponse,
@@ -124,6 +125,8 @@ export interface QuoteChangeRequest {
   bookingId: string;
   ownerId: string;
   changes: DateChangeSelection[];
+  currentItineraries: ItinerarySnapshot[];
+  passengers: PassengerMix | undefined;
 }
 
 export interface QuoteChangeResponse {
@@ -138,6 +141,8 @@ export interface GetChangeOfferRequest {
 export interface QuoteCancellationRequest {
   bookingId: string;
   ownerId: string;
+  paidPrice: MoneyAmount | undefined;
+  fareRules: FareRules | undefined;
 }
 
 export interface GetBaggagePriceRequest {

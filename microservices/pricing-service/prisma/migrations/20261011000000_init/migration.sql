@@ -1,0 +1,7 @@
+CREATE TABLE pricing.fares (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), flight_instance_id uuid NOT NULL, cabin_class varchar(24) NOT NULL, brand varchar(32) NOT NULL, base_fare_minor integer NOT NULL, taxes_minor integer NOT NULL, rules jsonb NOT NULL, baggage jsonb NOT NULL, extra_bag_minor integer NOT NULL, created_at timestamptz(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at timestamptz(3) NOT NULL, UNIQUE(flight_instance_id, cabin_class, brand));
+CREATE TABLE pricing.offers (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), snapshot jsonb NOT NULL, passenger_mix jsonb NOT NULL, expires_at timestamptz(3) NOT NULL, created_at timestamptz(3) NOT NULL DEFAULT CURRENT_TIMESTAMP);
+CREATE INDEX offers_expires_at_idx ON pricing.offers(expires_at);
+CREATE TABLE pricing.price_locks (hold_id uuid PRIMARY KEY, owner_id varchar(128) NOT NULL, offer_id uuid NOT NULL, locked_price_minor integer NOT NULL, passenger_prices jsonb NOT NULL, extra_bag_by_itinerary jsonb NOT NULL, fare_snapshot jsonb NOT NULL, expires_at timestamptz(3) NOT NULL, status varchar(16) NOT NULL DEFAULT 'HELD');
+CREATE INDEX price_locks_owner_id_expires_at_idx ON pricing.price_locks(owner_id, expires_at);
+CREATE TABLE pricing.change_offers (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), booking_id varchar(128) NOT NULL, owner_id varchar(128) NOT NULL, snapshot jsonb NOT NULL, expires_at timestamptz(3) NOT NULL, used_at timestamptz(3));
+CREATE INDEX change_offers_owner_id_expires_at_idx ON pricing.change_offers(owner_id, expires_at);
