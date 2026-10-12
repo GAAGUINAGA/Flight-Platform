@@ -1,0 +1,28 @@
+name: Deploy ancillaries service
+on:
+  pull_request:
+    paths: ['.github/workflows/deploy-ancillaries.yml', '.github/workflows/deploy-service.yml', 'microservices/ancillaries-service/**', 'packages/shared/**', 'contracts/proto/flightplatform/common/**', 'contracts/proto/flightplatform/ancillaries/**', 'contracts/proto/flightplatform/inventory/**', 'contracts/proto/flightplatform/pricing/**', 'package-lock.json', 'tsconfig.base.json']
+  push:
+    branches: [main]
+    paths: ['.github/workflows/deploy-ancillaries.yml', '.github/workflows/deploy-service.yml', 'microservices/ancillaries-service/**', 'packages/shared/**', 'contracts/proto/flightplatform/common/**', 'contracts/proto/flightplatform/ancillaries/**', 'contracts/proto/flightplatform/inventory/**', 'contracts/proto/flightplatform/pricing/**', 'package-lock.json', 'tsconfig.base.json']
+jobs:
+  deploy:
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/deploy-service.yml
+    with:
+      service: microservices/ancillaries-service
+      dockerfile: microservices/ancillaries-service/Dockerfile
+      image: us-east1-docker.pkg.dev/project-a1d2e3ba-f6ff-469e-854/flight-platform/ancillaries-service:${{ github.sha }}
+      cloud_run_service: ancillaries-service
+      project_id: project-a1d2e3ba-f6ff-469e-854
+      region: us-east1
+      runtime_service_account: ancillaries-service-runtime@project-a1d2e3ba-f6ff-469e-854.iam.gserviceaccount.com
+      secret_name: internal-api-key
+      extra_secrets: DATABASE_URL=ancillaries-database-url:latest
+      extra_env_vars: INVENTORY_GRPC_URL=inventory-service-gtl24uc77a-ue.a.run.app:443,PRICING_GRPC_URL=pricing-service-gtl24uc77a-ue.a.run.app:443,GRPC_TLS=true
+      test_command: npx jest microservices/ancillaries-service/test --runInBand --testPathIgnorePatterns='(integration|security)'
+    secrets:
+      workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+      service_account: ${{ secrets.GCP_DEPLOY_SA }}

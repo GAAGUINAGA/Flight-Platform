@@ -15,7 +15,7 @@ service AncillariesService {
   rpc ReleaseAll(BookingOwnerRequest) returns (flightplatform.common.v1.Empty);
 }
 
-message GetSeatMapForOfferRequest { string offer_id = 1; }
+message GetSeatMapForOfferRequest { string offer_id = 1; optional string segment_id = 2; }
 message BookingOwnerRequest { string booking_id = 1; string owner_id = 2; }
 message SeatAssignment {
   string booking_id = 1;
@@ -23,6 +23,8 @@ message SeatAssignment {
   string segment_id = 3;
   string seat_number = 4;
   string status = 5;
+  string passenger_type = 6;
+  string cabin_class = 7;
 }
 message ReserveSeatsRequest {
   string booking_id = 1;
@@ -36,6 +38,8 @@ message AssignSeatAtCheckInRequest {
   string passenger_id = 3;
   string segment_id = 4;
   optional string preferred_seat = 5;
+  string passenger_type = 6;
+  string cabin_class = 7;
 }
 message ReserveBaggageRequest {
   string booking_id = 1;

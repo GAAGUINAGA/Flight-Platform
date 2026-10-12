@@ -1,0 +1,66 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/infrastructure/persistence/prisma-client"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model SeatLayout {
+  id              String   @id @default(uuid()) @db.Uuid
+  aircraft        String   @db.VarChar(32)
+  cabinClass      String   @map("cabin_class") @db.VarChar(32)
+  seatNumber      String   @map("seat_number") @db.VarChar(4)
+  rowNumber       Int      @map("row_number")
+  characteristics String[] @default([])
+  isEmergencyExit Boolean  @default(false) @map("is_emergency_exit")
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  @@unique([aircraft, seatNumber])
+  @@index([aircraft, cabinClass, rowNumber])
+  @@map("seat_layouts")
+}
+
+model BookingOwner {
+  bookingId String   @id @map("booking_id") @db.Uuid
+  ownerId   String   @map("owner_id") @db.VarChar(128)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  @@map("booking_owners")
+}
+
+model SeatAssignment {
+  id               String   @id @default(uuid()) @db.Uuid
+  bookingId        String   @map("booking_id") @db.Uuid
+  ownerId          String   @map("owner_id") @db.VarChar(128)
+  passengerId      String   @map("passenger_id") @db.Uuid
+  segmentId        String   @map("segment_id") @db.Uuid
+  flightInstanceId String   @map("flight_instance_id") @db.Uuid
+  seatNumber       String   @map("seat_number") @db.VarChar(4)
+  cabinClass       String   @map("cabin_class") @db.VarChar(32)
+  passengerType    String   @map("passenger_type") @db.VarChar(16)
+  status           String   @db.VarChar(16)
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt        DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  @@unique([bookingId, passengerId, segmentId])
+  @@index([bookingId, ownerId])
+  @@index([flightInstanceId, seatNumber])
+  @@map("seat_assignments")
+}
+
+model BaggageItem {
+  id          String   @id @default(uuid()) @db.Uuid
+  bookingId   String   @map("booking_id") @db.Uuid
+  ownerId     String   @map("owner_id") @db.VarChar(128)
+  passengerId String?  @map("passenger_id") @db.Uuid
+  itineraryId String   @map("itinerary_id") @db.Uuid
+  quantity    Int
+  status      String   @db.VarChar(16)
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  @@index([bookingId, ownerId])
+  @@index([bookingId, passengerId, itineraryId])
+  @@map("baggage_items")
+}

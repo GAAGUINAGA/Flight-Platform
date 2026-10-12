@@ -13,6 +13,7 @@ export const protobufPackage = "flightplatform.ancillaries.v1";
 
 export interface GetSeatMapForOfferRequest {
   offerId: string;
+  segmentId?: string | undefined;
 }
 
 export interface BookingOwnerRequest {
@@ -26,6 +27,8 @@ export interface SeatAssignment {
   segmentId: string;
   seatNumber: string;
   status: string;
+  passengerType: string;
+  cabinClass: string;
 }
 
 export interface ReserveSeatsRequest {
@@ -44,6 +47,8 @@ export interface AssignSeatAtCheckInRequest {
   passengerId: string;
   segmentId: string;
   preferredSeat?: string | undefined;
+  passengerType: string;
+  cabinClass: string;
 }
 
 export interface ReserveBaggageRequest {

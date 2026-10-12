@@ -1,0 +1,29 @@
+import { Catch, CallHandler, ExecutionContext, Injectable, Logger, NestInterceptor, RpcExceptionFilter } from '@nestjs/common';
+import { requestContextFromMetadata, safeGrpcError } from '@flight-platform/shared';
+import { Logger as PinoLogger } from 'pino';
+import { Observable, tap, throwError } from 'rxjs';
+
+@Catch()
+export class AncillariesExceptionFilter implements RpcExceptionFilter<unknown> {
+  private readonly logger = new Logger('AncillariesService');
+  catch(error: unknown): Observable<never> {
+    const safe = safeGrpcError(error);
+    if (safe.details === 'INTERNAL_ERROR') this.logger.error(`internal error: ${error instanceof Error ? error.name : typeof error}`);
+    return throwError(() => safe);
+  }
+}
+
+@Injectable()
+export class LoggingInterceptor implements NestInterceptor {
+  constructor(private readonly log: PinoLogger) {}
+  intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
+    const metadata = context.switchToRpc().getContext() as { get(key: string): unknown[] };
+    const request = requestContextFromMetadata(metadata);
+    const rpc = context.getHandler().name;
+    const started = Date.now();
+    return next.handle().pipe(tap({
+      next: () => this.log.info({ rpc, correlationId: request?.correlationId, ms: Date.now() - started }, 'rpc ok'),
+      error: (error: unknown) => this.log.warn({ rpc, correlationId: request?.correlationId, ms: Date.now() - started, error: safeGrpcError(error).details }, 'rpc error')
+    }));
+  }
+}
