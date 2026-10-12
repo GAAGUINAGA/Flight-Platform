@@ -1,0 +1,28 @@
+name: Deploy reservation service
+on:
+  pull_request:
+    paths: ['.github/workflows/deploy-reservation.yml', '.github/workflows/deploy-service.yml', 'microservices/reservation-service/**', 'packages/shared/**', 'contracts/proto/flightplatform/**', 'package-lock.json', 'tsconfig.base.json']
+  push:
+    branches: [main]
+    paths: ['.github/workflows/deploy-reservation.yml', '.github/workflows/deploy-service.yml', 'microservices/reservation-service/**', 'packages/shared/**', 'contracts/proto/flightplatform/**', 'package-lock.json', 'tsconfig.base.json']
+jobs:
+  deploy:
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/deploy-service.yml
+    with:
+      service: microservices/reservation-service
+      dockerfile: microservices/reservation-service/Dockerfile
+      image: us-east1-docker.pkg.dev/project-a1d2e3ba-f6ff-469e-854/flight-platform/reservation-service:${{ github.sha }}
+      cloud_run_service: reservation-service
+      project_id: project-a1d2e3ba-f6ff-469e-854
+      region: us-east1
+      runtime_service_account: reservation-service-runtime@project-a1d2e3ba-f6ff-469e-854.iam.gserviceaccount.com
+      secret_name: internal-api-key
+      extra_secrets: DATABASE_URL=reservation-database-url:latest
+      extra_env_vars: INVENTORY_GRPC_URL=inventory-service-gtl24uc77a-ue.a.run.app:443,PRICING_GRPC_URL=pricing-service-gtl24uc77a-ue.a.run.app:443,ANCILLARIES_GRPC_URL=ancillaries-service-gtl24uc77a-ue.a.run.app:443,TICKETING_GRPC_URL=ticketing-service-gtl24uc77a-ue.a.run.app:443,WEBHOOKS_GRPC_URL=webhooks-service-gtl24uc77a-ue.a.run.app:443,GRPC_TLS=true
+      test_command: npx jest microservices/reservation-service/test --runInBand --testPathIgnorePatterns=integration
+    secrets:
+      workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+      service_account: ${{ secrets.GCP_DEPLOY_SA }}

@@ -1,0 +1,10 @@
+import { expect, it } from '@jest/globals';
+import { CreateReservation } from '../src/application/create-reservation';
+import { InMemoryReservationStore } from '../src/application/reservation-store';
+import { FakeAncillariesPort, FakeEventPublisher, FakeInventoryPort, FakePaymentVerifier, FakePricingPort, FakeTicketingPort } from '../src/infrastructure/clients/fakes';
+const make = () => { const pricing = new FakePricingPort(); pricing.holds.set('hold', { holdId: 'hold', ownerId: 'owner', status: 'HELD', expiresAt: '2099-01-01T00:00:00.000Z', lockedPrice: { currency: 'USD', total: '1.00' }, passengersBreakdown: { adults: 1, youths: 0, children: 0, infants: 0 }, itineraries: [] }); const store = new InMemoryReservationStore(); return { store, service: new CreateReservation(store, pricing, new FakePaymentVerifier(), new FakeAncillariesPort(), new FakeInventoryPort(), new FakeTicketingPort(), new FakeEventPublisher()) }; };
+const input = (key: string, reference = 'pay_ok_concurrency') => ({ ownerId: 'owner', holdId: 'hold', passengers: [{ passengerId: 'p', passengerType: 'ADULT', birthDate: '1990-01-01' }], payment: { paymentReference: reference }, idempotencyKey: key });
+describe('RSV-11: concurrencia', () => {
+  it('RSV-11 / C: misma idempotency_key cinco veces crea una reserva', async () => { const { service, store } = make(); const result = await Promise.all(Array.from({ length: 5 }, () => service.execute(input('one')))); expect(new Set(result.map((value) => value.id)).size).toBe(1); expect(store.values.size).toBe(1); });
+  it('RSV-11 / C: paymentReference en dos reservas acredita una', async () => { const { service, store } = make(); const results = await Promise.allSettled([service.execute(input('one')), service.execute(input('two'))]); expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1); expect(store.values.size).toBe(1); });
+});

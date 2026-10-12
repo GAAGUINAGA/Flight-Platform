@@ -1,0 +1,61 @@
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/infrastructure/persistence/prisma-client"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model Reservation {
+  id              String   @id @default(uuid()) @db.Uuid
+  ownerId         String   @map("owner_id") @db.VarChar(128)
+  pnr             String   @unique @db.VarChar(6)
+  status          String   @db.VarChar(32)
+  holdId          String   @map("hold_id") @db.Uuid
+  itineraries     Json     @default("[]")
+  grandTotal      Json     @map("grand_total")
+  paymentReference String? @map("payment_reference") @db.VarChar(255)
+  idempotencyKey  String   @map("idempotency_key") @db.VarChar(255)
+  sagaStep        String   @map("saga_step") @db.VarChar(64)
+  attempts        Int      @default(0)
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  passengers      ReservationPassenger[]
+  changes         ReservationChange[]
+  paymentUsage    PaymentUsage?
+  @@unique([ownerId, idempotencyKey])
+  @@index([ownerId, createdAt])
+  @@map("reservations")
+}
+
+model ReservationPassenger {
+  id            String   @id @default(uuid()) @db.Uuid
+  reservationId String   @map("reservation_id") @db.Uuid
+  passengerId   String   @map("passenger_id") @db.Uuid
+  data          Json
+  reservation   Reservation @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+  @@unique([reservationId, passengerId])
+  @@map("reservation_passengers")
+}
+
+model ReservationChange {
+  id            String   @id @default(uuid()) @db.Uuid
+  reservationId String   @map("reservation_id") @db.Uuid
+  changedAt     DateTime @map("changed_at") @db.Timestamptz(3)
+  description   String   @db.VarChar(255)
+  reservation   Reservation @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+  @@index([reservationId, changedAt])
+  @@map("reservation_changes")
+}
+
+model PaymentUsage {
+  paymentReference String @id @map("payment_reference") @db.VarChar(255)
+  reservationId    String @unique @map("reservation_id") @db.Uuid
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  reservation      Reservation @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+  @@map("payment_usages")
+}
