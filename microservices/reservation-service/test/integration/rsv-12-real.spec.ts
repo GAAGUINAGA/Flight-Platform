@@ -89,7 +89,7 @@ describeReal('RSV-12: integración local con Inventory, Pricing, Ancillaries, Ti
     finally { await Promise.allSettled([...apps.reverse().map((app) => app.close()), reservation?.$disconnect(), webhooks?.$disconnect(), ticketing?.$disconnect(), ancillaries?.$disconnect(), pricing?.$disconnect(), inventory?.$disconnect()]); }
   });
 
-  const passenger = (segmentId: string, seatNumber: string) => ({ passengerId: randomUUID(), passengerType: 'ADULT', firstName: 'Real', lastName: 'Integration', documentType: 'PASSPORT', documentNumber: 'REAL12345', nationality: 'EC', documentExpiryDate: '2030-01-01', birthDate: '1990-01-01', gender: 'MALE', contact: { email: 'real@example.test', phone: '+593999999999' }, assignedSeats: [{ segmentId, seatNumber }], extraBaggage: [] });
+  const passenger = (segmentId: string, seatNumber: string) => ({ passengerId: randomUUID(), passengerType: 'ADULT', firstName: 'Real', lastName: 'Integration', documentType: 'PASSPORT', documentNumber: 'REAL12345', nationality: 'EC', documentExpiryDate: '2030-01-01', birthDate: '1990-01-01', gender: 'M', contact: { email: 'real@example.test', phone: '+593999999999' }, assignedSeats: [{ segmentId, seatNumber }], extraBaggage: [] });
   const fields = (value: unknown) => value && typeof value === 'object' && !Array.isArray(value) ? Object.keys(value).join(', ') : '(no es objeto)';
   const itinerarySnapshot = (value: unknown) => {
     if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error(`el price lock no trae un snapshot de oferta; campos: ${fields(value)}`);
