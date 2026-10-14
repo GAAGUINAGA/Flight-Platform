@@ -25,14 +25,14 @@ export class PrismaOfferStore implements OfferStore, OfferHoldStore, PostSaleSto
     return offer ? { snapshot: offer.snapshot as unknown as OfferSnapshot, mix: offer.passengerMix as unknown as PassengerMix, expiresAt: offer.expiresAt } : null;
   }
   async createPriceLock(lock: PriceLock): Promise<void> {
-    const fareSnapshot = JSON.parse(JSON.stringify({ offer: lock.fareSnapshot, selections: lock.selections }));
+    const fareSnapshot = JSON.parse(JSON.stringify({ offer: lock.fareSnapshot, selections: lock.selections, passengersBreakdown: lock.passengersBreakdown }));
     await this.prisma.priceLock.create({ data: { holdId: lock.holdId, ownerId: lock.ownerId, offerId: lock.offerId, lockedPriceMinor: lock.lockedPriceMinor, passengerPrices: {}, extraBagByItinerary: {}, fareSnapshot, expiresAt: lock.expiresAt, status: lock.status } });
   }
   async getPriceLock(holdId: string, ownerId: string): Promise<PriceLock | null> {
     const lock = await this.prisma.priceLock.findFirst({ where: { holdId, ownerId } });
     if (!lock) return null;
-    const snapshot = lock.fareSnapshot as unknown as { offer: OfferSnapshot; selections: PriceLock['selections'] };
-    return { holdId: lock.holdId, ownerId: lock.ownerId, offerId: lock.offerId, lockedPriceMinor: lock.lockedPriceMinor, expiresAt: lock.expiresAt, status: lock.status, selections: snapshot.selections, fareSnapshot: snapshot.offer };
+    const snapshot = lock.fareSnapshot as unknown as { offer: OfferSnapshot; selections: PriceLock['selections']; passengersBreakdown: PriceLock['passengersBreakdown'] };
+    return { holdId: lock.holdId, ownerId: lock.ownerId, offerId: lock.offerId, lockedPriceMinor: lock.lockedPriceMinor, expiresAt: lock.expiresAt, status: lock.status, selections: snapshot.selections, passengersBreakdown: snapshot.passengersBreakdown, fareSnapshot: snapshot.offer };
   }
   async setPriceLockStatus(holdId: string, ownerId: string, status: string): Promise<void> {
     await this.prisma.priceLock.updateMany({ where: { holdId, ownerId }, data: { status } });

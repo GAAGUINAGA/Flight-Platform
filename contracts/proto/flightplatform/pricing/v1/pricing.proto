@@ -61,6 +61,8 @@ message GetOfferHoldResponse {
   optional string expires_at = 2;
   uint32 remaining_seconds = 3;
   flightplatform.common.v1.MoneyAmount locked_price = 4;
+  flightplatform.common.v1.PassengerMix passengers_breakdown = 5;
+  repeated flightplatform.common.v1.ItinerarySnapshot itineraries = 6;
 }
 message PriceLockResponse {
   string hold_id = 1;

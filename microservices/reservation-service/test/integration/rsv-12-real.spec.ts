@@ -4,8 +4,11 @@ import { join } from 'node:path';
 import process from 'node:process';
 import dotenv from 'dotenv';
 import { INestMicroservice } from '@nestjs/common';
+import { credentials, loadPackageDefinition, Metadata, ServiceError } from '@grpc/grpc-js';
+import { loadSync } from '@grpc/proto-loader';
 import { createGrpcService } from '@flight-platform/shared';
 import { CreateReservation } from '../../src/application/create-reservation';
+import { ReservationQueries } from '../../src/application/queries';
 import { ResumePending } from '../../src/application/resume-pending';
 import { HoldDetails, PaymentResult, PaymentVerifier, PricingPort } from '../../src/application/ports';
 import { PrismaReservationStore } from '../../src/infrastructure/persistence/prisma-reservation-store';
@@ -22,6 +25,7 @@ import { createPricingServer, findProtoRoot } from '../../../pricing-service/src
 import { createAncillariesServer } from '../../../ancillaries-service/src/infrastructure/grpc/server';
 import { createTicketingServer } from '../../../ticketing-service/src/infrastructure/grpc/server';
 import { createWebhooksServer } from '../../../webhooks-service/src/infrastructure/grpc/server';
+import { createReservationServer } from '../../src/infrastructure/grpc/server';
 import { GrpcInventoryGateway as PricingInventoryGateway } from '../../../pricing-service/src/infrastructure/inventory/grpc-inventory.gateway';
 import { GrpcPricingGateway as AncillariesPricingGateway } from '../../../ancillaries-service/src/infrastructure/clients/grpc-gateways';
 import { seed as seedInventory } from '../../../inventory-service/prisma/seed';
@@ -42,10 +46,11 @@ const run = process.env.RUN_RSV12_REAL === 'true';
 const describeReal = run ? describe : describe.skip;
 const key = 'rsv-12-internal-key-that-is-at-least-32-bytes';
 const ownerId = `rsv12-${randomUUID()}`;
-const ports = { inventory: 29651, pricing: 29652, ancillaries: 29653, ticketing: 29655, webhooks: 29657 };
+const ports = { inventory: 29651, pricing: 29652, ancillaries: 29653, reservation: 29654, ticketing: 29655, webhooks: 29657 };
 
 type ServiceEnv = Record<string, string>;
 type PricingClient = { searchOffers(input: unknown): import('rxjs').Observable<PricingSearchResponse>; holdOffer(input: unknown): import('rxjs').Observable<{ holdId: string; expiresAt: string }>; };
+type ReservationClient = { createReservation(request: unknown, metadata: Metadata, callback: (error: ServiceError | null, response: unknown) => void): void; close(): void };
 
 const loadEnv = (service: string): ServiceEnv => {
   const target: ServiceEnv = {};
@@ -139,4 +144,30 @@ describeReal('RSV-12: integración local con Inventory, Pricing, Ancillaries, Ti
   it('RSV-12 / I: pago pendiente pasa por ResumePending hasta CONFIRMED', async () => { const fixture = await hold(); let authorized = false; const payment: PaymentVerifier = { verify: async (): Promise<PaymentResult> => authorized ? 'AUTHORIZED' : 'PENDING', void: async () => undefined }; const flow = services(fixture.pricingPort, payment); const created = await flow.useCase.execute({ ownerId, holdId: fixture.holdId, passengers: [passenger(fixture.segmentId, fixture.seatNumber)], payment: { paymentReference: `pay_pending_${randomUUID()}` }, idempotencyKey: randomUUID() }); reservations.push(created.id); expect(created.status).toBe('PENDING_PAYMENT'); authorized = true; await flow.resume.execute({ limit: 50 }); await expect(reservation.reservation.findUnique({ where: { id: created.id } })).resolves.toMatchObject({ status: 'CONFIRMED' }); await expect(ticketing.ticket.findFirst({ where: { bookingId: created.id } })).resolves.toMatchObject({ status: 'ISSUED' }); });
   it('RSV-12 / I: TICKETING_FAIL_MODE=always libera recursos', async () => { const fixture = await hold(); const line = await inventory.holdLine.findFirstOrThrow({ where: { holdId: fixture.holdId } }); const before = await inventory.cabinInventory.findUniqueOrThrow({ where: { flightInstanceId_cabinClass: { flightInstanceId: line.flightInstanceId, cabinClass: line.cabinClass } } }); const port = 29656; const failingApp = await createTicketingServer({ url: `127.0.0.1:${port}`, internalApiKey: key, prisma: ticketing, config: { failMode: 'always' } }); await failingApp.listen(); try { const failing = new GrpcTicketingGateway(factory(`127.0.0.1:${port}`, 'flightplatform.ticketing.v1', 'flightplatform/ticketing/v1/ticketing.proto', 'TicketingService')); const flow = services(fixture.pricingPort, new FakePaymentVerifier(), failing); const input = { ownerId, holdId: fixture.holdId, passengers: [passenger(fixture.segmentId, fixture.seatNumber)], payment: { paymentReference: `pay_ok_${randomUUID()}` }, idempotencyKey: randomUUID() }; await expect(flow.useCase.execute(input)).rejects.toThrow('TICKET_ISSUANCE_FAILED'); const row = await reservation.reservation.findFirstOrThrow({ where: { ownerId, idempotencyKey: input.idempotencyKey } }); reservations.push(row.id); await flow.resume.execute({}); await flow.resume.execute({}); await flow.resume.execute({}); await expect(reservation.reservation.findUnique({ where: { id: row.id } })).resolves.toMatchObject({ status: 'FAILED' }); await expect(ticketing.ticket.findMany({ where: { bookingId: row.id } })).resolves.toEqual(expect.not.arrayContaining([expect.objectContaining({ status: 'ISSUED' })])); await expect(ancillaries.seatAssignment.findFirst({ where: { bookingId: row.id } })).resolves.toMatchObject({ status: 'RELEASED' }); await expect(inventory.reservedInventory.findFirst({ where: { reservationId: row.id } })).resolves.toMatchObject({ releasedAt: expect.any(Date) }); await expect(inventory.cabinInventory.findUnique({ where: { flightInstanceId_cabinClass: { flightInstanceId: line.flightInstanceId, cabinClass: line.cabinClass } } })).resolves.toMatchObject({ sold: before.sold }); } finally { await failingApp.close(); } });
   it('RSV-12 / I: hold expirado se rechaza sin crear reserva', async () => { const fixture = await hold(true); const keyId = randomUUID(); await expect(services(fixture.pricingPort).useCase.execute({ ownerId, holdId: fixture.holdId, passengers: [passenger(fixture.segmentId, fixture.seatNumber)], payment: { paymentReference: `pay_ok_${randomUUID()}` }, idempotencyKey: keyId })).rejects.toMatchObject({ message: 'OFFER_NO_LONGER_AVAILABLE' }); await expect(reservation.reservation.count({ where: { ownerId, idempotencyKey: keyId } })).resolves.toBe(0); });
+  it('RSV-12 / I: CreateReservation por gRPC usa los adaptadores reales como main con owner smoke no UUID', async () => {
+    const smokeOwner = `smoke-${randomUUID()}`;
+    const date = new Date(Date.now() + 172800000).toISOString().slice(0, 10);
+    const search = await firstValueFrom(pricingClient.searchOffers({ legs: [{ origin: 'UIO', destination: 'GYE', departureDate: date }], passengers: { adults: 1, youths: 0, children: 0, infants: 0 } }));
+    const offer = selectOfferForHold(search);
+    const smokePricingPort = 29658; const smokeReservationPort = 29659;
+    const smokeInventory = new PricingInventoryGateway(factory(`127.0.0.1:${ports.inventory}`, 'flightplatform.inventory.v1', 'flightplatform/inventory/v1/inventory.proto', 'InventoryService')(smokeOwner, 'system') as never);
+    const smokePricingApp = await createPricingServer({ url: `127.0.0.1:${smokePricingPort}`, internalApiKey: key, runtime: { prisma: pricing, inventory: smokeInventory } }); await smokePricingApp.listen();
+    let client: ReservationClient | undefined; let smokeReservationApp: INestMicroservice | undefined;
+    try {
+      const smokePricing = factory(`127.0.0.1:${smokePricingPort}`, 'flightplatform.pricing.v1', 'flightplatform/pricing/v1/pricing.proto', 'PricingService')(smokeOwner, 'customer') as PricingClient;
+      const held = await firstValueFrom(smokePricing.holdOffer({ ownerId: smokeOwner, offerId: offer.offerId, itinerarySelections: offer.itinerarySelections, passengersBreakdown: { adults: 1, youths: 0, children: 0, infants: 0 }, idempotencyKey: randomUUID() }));
+      const ancillary = new GrpcAncillariesGateway(factory(`127.0.0.1:${ports.ancillaries}`, 'flightplatform.ancillaries.v1', 'flightplatform/ancillaries/v1/ancillaries.proto', 'AncillariesService'));
+      const inventoryPort = new GrpcInventoryGateway(factory(`127.0.0.1:${ports.inventory}`, 'flightplatform.inventory.v1', 'flightplatform/inventory/v1/inventory.proto', 'InventoryService'));
+      const reservationPricing = new GrpcPricingGateway(factory(`127.0.0.1:${smokePricingPort}`, 'flightplatform.pricing.v1', 'flightplatform/pricing/v1/pricing.proto', 'PricingService'));
+      const ticketingPort = new GrpcTicketingGateway(factory(`127.0.0.1:${ports.ticketing}`, 'flightplatform.ticketing.v1', 'flightplatform/ticketing/v1/ticketing.proto', 'TicketingService'));
+      const events = new GrpcEventPublisher(factory(`127.0.0.1:${ports.webhooks}`, 'flightplatform.webhooks.v1', 'flightplatform/webhooks/v1/webhooks.proto', 'WebhooksService'));
+      const payment = new FakePaymentVerifier(); const create = new CreateReservation(store, reservationPricing, payment, ancillary, inventoryPort, ticketingPort, events); const queries = new ReservationQueries(store, ancillary, ticketingPort); const resume = new ResumePending(store, payment, events, ancillary, inventoryPort, ticketingPort);
+      smokeReservationApp = await createReservationServer({ url: `127.0.0.1:${smokeReservationPort}`, internalApiKey: key, deps: { createReservation: (input) => create.execute(input as never), getReservation: (input) => queries.get(input as never), listReservations: (input) => queries.list(input as never), getReservationSnapshot: (input) => queries.get(input as never), listReservationsByFlightInstance: (input) => queries.byFlightInstance(input as never), resumePending: (input) => resume.execute(input as never) } }); await smokeReservationApp.listen();
+      const definition = loadSync(`${findProtoRoot()}/flightplatform/reservation/v1/reservation.proto`, { includeDirs: [findProtoRoot()], keepCase: false, enums: String, longs: Number, defaults: true, arrays: true, objects: true }); const pkg = loadPackageDefinition(definition) as unknown as { flightplatform: { reservation: { v1: { ReservationService: new (address: string, credentials: unknown) => ReservationClient } } } }; client = new pkg.flightplatform.reservation.v1.ReservationService(`127.0.0.1:${smokeReservationPort}`, credentials.createInsecure());
+      const request = { holdId: held.holdId, passengers: [{ ...passenger('', ''), assignedSeats: [], extraBaggage: [] }], payment: { paymentReference: `pay_ok_${randomUUID()}` }, idempotencyKey: randomUUID() };
+      const metadata = new Metadata(); metadata.set('x-internal-key', key); metadata.set('x-owner-id', smokeOwner); metadata.set('x-role', 'system');
+      await expect(new Promise<unknown>((resolve, reject) => client!.createReservation(request, metadata, (error, response) => error ? reject(error) : resolve(response)))).resolves.toBeDefined();
+      const created = await reservation.reservation.findFirstOrThrow({ where: { ownerId: smokeOwner, idempotencyKey: request.idempotencyKey } }); reservations.push(created.id);
+    } finally { client?.close(); await smokeReservationApp?.close(); await smokePricingApp.close(); }
+  });
 });

@@ -106,6 +106,8 @@ export interface GetOfferHoldResponse {
   expiresAt?: string | undefined;
   remainingSeconds: number;
   lockedPrice: MoneyAmount | undefined;
+  passengersBreakdown: PassengerMix | undefined;
+  itineraries: ItinerarySnapshot[];
 }
 
 export interface PriceLockResponse {

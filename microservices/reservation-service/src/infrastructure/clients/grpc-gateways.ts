@@ -1,4 +1,5 @@
 import { firstValueFrom } from 'rxjs';
+import { DomainError } from '@flight-platform/shared';
 import { AncillariesPort, EventPublisher, InventoryPort, PricingPort, TicketingPort } from '../../application/ports';
 
 type GrpcMethod = (input: unknown) => import('rxjs').Observable<unknown>;
@@ -13,7 +14,7 @@ export class GrpcInventoryGateway implements InventoryPort {
 }
 export class GrpcPricingGateway implements PricingPort {
   constructor(private readonly client: GrpcServiceForOwner) {}
-  async getHold(input: { holdId: string; ownerId: string }) { const value = await call<{ status: string; expiresAt?: string; lockedPrice?: { currency: string; total: string } }>(this.client(input.ownerId, 'system'), 'getOfferHold', input); return { holdId: input.holdId, ownerId: input.ownerId, status: value.status, expiresAt: value.expiresAt ?? '', lockedPrice: value.lockedPrice ?? { currency: '', total: '' }, passengersBreakdown: { adults: 0, youths: 0, children: 0, infants: 0 }, itineraries: [] }; }
+  async getHold(input: { holdId: string; ownerId: string }) { const value = await call<{ status: string; expiresAt?: string; lockedPrice?: { currency: string; total: string }; passengersBreakdown?: { adults: number; youths: number; children: number; infants: number }; itineraries?: unknown[] }>(this.client(input.ownerId, 'system'), 'getOfferHold', input); if (!value.lockedPrice || !value.passengersBreakdown || !value.itineraries) throw new DomainError('VALIDATION_FAILED'); return { holdId: input.holdId, ownerId: input.ownerId, status: value.status, expiresAt: value.expiresAt ?? '', lockedPrice: value.lockedPrice, passengersBreakdown: value.passengersBreakdown, itineraries: value.itineraries }; }
 }
 export class GrpcAncillariesGateway implements AncillariesPort {
   constructor(private readonly client: GrpcServiceForOwner) {}

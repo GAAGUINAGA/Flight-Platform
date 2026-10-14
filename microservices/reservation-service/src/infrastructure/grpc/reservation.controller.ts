@@ -1,7 +1,7 @@
-import { Controller, Inject } from '@nestjs/common';
+import { Controller, Inject, Logger } from '@nestjs/common';
 import { Metadata, status } from '@grpc/grpc-js';
 import { GrpcMethod, RpcException } from '@nestjs/microservices';
-import { DomainError, RequestContext, requestContextFromMetadata, requireRole, rpcString, validate } from '@flight-platform/shared';
+import { DomainError, RequestContext, requestContextFromMetadata, requireRole, rpcString } from '@flight-platform/shared';
 import { z } from 'zod';
 
 export interface ReservationHandlers {
@@ -13,11 +13,20 @@ const passengerSchema = z.object({ passengerId: rpcString(128), passengerType: z
 const createSchema = z.object({ holdId: z.string().uuid(), passengers: z.array(passengerSchema).min(1).max(9), payment: z.object({ paymentReference: rpcString(255) }).strict(), idempotencyKey: rpcString(255) }).strict();
 const getSchema = z.object({ bookingId: z.string().uuid() }).strict();
 const listSchema = z.object({ pnr: z.string().trim().length(6).optional(), page: z.object({ cursor: z.string().optional(), limit: z.number().int().min(1).max(50) }).strict().optional() }).strict();
+const validationLogger = new Logger('ReservationValidation');
 const requested = (data: unknown): unknown => { if (typeof data !== 'object' || data === null || Array.isArray(data)) return data; const { ownerId, ...body } = data as Record<string, unknown>; void ownerId; return body; };
 const withOwner = (data: unknown, metadata: Metadata, schema: z.AnyZodObject): Record<string, unknown> => {
   const ownerId = (requestContextFromMetadata(metadata) as RequestContext | undefined)?.ownerId;
   if (!ownerId) throw new DomainError('NOT_FOUND');
-  const parsed = validate(schema, requested(data)); return { ...parsed, ownerId };
+  const parsed = schema.strict().safeParse(requested(data));
+  if (!parsed.success) {
+    if (schema === createSchema) {
+      const fields = [...new Set(parsed.error.issues.map((issue) => issue.path.map(String).join('.')).filter(Boolean))];
+      validationLogger.warn(`CreateReservation validation failed fields=${fields.join(',') || '(root)'}`);
+    }
+    throw new RpcException({ code: status.INVALID_ARGUMENT, details: 'VALIDATION_FAILED' });
+  }
+  return { ...parsed.data, ownerId };
 };
 const unavailable = (): never => { throw new RpcException({ code: status.UNIMPLEMENTED, details: 'UNIMPLEMENTED' }); };
 @Controller()

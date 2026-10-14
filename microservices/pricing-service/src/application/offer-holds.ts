@@ -3,7 +3,7 @@ import { InventoryGateway, PassengerMix } from './ports';
 import { CabinPricingView, MoneyAmount, OfferSnapshot } from './search-offers';
 import { holdOfferRequest, offerHoldRequest } from './schemas';
 
-export interface PriceLock { holdId: string; ownerId: string; offerId: string; lockedPriceMinor: number; expiresAt: Date; status: string; selections: Selection[]; fareSnapshot: OfferSnapshot }
+export interface PriceLock { holdId: string; ownerId: string; offerId: string; lockedPriceMinor: number; expiresAt: Date; status: string; selections: Selection[]; passengersBreakdown: PassengerMix; fareSnapshot: OfferSnapshot }
 export interface Selection { itineraryId: string; cabinClass: string; fareBrand: string }
 export interface OfferHoldStore { findOffer(id: string): Promise<{ snapshot: OfferSnapshot; mix: PassengerMix; expiresAt: Date } | null>; createPriceLock(lock: PriceLock): Promise<void>; getPriceLock(holdId: string, ownerId: string): Promise<PriceLock | null>; setPriceLockStatus(holdId: string, ownerId: string, status: string): Promise<void> }
 export interface HoldConfig { holdTtlMinutes: number; currency: string }
@@ -27,7 +27,7 @@ export class OfferHolds {
     const seats = request.passengersBreakdown.adults + request.passengersBreakdown.youths + request.passengersBreakdown.children;
     const inventoryHold = await this.inventory.createHold({ ownerId: request.ownerId, expiresAt: new Date(this.clock.now().getTime() + this.config.holdTtlMinutes * 60_000).toISOString(), idempotencyKey: request.idempotencyKey, segments: selected.flatMap(({ itinerary, selection }) => itinerary.segments.map((segment) => ({ flightInstanceId: segment.flightInstanceId, cabinClass: selection.cabinClass as 'ECONOMY' | 'PREMIUM_ECONOMY' | 'BUSINESS' | 'FIRST', seats }))) });
     try {
-      await this.store.createPriceLock({ holdId: inventoryHold.holdId, ownerId: request.ownerId, offerId: request.offerId, lockedPriceMinor, expiresAt: new Date(inventoryHold.expiresAt), status: inventoryHold.status, selections: request.itinerarySelections, fareSnapshot: offer.snapshot });
+      await this.store.createPriceLock({ holdId: inventoryHold.holdId, ownerId: request.ownerId, offerId: request.offerId, lockedPriceMinor, expiresAt: new Date(inventoryHold.expiresAt), status: inventoryHold.status, selections: request.itinerarySelections, passengersBreakdown: request.passengersBreakdown, fareSnapshot: offer.snapshot });
     } catch (error) {
       await this.inventory.releaseHold({ holdId: inventoryHold.holdId, ownerId: request.ownerId });
       throw error;
@@ -39,7 +39,7 @@ export class OfferHolds {
     const lock = await this.store.getPriceLock(request.holdId, request.ownerId);
     if (!lock) throw new DomainError('NOT_FOUND');
     const inventory = await this.inventory.getHold(request);
-    return { status: inventory.status, expiresAt: inventory.expiresAt, remainingSeconds: Math.max(0, Math.floor((new Date(inventory.expiresAt).getTime() - this.clock.now().getTime()) / 1000)), lockedPrice: money(lock.lockedPriceMinor, this.config.currency) };
+    return { status: inventory.status, expiresAt: inventory.expiresAt, remainingSeconds: Math.max(0, Math.floor((new Date(inventory.expiresAt).getTime() - this.clock.now().getTime()) / 1000)), lockedPrice: money(lock.lockedPriceMinor, this.config.currency), passengersBreakdown: lock.passengersBreakdown, itineraries: lock.fareSnapshot.itineraries };
   }
   async release(input: unknown): Promise<void> {
     const request = validate(offerHoldRequest, input);
