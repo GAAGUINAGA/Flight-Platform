@@ -15,27 +15,37 @@ const getSchema = z.object({ bookingId: z.string().uuid() }).strict();
 const listSchema = z.object({ pnr: z.string().trim().length(6).optional(), page: z.object({ cursor: z.string().optional(), limit: z.number().int().min(1).max(50) }).strict().optional() }).strict();
 const validationLogger = new Logger('ReservationValidation');
 const requested = (data: unknown): unknown => { if (typeof data !== 'object' || data === null || Array.isArray(data)) return data; const { ownerId, ...body } = data as Record<string, unknown>; void ownerId; return body; };
-const withOwner = (data: unknown, metadata: Metadata, schema: z.AnyZodObject): Record<string, unknown> => {
+const withOwner = (data: unknown, metadata: Metadata, schema: z.AnyZodObject, rpc: string): Record<string, unknown> => {
   const ownerId = (requestContextFromMetadata(metadata) as RequestContext | undefined)?.ownerId;
   if (!ownerId) throw new DomainError('NOT_FOUND');
   const parsed = schema.strict().safeParse(requested(data));
   if (!parsed.success) {
-    if (schema === createSchema) {
-      const fields = [...new Set(parsed.error.issues.map((issue) => issue.path.map(String).join('.')).filter(Boolean))];
-      validationLogger.warn(`CreateReservation validation failed fields=${fields.join(',') || '(root)'}`);
-    }
+    const fields = [...new Set(parsed.error.issues.map((issue) => issue.path.map(String).join('.')).filter(Boolean))];
+    validationLogger.warn(`${rpc} validation failed fields=${fields.join(',') || '(root)'}`);
     throw new RpcException({ code: status.INVALID_ARGUMENT, details: 'VALIDATION_FAILED' });
   }
   return { ...parsed.data, ownerId };
+};
+const booking = (value: unknown): unknown => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
+  const record = value as Record<string, unknown>;
+  const changes = Array.isArray(record.changes) ? record.changes : [];
+  const createdAt = changes[0] && typeof changes[0] === 'object' ? (changes[0] as Record<string, unknown>).changedAt : undefined;
+  return { ...record, ...(typeof record.id === 'string' && !record.bookingId ? { bookingId: record.id } : {}), ...(!record.createdAt && typeof createdAt === 'string' ? { createdAt } : {}) };
+};
+const grpcResponse = (value: unknown): unknown => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
+  const record = booking(value) as Record<string, unknown>;
+  return Array.isArray(record.items) ? { ...record, items: record.items.map(booking) } : record;
 };
 const unavailable = (): never => { throw new RpcException({ code: status.UNIMPLEMENTED, details: 'UNIMPLEMENTED' }); };
 @Controller()
 export class ReservationController {
   constructor(private readonly deps: ReservationHandlers) {}
-  createReservation(data: unknown, metadata: Metadata) { return this.deps.createReservation ? this.deps.createReservation(withOwner(data, metadata, createSchema)) : unavailable(); }
-  getReservation(data: unknown, metadata: Metadata) { return this.deps.getReservation ? this.deps.getReservation(withOwner(data, metadata, getSchema)) : unavailable(); }
-  listReservations(data: unknown, metadata: Metadata) { return this.deps.listReservations ? this.deps.listReservations(withOwner(data, metadata, listSchema)) : unavailable(); }
-  getReservationSnapshot(data: unknown, metadata: Metadata) { return this.deps.getReservationSnapshot ? this.deps.getReservationSnapshot(withOwner(data, metadata, getSchema)) : unavailable(); }
+  createReservation(data: unknown, metadata: Metadata) { return this.deps.createReservation ? this.deps.createReservation(withOwner(data, metadata, createSchema, 'CreateReservation')).then(grpcResponse) : unavailable(); }
+  getReservation(data: unknown, metadata: Metadata) { return this.deps.getReservation ? this.deps.getReservation(withOwner(data, metadata, getSchema, 'GetReservation')).then(grpcResponse) : unavailable(); }
+  listReservations(data: unknown, metadata: Metadata) { return this.deps.listReservations ? this.deps.listReservations(withOwner(data, metadata, listSchema, 'ListReservations')).then(grpcResponse) : unavailable(); }
+  getReservationSnapshot(data: unknown, metadata: Metadata) { return this.deps.getReservationSnapshot ? this.deps.getReservationSnapshot(withOwner(data, metadata, getSchema, 'GetReservationSnapshot')).then(grpcResponse) : unavailable(); }
   listReservationsByFlightInstance(data: unknown, metadata: Metadata) { void data; void metadata; return this.deps.listReservationsByFlightInstance ? this.deps.listReservationsByFlightInstance(data) : unavailable(); }
   getBaggageOptions(): never { return unavailable(); } addBaggage(): never { return unavailable(); } searchDateChange(): never { return unavailable(); } confirmDateChange(): never { return unavailable(); } getCancellationQuote(): never { return unavailable(); } cancelReservation(): never { return unavailable(); }
   resumePending(data: unknown, metadata: Metadata) { requireRole(requestContextFromMetadata(metadata) as RequestContext, 'system'); return this.deps.resumePending ? this.deps.resumePending(data) : unavailable(); }

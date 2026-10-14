@@ -50,7 +50,7 @@ const ports = { inventory: 29651, pricing: 29652, ancillaries: 29653, reservatio
 
 type ServiceEnv = Record<string, string>;
 type PricingClient = { searchOffers(input: unknown): import('rxjs').Observable<PricingSearchResponse>; holdOffer(input: unknown): import('rxjs').Observable<{ holdId: string; expiresAt: string }>; };
-type ReservationClient = { createReservation(request: unknown, metadata: Metadata, callback: (error: ServiceError | null, response: unknown) => void): void; close(): void };
+type ReservationClient = { createReservation(request: unknown, metadata: Metadata, callback: (error: ServiceError | null, response: unknown) => void): void; getReservation(request: unknown, metadata: Metadata, callback: (error: ServiceError | null, response: unknown) => void): void; listReservations(request: unknown, metadata: Metadata, callback: (error: ServiceError | null, response: unknown) => void): void; close(): void };
 
 const loadEnv = (service: string): ServiceEnv => {
   const target: ServiceEnv = {};
@@ -164,10 +164,19 @@ describeReal('RSV-12: integración local con Inventory, Pricing, Ancillaries, Ti
       const payment = new FakePaymentVerifier(); const create = new CreateReservation(store, reservationPricing, payment, ancillary, inventoryPort, ticketingPort, events); const queries = new ReservationQueries(store, ancillary, ticketingPort); const resume = new ResumePending(store, payment, events, ancillary, inventoryPort, ticketingPort);
       smokeReservationApp = await createReservationServer({ url: `127.0.0.1:${smokeReservationPort}`, internalApiKey: key, deps: { createReservation: (input) => create.execute(input as never), getReservation: (input) => queries.get(input as never), listReservations: (input) => queries.list(input as never), getReservationSnapshot: (input) => queries.get(input as never), listReservationsByFlightInstance: (input) => queries.byFlightInstance(input as never), resumePending: (input) => resume.execute(input as never) } }); await smokeReservationApp.listen();
       const definition = loadSync(`${findProtoRoot()}/flightplatform/reservation/v1/reservation.proto`, { includeDirs: [findProtoRoot()], keepCase: false, enums: String, longs: Number, defaults: true, arrays: true, objects: true }); const pkg = loadPackageDefinition(definition) as unknown as { flightplatform: { reservation: { v1: { ReservationService: new (address: string, credentials: unknown) => ReservationClient } } } }; client = new pkg.flightplatform.reservation.v1.ReservationService(`127.0.0.1:${smokeReservationPort}`, credentials.createInsecure());
-      const request = { holdId: held.holdId, passengers: [{ ...passenger('', ''), assignedSeats: [], extraBaggage: [] }], payment: { paymentReference: `pay_ok_${randomUUID()}` }, idempotencyKey: randomUUID() };
+      const request = { holdId: held.holdId, passengers: [{ passengerId: randomUUID(), passengerType: 'ADULT', firstName: 'Smoke', lastName: 'Passenger', documentType: 'PASSPORT', documentNumber: 'SMOKE123', nationality: 'EC', documentExpiryDate: '2030-01-01', birthDate: '1990-01-01', gender: 'X', contact: { email: 'smoke@example.invalid', phone: '+593999999999' }, assignedSeats: [], extraBaggage: [] }], payment: { paymentReference: `pay_ok_${randomUUID()}` }, idempotencyKey: randomUUID() };
       const metadata = new Metadata(); metadata.set('x-internal-key', key); metadata.set('x-owner-id', smokeOwner); metadata.set('x-role', 'system');
-      await expect(new Promise<unknown>((resolve, reject) => client!.createReservation(request, metadata, (error, response) => error ? reject(error) : resolve(response)))).resolves.toBeDefined();
-      const created = await reservation.reservation.findFirstOrThrow({ where: { ownerId: smokeOwner, idempotencyKey: request.idempotencyKey } }); reservations.push(created.id);
+      const call = (method: 'createReservation' | 'getReservation' | 'listReservations', input: unknown) => new Promise<unknown>((resolve, reject) => client![method](input, metadata, (error, response) => error ? reject(error) : resolve(response)));
+      const created = await call('createReservation', request) as { bookingId?: string; pnr?: string; tickets?: Array<{ status?: string }> };
+      expect(created.bookingId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
+      expect(created.pnr).toMatch(/^[A-Z0-9]{6}$/);
+      expect(created.tickets?.every((ticket) => ticket.status === 'ISSUED')).toBe(true);
+      const detail = await call('getReservation', { bookingId: created.bookingId }) as { bookingId?: string; pnr?: string; tickets?: Array<{ status?: string }> };
+      expect(detail).toMatchObject({ bookingId: created.bookingId, pnr: created.pnr });
+      expect(detail.tickets?.every((ticket) => ticket.status === 'ISSUED')).toBe(true);
+      const listed = await call('listReservations', { page: { limit: 10 } }) as { items?: Array<{ bookingId?: string; pnr?: string }> };
+      expect(listed.items).toEqual(expect.arrayContaining([expect.objectContaining({ bookingId: created.bookingId, pnr: created.pnr })]));
+      reservations.push(created.bookingId!);
     } finally { client?.close(); await smokeReservationApp?.close(); await smokePricingApp.close(); }
   });
 });

@@ -6,6 +6,9 @@ type GrpcMethod = (input: unknown) => import('rxjs').Observable<unknown>;
 type GrpcService = Record<string, GrpcMethod>;
 export type GrpcServiceForOwner = (ownerId?: string, role?: string) => GrpcService;
 const call = <T>(service: GrpcService, method: string, input: unknown) => firstValueFrom(service[method](input)) as Promise<T>;
+const emptyIfNotFound = async <T>(operation: Promise<T>): Promise<T | undefined> => {
+  try { return await operation; } catch (error) { if (typeof error === 'object' && error !== null && (error as { code?: unknown }).code === 5) return undefined; throw error; }
+};
 
 export class GrpcInventoryGateway implements InventoryPort {
   constructor(private readonly client: GrpcServiceForOwner) {}
@@ -22,8 +25,8 @@ export class GrpcAncillariesGateway implements AncillariesPort {
   async reserveBaggage(input: { ownerId: string }): Promise<void> { await call(this.client(input.ownerId, 'system'), 'reserveBaggage', input); }
   async confirmSeats(input: { bookingId: string; ownerId: string }): Promise<void> { await call(this.client(input.ownerId, 'system'), 'confirmSeats', input); }
   async releaseAll(input: { bookingId: string; ownerId: string }): Promise<void> { await call(this.client(input.ownerId, 'system'), 'releaseAll', input); }
-  async getAssignments(input: { bookingId: string; ownerId: string }): Promise<unknown[]> { return (await call<{ assignments?: unknown[] }>(this.client(input.ownerId, 'system'), 'getAssignments', input)).assignments ?? []; }
-  async getBaggageOptions(input: { bookingId: string; ownerId: string }): Promise<unknown[]> { return (await call<{ options?: unknown[] }>(this.client(input.ownerId, 'system'), 'getBaggageOptions', input)).options ?? []; }
+  async getAssignments(input: { bookingId: string; ownerId: string }): Promise<unknown[]> { return (await emptyIfNotFound(call<{ assignments?: unknown[] }>(this.client(input.ownerId, 'system'), 'getAssignments', input)))?.assignments ?? []; }
+  async getBaggageOptions(input: { bookingId: string; ownerId: string }): Promise<unknown[]> { return (await emptyIfNotFound(call<{ options?: unknown[] }>(this.client(input.ownerId, 'system'), 'getBaggageOptions', input)))?.options ?? []; }
 }
 export class GrpcTicketingGateway implements TicketingPort {
   constructor(private readonly client: GrpcServiceForOwner) {}
