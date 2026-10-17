@@ -29,8 +29,9 @@ describe('RSV-13: payload del smoke por gRPC real', () => {
 
   beforeAll(async () => {
     const port = 38000 + Math.floor(Math.random() * 1000);
-    const reservation = (passengers: unknown[] = []) => ({ id: '00000000-0000-4000-8000-000000000005', pnr: 'SMOKE1', status: 'CONFIRMED', grandTotal: { currency: 'USD', total: '1.00' }, passengers, itineraries: [], tickets: [], changes: [{ changedAt: '2026-10-14T00:00:00.000Z', description: 'CONFIRMED' }] });
-    app = await createReservationServer({ url: `127.0.0.1:${port}`, internalApiKey: key, deps: { createReservation: async (input) => { received = input; return reservation((input as { passengers: unknown[] }).passengers); }, getReservation: async () => reservation(), listReservations: async () => ({ items: [reservation()], nextCursor: undefined }) } });
+    const bookingId = '00000000-0000-4000-8000-000000000005';
+    const reservation = (passengers: unknown[] = []) => ({ id: bookingId, pnr: 'SMOKE1', status: 'CONFIRMED', grandTotal: { currency: 'USD', total: '1.00' }, passengers, itineraries: [], tickets: [{ ticketId: 'ticket-1', bookingId, passengerId: smokePayload.passengers[0].passengerId, status: 'ISSUED', segments: [] }], changes: [{ changedAt: '2026-10-14T00:00:00.000Z', description: 'CONFIRMED' }] });
+    app = await createReservationServer({ url: `127.0.0.1:${port}`, internalApiKey: key, deps: { createReservation: async (input) => { received = input; return reservation((input as { passengers: unknown[] }).passengers); }, getReservation: async (input) => { expect(input).toMatchObject({ bookingId, ownerId: 'smoke-owner' }); return reservation(); }, listReservations: async (input) => { expect(input).toMatchObject({ ownerId: 'smoke-owner' }); return { items: [reservation()], nextCursor: undefined }; } } });
     await app.listen();
     const definition = loadSync(`${findProtoRoot()}/flightplatform/reservation/v1/reservation.proto`, { includeDirs: [findProtoRoot()], keepCase: false, enums: String, longs: Number, defaults: true, arrays: true, objects: true });
     const pkg = loadPackageDefinition(definition) as unknown as { flightplatform: { reservation: { v1: { ReservationService: new (address: string, credentials: unknown) => Client } } } };
@@ -47,7 +48,9 @@ describe('RSV-13: payload del smoke por gRPC real', () => {
   });
 
   it('RSV-13 / I: GetReservation y ListReservations preservan bookingId y PNR', async () => {
-    await expect(call('getReservation', { bookingId: '00000000-0000-4000-8000-000000000005' })).resolves.toMatchObject({ bookingId: '00000000-0000-4000-8000-000000000005', pnr: 'SMOKE1' });
-    await expect(call('listReservations', { page: { limit: 10 } })).resolves.toMatchObject({ items: [expect.objectContaining({ bookingId: '00000000-0000-4000-8000-000000000005', pnr: 'SMOKE1' })] });
+    const created = await create() as { bookingId: string; pnr: string };
+    expect(created.bookingId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
+    await expect(call('getReservation', { bookingId: created.bookingId })).resolves.toMatchObject({ bookingId: created.bookingId, pnr: created.pnr, tickets: [expect.objectContaining({ bookingId: created.bookingId, status: 'ISSUED' })] });
+    await expect(call('listReservations', { page: { limit: 10 } })).resolves.toMatchObject({ items: [expect.objectContaining({ bookingId: created.bookingId, pnr: created.pnr })] });
   });
 });

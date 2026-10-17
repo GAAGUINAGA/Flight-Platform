@@ -1,8 +1,11 @@
 import { afterAll, beforeAll, describe, expect, it } from '@jest/globals';
 import { randomUUID } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import process from 'node:process';
+import Ajv from 'ajv';
 import dotenv from 'dotenv';
+import { parse } from 'yaml';
 import { INestMicroservice } from '@nestjs/common';
 import { credentials, loadPackageDefinition, Metadata, ServiceError } from '@grpc/grpc-js';
 import { loadSync } from '@grpc/proto-loader';
@@ -169,14 +172,21 @@ describeReal('RSV-12: integración local con Inventory, Pricing, Ancillaries, Ti
       const call = (method: 'createReservation' | 'getReservation' | 'listReservations', input: unknown) => new Promise<unknown>((resolve, reject) => client![method](input, metadata, (error, response) => error ? reject(error) : resolve(response)));
       const created = await call('createReservation', request) as { bookingId?: string; pnr?: string; tickets?: Array<{ status?: string }> };
       expect(created.bookingId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
+      reservations.push(created.bookingId!);
       expect(created.pnr).toMatch(/^[A-Z0-9]{6}$/);
-      expect(created.tickets?.every((ticket) => ticket.status === 'ISSUED')).toBe(true);
-      const detail = await call('getReservation', { bookingId: created.bookingId }) as { bookingId?: string; pnr?: string; tickets?: Array<{ status?: string }> };
+      expect(created.tickets).toEqual(expect.arrayContaining([expect.objectContaining({ status: 'ISSUED' })]));
+      expect(created.tickets!.every((ticket) => ticket.status === 'ISSUED')).toBe(true);
+      const openapi = parse(readFileSync(join(process.cwd(), 'contracts/openapi/vuelos-openapi.yaml'), 'utf8')) as { components: { schemas: Record<string, object> } };
+      const validate = new Ajv({ strict: false, formats: { 'date-time': /^\d{4}-\d{2}-\d{2}T.+Z$/, uuid: /^[0-9a-f-]{36}$/i } }).compile({ ...openapi.components.schemas.BookingDetail, components: openapi.components });
+      if (!validate(created)) throw new Error(JSON.stringify(validate.errors));
+      const detail = await call('getReservation', { bookingId: created.bookingId }) as { bookingId?: string; pnr?: string; tickets?: Array<{ status?: string }>; passengers?: Array<{ assignedSeats?: unknown[]; extraBaggage?: unknown[] }> };
       expect(detail).toMatchObject({ bookingId: created.bookingId, pnr: created.pnr });
-      expect(detail.tickets?.every((ticket) => ticket.status === 'ISSUED')).toBe(true);
+      expect(detail.tickets).toEqual(expect.arrayContaining([expect.objectContaining({ status: 'ISSUED' })]));
+      expect(detail.tickets!.every((ticket) => ticket.status === 'ISSUED')).toBe(true);
+      expect(detail.passengers).toHaveLength(1);
+      expect(detail.passengers![0]).toMatchObject({ assignedSeats: [], extraBaggage: [] });
       const listed = await call('listReservations', { page: { limit: 10 } }) as { items?: Array<{ bookingId?: string; pnr?: string }> };
       expect(listed.items).toEqual(expect.arrayContaining([expect.objectContaining({ bookingId: created.bookingId, pnr: created.pnr })]));
-      reservations.push(created.bookingId!);
     } finally { client?.close(); await smokeReservationApp?.close(); await smokePricingApp.close(); }
   });
 });

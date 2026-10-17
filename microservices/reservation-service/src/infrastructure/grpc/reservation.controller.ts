@@ -13,18 +13,23 @@ const passengerSchema = z.object({ passengerId: rpcString(128), passengerType: z
 const createSchema = z.object({ holdId: z.string().uuid(), passengers: z.array(passengerSchema).min(1).max(9), payment: z.object({ paymentReference: rpcString(255) }).strict(), idempotencyKey: rpcString(255) }).strict();
 const getSchema = z.object({ bookingId: z.string().uuid() }).strict();
 const listSchema = z.object({ pnr: z.string().trim().length(6).optional(), page: z.object({ cursor: z.string().optional(), limit: z.number().int().min(1).max(50) }).strict().optional() }).strict();
+const flightSchema = z.object({ flightInstanceId: z.string().uuid() }).strict();
+const resumeSchema = z.object({ limit: z.number().int().min(0).max(4294967295).optional() }).strict();
 const validationLogger = new Logger('ReservationValidation');
 const requested = (data: unknown): unknown => { if (typeof data !== 'object' || data === null || Array.isArray(data)) return data; const { ownerId, ...body } = data as Record<string, unknown>; void ownerId; return body; };
-const withOwner = (data: unknown, metadata: Metadata, schema: z.AnyZodObject, rpc: string): Record<string, unknown> => {
-  const ownerId = (requestContextFromMetadata(metadata) as RequestContext | undefined)?.ownerId;
-  if (!ownerId) throw new DomainError('NOT_FOUND');
-  const parsed = schema.strict().safeParse(requested(data));
+const validate = (data: unknown, schema: z.AnyZodObject, rpc: string): Record<string, unknown> => {
+  const parsed = schema.strict().safeParse(data);
   if (!parsed.success) {
     const fields = [...new Set(parsed.error.issues.map((issue) => issue.path.map(String).join('.')).filter(Boolean))];
     validationLogger.warn(`${rpc} validation failed fields=${fields.join(',') || '(root)'}`);
     throw new RpcException({ code: status.INVALID_ARGUMENT, details: 'VALIDATION_FAILED' });
   }
-  return { ...parsed.data, ownerId };
+  return parsed.data;
+};
+const withOwner = (data: unknown, metadata: Metadata, schema: z.AnyZodObject, rpc: string): Record<string, unknown> => {
+  const ownerId = (requestContextFromMetadata(metadata) as RequestContext | undefined)?.ownerId;
+  if (!ownerId) throw new DomainError('NOT_FOUND');
+  return { ...validate(requested(data), schema, rpc), ownerId };
 };
 const booking = (value: unknown): unknown => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
@@ -46,9 +51,9 @@ export class ReservationController {
   getReservation(data: unknown, metadata: Metadata) { return this.deps.getReservation ? this.deps.getReservation(withOwner(data, metadata, getSchema, 'GetReservation')).then(grpcResponse) : unavailable(); }
   listReservations(data: unknown, metadata: Metadata) { return this.deps.listReservations ? this.deps.listReservations(withOwner(data, metadata, listSchema, 'ListReservations')).then(grpcResponse) : unavailable(); }
   getReservationSnapshot(data: unknown, metadata: Metadata) { return this.deps.getReservationSnapshot ? this.deps.getReservationSnapshot(withOwner(data, metadata, getSchema, 'GetReservationSnapshot')).then(grpcResponse) : unavailable(); }
-  listReservationsByFlightInstance(data: unknown, metadata: Metadata) { void data; void metadata; return this.deps.listReservationsByFlightInstance ? this.deps.listReservationsByFlightInstance(data) : unavailable(); }
+  listReservationsByFlightInstance(data: unknown, metadata: Metadata) { void metadata; return this.deps.listReservationsByFlightInstance ? this.deps.listReservationsByFlightInstance(validate(data, flightSchema, 'ListReservationsByFlightInstance')).then(grpcResponse) : unavailable(); }
   getBaggageOptions(): never { return unavailable(); } addBaggage(): never { return unavailable(); } searchDateChange(): never { return unavailable(); } confirmDateChange(): never { return unavailable(); } getCancellationQuote(): never { return unavailable(); } cancelReservation(): never { return unavailable(); }
-  resumePending(data: unknown, metadata: Metadata) { requireRole(requestContextFromMetadata(metadata) as RequestContext, 'system'); return this.deps.resumePending ? this.deps.resumePending(data) : unavailable(); }
+  resumePending(data: unknown, metadata: Metadata) { requireRole(requestContextFromMetadata(metadata) as RequestContext, 'system'); return this.deps.resumePending ? this.deps.resumePending(validate(data, resumeSchema, 'ResumePending')) : unavailable(); }
 }
 const methods: Record<string, keyof ReservationController> = { CreateReservation: 'createReservation', GetReservation: 'getReservation', ListReservations: 'listReservations', GetReservationSnapshot: 'getReservationSnapshot', ListReservationsByFlightInstance: 'listReservationsByFlightInstance', GetBaggageOptions: 'getBaggageOptions', AddBaggage: 'addBaggage', SearchDateChange: 'searchDateChange', ConfirmDateChange: 'confirmDateChange', GetCancellationQuote: 'getCancellationQuote', CancelReservation: 'cancelReservation', ResumePending: 'resumePending' };
 for (const [rpc, key] of Object.entries(methods)) GrpcMethod('ReservationService', rpc)(ReservationController.prototype, key, Object.getOwnPropertyDescriptor(ReservationController.prototype, key)!);

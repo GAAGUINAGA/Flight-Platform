@@ -1,4 +1,5 @@
 import { firstValueFrom } from 'rxjs';
+import { Logger } from '@nestjs/common';
 import { DomainError } from '@flight-platform/shared';
 import { AncillariesPort, EventPublisher, InventoryPort, PricingPort, TicketingPort } from '../../application/ports';
 
@@ -6,8 +7,14 @@ type GrpcMethod = (input: unknown) => import('rxjs').Observable<unknown>;
 type GrpcService = Record<string, GrpcMethod>;
 export type GrpcServiceForOwner = (ownerId?: string, role?: string) => GrpcService;
 const call = <T>(service: GrpcService, method: string, input: unknown) => firstValueFrom(service[method](input)) as Promise<T>;
-const emptyIfNotFound = async <T>(operation: Promise<T>): Promise<T | undefined> => {
-  try { return await operation; } catch (error) { if (typeof error === 'object' && error !== null && (error as { code?: unknown }).code === 5) return undefined; throw error; }
+const dependencyLogger = new Logger('ReservationDependencies');
+const readDependency = async <T>(dependency: 'ancillaries' | 'ticketing', method: string, operation: () => Promise<T>): Promise<T> => {
+  try { return await operation(); } catch (error) {
+    const code = typeof error === 'object' && error !== null ? (error as { code?: unknown }).code : undefined;
+    const safeCode = typeof code === 'number' && Number.isInteger(code) && code >= 0 && code <= 16 ? code : 'UNKNOWN';
+    if (!(dependency === 'ancillaries' && safeCode === 5)) dependencyLogger.error(`dependency=${dependency} operation=${method} code=${safeCode}`);
+    throw error;
+  }
 };
 
 export class GrpcInventoryGateway implements InventoryPort {
@@ -25,14 +32,14 @@ export class GrpcAncillariesGateway implements AncillariesPort {
   async reserveBaggage(input: { ownerId: string }): Promise<void> { await call(this.client(input.ownerId, 'system'), 'reserveBaggage', input); }
   async confirmSeats(input: { bookingId: string; ownerId: string }): Promise<void> { await call(this.client(input.ownerId, 'system'), 'confirmSeats', input); }
   async releaseAll(input: { bookingId: string; ownerId: string }): Promise<void> { await call(this.client(input.ownerId, 'system'), 'releaseAll', input); }
-  async getAssignments(input: { bookingId: string; ownerId: string }): Promise<unknown[]> { return (await emptyIfNotFound(call<{ assignments?: unknown[] }>(this.client(input.ownerId, 'system'), 'getAssignments', input)))?.assignments ?? []; }
-  async getBaggageOptions(input: { bookingId: string; ownerId: string }): Promise<unknown[]> { return (await emptyIfNotFound(call<{ options?: unknown[] }>(this.client(input.ownerId, 'system'), 'getBaggageOptions', input)))?.options ?? []; }
+  async getAssignments(input: { bookingId: string; ownerId: string }): Promise<unknown[]> { return (await readDependency('ancillaries', 'getAssignments', () => call<{ assignments?: unknown[] }>(this.client(input.ownerId, 'system'), 'getAssignments', input))).assignments ?? []; }
+  async getBaggageOptions(input: { bookingId: string; ownerId: string }): Promise<unknown[]> { return (await readDependency('ancillaries', 'getBaggageOptions', () => call<{ options?: unknown[] }>(this.client(input.ownerId, 'system'), 'getBaggageOptions', input))).options ?? []; }
 }
 export class GrpcTicketingGateway implements TicketingPort {
   constructor(private readonly client: GrpcServiceForOwner) {}
   async issueTickets(input: { ownerId: string }): Promise<unknown[]> { return (await call<{ tickets?: unknown[] }>(this.client(input.ownerId, 'system'), 'issueTickets', input)).tickets ?? []; }
   async voidTickets(input: { bookingId: string; ownerId: string }): Promise<void> { await call(this.client(input.ownerId, 'system'), 'voidTickets', input); }
-  async listTickets(input: { bookingId: string; ownerId: string }): Promise<unknown[]> { return (await call<{ tickets?: unknown[] }>(this.client(input.ownerId, 'system'), 'listTickets', input)).tickets ?? []; }
+  async listTickets(input: { bookingId: string; ownerId: string }): Promise<unknown[]> { return (await readDependency('ticketing', 'listTickets', () => call<{ tickets?: unknown[] }>(this.client(input.ownerId, 'system'), 'listTickets', input))).tickets ?? []; }
 }
 export class GrpcEventPublisher implements EventPublisher {
   constructor(private readonly client: GrpcServiceForOwner) {}
