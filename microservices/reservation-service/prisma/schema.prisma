@@ -21,12 +21,15 @@ model Reservation {
   paymentReference String? @map("payment_reference") @db.VarChar(255)
   idempotencyKey  String   @map("idempotency_key") @db.VarChar(255)
   sagaStep        String   @map("saga_step") @db.VarChar(64)
+  pendingOperation Json?   @map("pending_operation")
   attempts        Int      @default(0)
   createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
   passengers      ReservationPassenger[]
   changes         ReservationChange[]
-  paymentUsage    PaymentUsage?
+  paymentUsages   PaymentUsage[]
+  baggagePurchases BaggagePurchase[]
+  cancellationQuotes CancellationQuoteRecord[]
   @@unique([ownerId, idempotencyKey])
   @@index([ownerId, createdAt])
   @@map("reservations")
@@ -54,8 +57,39 @@ model ReservationChange {
 
 model PaymentUsage {
   paymentReference String @id @map("payment_reference") @db.VarChar(255)
-  reservationId    String @unique @map("reservation_id") @db.Uuid
+  reservationId    String @map("reservation_id") @db.Uuid
   createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   reservation      Reservation @relation(fields: [reservationId], references: [id], onDelete: Cascade)
   @@map("payment_usages")
+}
+
+model BaggagePurchase {
+  id               String @id @db.Uuid
+  bookingId        String @map("booking_id") @db.Uuid
+  ownerId          String @map("owner_id") @db.VarChar(128)
+  idempotencyKey   String @map("idempotency_key") @db.VarChar(255)
+  requestHash      String @map("request_hash") @db.VarChar(64)
+  paymentReference String @unique @map("payment_reference") @db.VarChar(255)
+  amountMinor      Int @map("amount_minor")
+  status           String @db.VarChar(16)
+  response         Json?
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt        DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  reservation      Reservation @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  @@unique([ownerId, idempotencyKey])
+  @@index([bookingId, ownerId])
+  @@map("baggage_purchases")
+}
+
+model CancellationQuoteRecord {
+  quoteId       String   @id @map("quote_id") @db.VarChar(128)
+  bookingId     String   @map("booking_id") @db.Uuid
+  ownerId       String   @map("owner_id") @db.VarChar(128)
+  payload       Json
+  expiresAt     DateTime @map("expires_at") @db.Timestamptz(3)
+  usedAt        DateTime? @map("used_at") @db.Timestamptz(3)
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  reservation   Reservation @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  @@index([bookingId, ownerId, expiresAt])
+  @@map("cancellation_quotes")
 }

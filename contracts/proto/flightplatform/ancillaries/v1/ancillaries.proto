@@ -10,6 +10,7 @@ service AncillariesService {
   rpc AssignSeatAtCheckIn(AssignSeatAtCheckInRequest) returns (SeatAssignment);
   rpc GetAssignments(BookingOwnerRequest) returns (SeatAssignmentsResponse);
   rpc ReserveBaggage(ReserveBaggageRequest) returns (BaggageReservationResponse);
+  rpc RegisterBaggageAllowance(RegisterBaggageAllowanceRequest) returns (flightplatform.common.v1.Empty);
   rpc GetBaggageOptions(BookingOwnerRequest) returns (BaggageOptionsResponse);
   rpc PurchaseBaggage(PurchaseBaggageRequest) returns (BaggageAddedResponse);
   rpc ReleaseAll(BookingOwnerRequest) returns (flightplatform.common.v1.Empty);
@@ -47,6 +48,8 @@ message ReserveBaggageRequest {
   repeated flightplatform.common.v1.ExtraBaggage baggage = 3;
 }
 message BaggageReservationResponse { string booking_id = 1; string status = 2; }
+message BaggageAllowanceItem { string passenger_id = 1; string itinerary_id = 2; uint32 checked_baggage_included = 3; }
+message RegisterBaggageAllowanceRequest { string booking_id = 1; string owner_id = 2; repeated BaggageAllowanceItem allowances = 3; }
 message BaggageOptionsResponse { repeated flightplatform.common.v1.BaggageOption options = 1; }
 message PurchaseBaggageRequest {
   string booking_id = 1;
@@ -54,5 +57,6 @@ message PurchaseBaggageRequest {
   string passenger_id = 3;
   string itinerary_id = 4;
   uint32 quantity = 5;
+  optional string operation_id = 6;
 }
 message BaggageAddedResponse { string passenger_id = 1; string itinerary_id = 2; uint32 total_baggage = 3; }

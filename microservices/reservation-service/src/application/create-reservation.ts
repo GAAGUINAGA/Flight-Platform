@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { DomainError } from '@flight-platform/shared';
+import { decimalToMinor, DomainError, minorToDecimal } from '@flight-platform/shared';
 import { validatePassengers } from '../domain/passengers';
 import { generatePnr } from '../domain/pnr';
 import { AncillariesPort, EventPublisher, InventoryPort, PaymentVerifier, PricingPort, TicketingPort } from './ports';
@@ -19,9 +19,28 @@ export class CreateReservation {
     const used = await this.store.findByPaymentReference(input.payment.paymentReference); if (used) throw new DomainError('PAYMENT_REFERENCE_INVALID');
     const hold = await this.pricing.getHold({ holdId: input.holdId, ownerId: input.ownerId }); if (hold.status !== 'HELD' || new Date(hold.expiresAt) <= new Date()) throw new DomainError('OFFER_NO_LONGER_AVAILABLE');
     validatePassengers(input.passengers as never[], hold.passengersBreakdown);
-    const paymentResult = await this.payment.verify({ paymentReference: input.payment.paymentReference, currency: hold.lockedPrice.currency, total: hold.lockedPrice.total });
-    const reservation: StoredReservation = { id: randomUUID(), ownerId: input.ownerId, pnr: await generatePnr(async (pnr) => Boolean(await this.store.findByPnr(pnr))), status: paymentResult === 'PENDING' ? 'PENDING_PAYMENT' : 'PENDING', holdId: input.holdId, paymentReference: input.payment.paymentReference, idempotencyKey: input.idempotencyKey, passengers: input.passengers, itineraries: hold.itineraries, grandTotal: hold.lockedPrice, changes: [], attempts: 0 };
-    await this.store.create(reservation); if (paymentResult === 'PENDING') return reservation;
+    const itineraryPrices = hold.itineraries as Array<{ itineraryId: string; pricingOptions: Array<{ extraCheckedBaggagePrice?: { currency: string; total: string } }> }>;
+    let expectedMinor = decimalToMinor(hold.lockedPrice.total);
+    for (const passenger of input.passengers as Array<{ extraBaggage?: Array<{ itineraryId: string; quantity: number }> }>) for (const bag of passenger.extraBaggage ?? []) {
+      const itinerary = itineraryPrices.find((item) => item.itineraryId === bag.itineraryId);
+      const price = itinerary?.pricingOptions?.[0]?.extraCheckedBaggagePrice;
+      if (!price || price.currency !== hold.lockedPrice.currency) throw new DomainError('VALIDATION_FAILED');
+      expectedMinor += decimalToMinor(price.total) * bag.quantity;
+    }
+    if (!Number.isSafeInteger(expectedMinor)) throw new DomainError('VALIDATION_FAILED');
+    const grandTotal = { ...hold.lockedPrice, total: minorToDecimal(expectedMinor) };
+    const paymentResult = await this.payment.verify({ paymentReference: input.payment.paymentReference, currency: grandTotal.currency, total: grandTotal.total });
+    const reservation: StoredReservation = { id: randomUUID(), ownerId: input.ownerId, pnr: await generatePnr(async (pnr) => Boolean(await this.store.findByPnr(pnr))), status: paymentResult === 'PENDING' ? 'PENDING_PAYMENT' : 'PENDING', holdId: input.holdId, paymentReference: input.payment.paymentReference, idempotencyKey: input.idempotencyKey, passengers: input.passengers, itineraries: hold.itineraries, grandTotal, changes: [], attempts: 0 };
+    if (hold.itineraries.length === 0) throw new DomainError('VALIDATION_FAILED');
+    const allowanceItems = (hold.itineraries as Array<{ itineraryId: string; pricingOptions: Array<{ baggageAllowance?: { checkedBaggageIncluded?: number } }> }>).flatMap((itinerary) => {
+      const included = itinerary.pricingOptions?.[0]?.baggageAllowance?.checkedBaggageIncluded;
+      if (!Number.isInteger(included) || included! < 0) throw new DomainError('VALIDATION_FAILED');
+      return (input.passengers as Array<{ passengerId: string; passengerType: string }>).map((passenger) => ({ passengerId: passenger.passengerId, itineraryId: itinerary.itineraryId, checkedBaggageIncluded: passenger.passengerType === 'INFANT' ? 0 : included! }));
+    });
+    await this.store.create(reservation);
+    try { await this.ancillaries.registerBaggageAllowance({ bookingId: reservation.id, ownerId: input.ownerId, allowances: allowanceItems }); }
+    catch (error) { reservation.status = 'FAILED'; reservation.changes.push({ changedAt: new Date().toISOString(), description: 'FAILED' }); await this.store.update(reservation); await this.payment.void({ paymentReference: input.payment.paymentReference }); throw error; }
+    if (paymentResult === 'PENDING') return reservation;
     const passengerData = input.passengers as Array<{ passengerId: string; passengerType: string; assignedSeats?: Array<{ segmentId: string; seatNumber: string }>; extraBaggage?: Array<{ itineraryId: string; quantity: number }> }>;
     const assignments = passengerData.flatMap((passenger) => (passenger.assignedSeats ?? []).map((seat) => ({ ...seat, passengerId: passenger.passengerId, passengerType: passenger.passengerType, cabinClass: 'ECONOMY' })));
     const baggage = passengerData.flatMap((passenger) => (passenger.extraBaggage ?? []).map((item) => ({ ...item, passengerId: passenger.passengerId })));

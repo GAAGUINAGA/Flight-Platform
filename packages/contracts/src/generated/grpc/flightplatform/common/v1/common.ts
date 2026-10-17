@@ -161,6 +161,7 @@ export interface AssignedSeat {
 export interface ExtraBaggage {
   itineraryId: string;
   quantity: number;
+  passengerId?: string | undefined;
 }
 
 export interface Passenger {
@@ -235,6 +236,7 @@ export interface BaggageOption {
   price: MoneyAmount | undefined;
   maxAllowed: number;
   alreadyPurchased: number;
+  checkedBaggageIncluded: number;
 }
 
 export interface PriceDifference {

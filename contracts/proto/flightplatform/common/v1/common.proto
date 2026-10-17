@@ -99,7 +99,7 @@ message SeatMap { string segment_id = 1; repeated SeatCabin cabins = 2; }
 
 message Contact { string email = 1; string phone = 2; }
 message AssignedSeat { string segment_id = 1; string seat_number = 2; }
-message ExtraBaggage { string itinerary_id = 1; uint32 quantity = 2; }
+message ExtraBaggage { string itinerary_id = 1; uint32 quantity = 2; optional string passenger_id = 3; }
 message Passenger {
   string passenger_id = 1;
   PassengerType passenger_type = 2;
@@ -158,6 +158,7 @@ message BaggageOption {
   MoneyAmount price = 3;
   uint32 max_allowed = 4;
   uint32 already_purchased = 5;
+  uint32 checked_baggage_included = 6;
 }
 message PriceDifference {
   string fare_difference = 1;

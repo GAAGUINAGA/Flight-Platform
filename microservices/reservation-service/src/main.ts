@@ -5,13 +5,15 @@ import { join } from 'node:path';
 import process from 'node:process';
 import { createGrpcService } from '@flight-platform/shared';
 import { createReservationServer, findProtoRoot } from './infrastructure/grpc/server';
-import { CreateReservation } from './application/create-reservation';
-import { ReservationQueries } from './application/queries';
-import { ResumePending } from './application/resume-pending';
 import { FakePaymentVerifier } from './infrastructure/clients/fakes';
 import { GrpcAncillariesGateway, GrpcEventPublisher, GrpcInventoryGateway, GrpcPricingGateway, GrpcServiceForOwner, GrpcTicketingGateway } from './infrastructure/clients/grpc-gateways';
 import { PrismaClient } from './infrastructure/persistence/prisma-client/client';
 import { PrismaReservationStore } from './infrastructure/persistence/prisma-reservation-store';
+import { PrismaBaggageOperations } from './infrastructure/persistence/prisma-baggage-operations';
+import { PrismaCancellationQuotes } from './infrastructure/persistence/prisma-cancellation-quotes';
+import { SystemClock } from '@flight-platform/shared';
+import { createResponseValidator } from './infrastructure/grpc/openapi-response-validator';
+import { composeReservation } from './infrastructure/grpc/reservation-composition';
 
 async function bootstrap(): Promise<void> {
   const envFile = join(__dirname, '..', '.env');
@@ -25,8 +27,9 @@ async function bootstrap(): Promise<void> {
   const ancillaries = new GrpcAncillariesGateway(factory(process.env.ANCILLARIES_GRPC_URL ?? 'localhost:50053', 'flightplatform.ancillaries.v1', 'flightplatform/ancillaries/v1/ancillaries.proto', 'AncillariesService'));
   const ticketing = new GrpcTicketingGateway(factory(process.env.TICKETING_GRPC_URL ?? 'localhost:50055', 'flightplatform.ticketing.v1', 'flightplatform/ticketing/v1/ticketing.proto', 'TicketingService'));
   const events = new GrpcEventPublisher(factory(process.env.WEBHOOKS_GRPC_URL ?? 'localhost:50057', 'flightplatform.webhooks.v1', 'flightplatform/webhooks/v1/webhooks.proto', 'WebhooksService'));
-  const prisma = new PrismaClient(); const store = new PrismaReservationStore(prisma); const payment = new FakePaymentVerifier(); const create = new CreateReservation(store, pricing, payment, ancillaries, inventory, ticketing, events); const queries = new ReservationQueries(store, ancillaries, ticketing); const resume = new ResumePending(store, payment, events, ancillaries, inventory, ticketing);
-  const app = await createReservationServer({ url: `0.0.0.0:${process.env.PORT ?? '50054'}`, internalApiKey, deps: { createReservation: (input) => create.execute(input as never), getReservation: (input) => queries.get(input as never), listReservations: (input) => queries.list(input as never), getReservationSnapshot: (input) => queries.get(input as never), listReservationsByFlightInstance: (input) => queries.byFlightInstance(input as never), resumePending: (input) => resume.execute(input as never) } });
+  const prisma = new PrismaClient(); const store = new PrismaReservationStore(prisma); const payment = new FakePaymentVerifier();
+  const deps = composeReservation({ store, pricing, payment, ancillaries, inventory, ticketing, events, operations: new PrismaBaggageOperations(prisma), quotes: new PrismaCancellationQuotes(prisma), clock: new SystemClock(), cutoffHours: Number(process.env.BAGGAGE_CUTOFF_HOURS ?? '4'), holdTtlMinutes: Number(process.env.HOLD_TTL_MINUTES ?? '20'), validateResponse: createResponseValidator() });
+  const app = await createReservationServer({ url: `0.0.0.0:${process.env.PORT ?? '50054'}`, internalApiKey, deps });
   app.enableShutdownHooks();
   await app.listen();
 }

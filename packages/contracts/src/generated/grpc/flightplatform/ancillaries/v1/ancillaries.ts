@@ -62,6 +62,18 @@ export interface BaggageReservationResponse {
   status: string;
 }
 
+export interface BaggageAllowanceItem {
+  passengerId: string;
+  itineraryId: string;
+  checkedBaggageIncluded: number;
+}
+
+export interface RegisterBaggageAllowanceRequest {
+  bookingId: string;
+  ownerId: string;
+  allowances: BaggageAllowanceItem[];
+}
+
 export interface BaggageOptionsResponse {
   options: BaggageOption[];
 }
@@ -72,6 +84,7 @@ export interface PurchaseBaggageRequest {
   passengerId: string;
   itineraryId: string;
   quantity: number;
+  operationId?: string | undefined;
 }
 
 export interface BaggageAddedResponse {
@@ -96,6 +109,8 @@ export interface AncillariesServiceClient {
   getAssignments(request: BookingOwnerRequest): Observable<SeatAssignmentsResponse>;
 
   reserveBaggage(request: ReserveBaggageRequest): Observable<BaggageReservationResponse>;
+
+  registerBaggageAllowance(request: RegisterBaggageAllowanceRequest): Observable<Empty>;
 
   getBaggageOptions(request: BookingOwnerRequest): Observable<BaggageOptionsResponse>;
 
@@ -129,6 +144,8 @@ export interface AncillariesServiceController {
     request: ReserveBaggageRequest,
   ): Promise<BaggageReservationResponse> | Observable<BaggageReservationResponse> | BaggageReservationResponse;
 
+  registerBaggageAllowance(request: RegisterBaggageAllowanceRequest): Promise<Empty> | Observable<Empty> | Empty;
+
   getBaggageOptions(
     request: BookingOwnerRequest,
   ): Promise<BaggageOptionsResponse> | Observable<BaggageOptionsResponse> | BaggageOptionsResponse;
@@ -150,6 +167,7 @@ export function AncillariesServiceControllerMethods() {
       "assignSeatAtCheckIn",
       "getAssignments",
       "reserveBaggage",
+      "registerBaggageAllowance",
       "getBaggageOptions",
       "purchaseBaggage",
       "releaseAll",

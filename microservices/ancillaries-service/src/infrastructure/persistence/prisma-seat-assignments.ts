@@ -15,8 +15,7 @@ export class PrismaSeatAssignmentStore implements AssignmentStore {
   }
   async list(bookingId: string, ownerId: string): Promise<Assignment[]> { return (await this.prisma.seatAssignment.findMany({ where: { bookingId, ownerId } })).map(map); }
   async updateStatus(bookingId: string, ownerId: string, status: 'CONFIRMED' | 'RELEASED'): Promise<Assignment[]> {
-    const result = await this.prisma.seatAssignment.updateMany({ where: { bookingId, ownerId, status: { not: 'RELEASED' } }, data: { status } });
-    if (result.count === 0 && !(await this.prisma.seatAssignment.findFirst({ where: { bookingId, ownerId } }))) throw new DomainError('NOT_FOUND');
+    await this.prisma.seatAssignment.updateMany({ where: { bookingId, ownerId, status: { not: 'RELEASED' } }, data: { status } });
     return this.list(bookingId, ownerId);
   }
   async activeSeatNumbers(flightInstanceId: string): Promise<string[]> { return (await this.prisma.seatAssignment.findMany({ where: { flightInstanceId, status: { not: 'RELEASED' } }, select: { seatNumber: true } })).map((value) => value.seatNumber); }

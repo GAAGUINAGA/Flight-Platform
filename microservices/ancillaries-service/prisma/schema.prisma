@@ -57,10 +57,23 @@ model BaggageItem {
   passengerId String?  @map("passenger_id") @db.Uuid
   itineraryId String   @map("itinerary_id") @db.Uuid
   quantity    Int
+  operationId String?  @unique @map("operation_id") @db.Uuid
+  resultTotal Int?     @map("result_total")
   status      String   @db.VarChar(16)
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
   @@index([bookingId, ownerId])
   @@index([bookingId, passengerId, itineraryId])
   @@map("baggage_items")
+}
+
+model BaggageAllowance {
+  bookingId String @map("booking_id") @db.Uuid
+  ownerId String @map("owner_id") @db.VarChar(128)
+  passengerId String @map("passenger_id") @db.Uuid
+  itineraryId String @map("itinerary_id") @db.Uuid
+  checkedBaggageIncluded Int @map("checked_baggage_included")
+  @@id([bookingId, passengerId, itineraryId])
+  @@index([bookingId, ownerId])
+  @@map("baggage_allowances")
 }

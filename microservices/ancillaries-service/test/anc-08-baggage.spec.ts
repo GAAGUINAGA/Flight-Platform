@@ -1,11 +1,14 @@
 import { expect, it } from '@jest/globals';
 import { DomainError } from '@flight-platform/shared';
-import { Baggage, BaggageItem, BaggageStore } from '../src/application/baggage';
+import { Baggage, BaggageAllowanceItem, BaggageItem, BaggageStore } from '../src/application/baggage';
 import { BookingOwnershipStore, ownershipNotFound } from '../src/application/booking-ownership';
 
 const ids = { bookingId: '00000000-0000-4000-8000-000000000001', passengerId: '00000000-0000-4000-8000-000000000002', itineraryId: '00000000-0000-4000-8000-000000000003' };
 class MemoryBaggage implements BaggageStore {
   values: BaggageItem[] = [];
+  allowances: BaggageAllowanceItem[] = [];
+  async registerAllowances(input: BaggageAllowanceItem[]) { this.allowances.push(...input); }
+  async listAllowances(bookingId: string, ownerId: string) { return this.allowances.filter((item) => item.bookingId === bookingId && item.ownerId === ownerId); }
   async reserve(input: BaggageItem[]) { this.values.push(...input); }
   async purchase(input: BaggageItem, max: number) { const total = this.values.filter((item) => item.bookingId === input.bookingId && item.ownerId === input.ownerId && item.passengerId === input.passengerId && item.itineraryId === input.itineraryId && item.status !== 'RELEASED').reduce((sum, item) => sum + item.quantity, 0) + input.quantity; if (total > max) throw new DomainError('BAGGAGE_LIMIT_EXCEEDED'); this.values.push(input); return total; }
   async list(bookingId: string, ownerId: string) { return this.values.filter((item) => item.bookingId === bookingId && item.ownerId === ownerId); }
