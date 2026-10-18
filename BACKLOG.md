@@ -56,3 +56,5 @@
 ## Observaciones de docs/audit/audits/F10/audit-2.md
 - El smoke de check-in no muestra el vuelo ni la ventana usados: imprimir número de vuelo, fecha y minutos hasta la salida (sin datos personales).
 - La evidencia de despliegue debería incluir el describe de todos los servicios redesplegados o afectados, no solo de los modificados.
+
+- Seed rodante: Inventory y Pricing generan 60 días desde la fecha de ejecución con createMany + skipDuplicates (no tocan held/sold). Para extenderlo en Supabase, ejecutar primero el seed de inventory y luego el de pricing, cargando .env.supabase en la sesión sin imprimirlo. Repetir antes de que el último vuelo quede a menos de 3 días.
