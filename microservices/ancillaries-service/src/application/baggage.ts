@@ -31,7 +31,8 @@ export class Baggage {
   async options(input: unknown): Promise<Array<{ passengerId: string; itineraryId: string; maxAllowed: number; alreadyPurchased: number; checkedBaggageIncluded: number; price: { currency: string; total: string } }>> {
     const request = validate(booking, input);
     await this.ownership.assertOwner(request.bookingId, request.ownerId);
-    const [values, allowances] = await Promise.all([this.store.list(request.bookingId, request.ownerId), this.store.listAllowances(request.bookingId, request.ownerId)]);
+    const values = await this.store.list(request.bookingId, request.ownerId);
+    const allowances = await this.store.listAllowances(request.bookingId, request.ownerId);
     const grouped = new Map<string, BaggageItem[]>();
     for (const value of values.filter((item) => item.passengerId && item.status !== 'RELEASED')) { const key = `${value.passengerId}:${value.itineraryId}`; grouped.set(key, [...(grouped.get(key) ?? []), value]); }
     const result = allowances.map((item) => { const alreadyPurchased = (grouped.get(`${item.passengerId}:${item.itineraryId}`) ?? []).reduce((sum, value) => sum + value.quantity, 0); return { passengerId: item.passengerId, itineraryId: item.itineraryId, maxAllowed: Math.max(0, this.maxAllowed - item.checkedBaggageIncluded - alreadyPurchased), alreadyPurchased, checkedBaggageIncluded: item.checkedBaggageIncluded, price: { currency: 'USD', total: '0.00' } }; });

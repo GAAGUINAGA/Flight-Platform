@@ -1,6 +1,16 @@
 import { DomainError } from '@flight-platform/shared';
 import { BaggageAllowanceItem, BaggageItem, BaggageStore } from '../../application/baggage';
 import { PrismaClient } from './prisma-client/client';
+import process from 'node:process';
+
+const transactionOptions = () => {
+  const read = (name: string, fallback: number): number => {
+    const value = Number(process.env[name] ?? fallback);
+    if (!Number.isSafeInteger(value) || value <= 0) throw new Error(`Invalid ${name}`);
+    return value;
+  };
+  return { maxWait: read('ANCILLARIES_TX_MAX_WAIT_MS', 4000), timeout: read('ANCILLARIES_TX_TIMEOUT_MS', 4000) };
+};
 
 const map = (item: { bookingId: string; ownerId: string; passengerId: string | null; itineraryId: string; quantity: number; status: string }): BaggageItem => ({ ...item, status: item.status as BaggageItem['status'] });
 export class PrismaBaggageStore implements BaggageStore {
@@ -17,16 +27,18 @@ export class PrismaBaggageStore implements BaggageStore {
         }
         await tx.baggageItem.create({ data: item });
       }
-    });
+    }, transactionOptions());
   }
   async registerAllowances(input: BaggageAllowanceItem[]): Promise<void> {
     await this.prisma.$transaction(async (tx) => {
       await tx.baggageAllowance.createMany({ data: input, skipDuplicates: true });
+      const rows = await tx.baggageAllowance.findMany({ where: { OR: input.map(({ bookingId, passengerId, itineraryId }) => ({ bookingId, passengerId, itineraryId })) } });
+      const savedByKey = new Map(rows.map((row) => [`${row.bookingId}:${row.passengerId}:${row.itineraryId}`, row]));
       for (const item of input) {
-        const saved = await tx.baggageAllowance.findUnique({ where: { bookingId_passengerId_itineraryId: { bookingId: item.bookingId, passengerId: item.passengerId, itineraryId: item.itineraryId } } });
+        const saved = savedByKey.get(`${item.bookingId}:${item.passengerId}:${item.itineraryId}`);
         if (!saved || saved.ownerId !== item.ownerId || saved.checkedBaggageIncluded !== item.checkedBaggageIncluded) throw new DomainError('VALIDATION_FAILED');
       }
-    });
+    }, transactionOptions());
   }
   async listAllowances(bookingId: string, ownerId: string): Promise<BaggageAllowanceItem[]> { return this.prisma.baggageAllowance.findMany({ where: { bookingId, ownerId } }); }
   async purchase(input: BaggageItem, maxAllowed: number, operationId?: string): Promise<number> {
@@ -45,7 +57,7 @@ export class PrismaBaggageStore implements BaggageStore {
       if (total > maxAllowed) throw new DomainError('BAGGAGE_LIMIT_EXCEEDED');
       await tx.baggageItem.create({ data: { ...input, operationId, resultTotal: total } });
       return total;
-    });
+    }, transactionOptions());
   }
   async list(bookingId: string, ownerId: string): Promise<BaggageItem[]> { return (await this.prisma.baggageItem.findMany({ where: { bookingId, ownerId } })).map(map); }
   async release(bookingId: string, ownerId: string): Promise<void> { await this.prisma.baggageItem.updateMany({ where: { bookingId, ownerId, status: { not: 'RELEASED' } }, data: { status: 'RELEASED' } }); }

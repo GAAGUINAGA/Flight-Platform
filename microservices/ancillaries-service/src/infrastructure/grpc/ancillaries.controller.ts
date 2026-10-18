@@ -50,7 +50,8 @@ export class AncillariesController {
     const owned = this.withOwner(data, metadata);
     await this._deps.seats.assertOwnership(owned);
     requireRole(context(metadata), 'admin', 'system');
-    await Promise.all([this._deps.seats.release(owned), this._deps.baggage.releaseAll(owned)]);
+    await this._deps.seats.release(owned);
+    await this._deps.baggage.releaseAll(owned);
     return {};
   }
 }

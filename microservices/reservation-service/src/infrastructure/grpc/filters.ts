@@ -2,11 +2,12 @@ import { Catch, CallHandler, ExecutionContext, Injectable, Logger, NestIntercept
 import { requestContextFromMetadata, safeGrpcError } from '@flight-platform/shared';
 import { Logger as PinoLogger } from 'pino';
 import { Observable, tap, throwError } from 'rxjs';
+import { prismaDiagnostic } from './prisma-diagnostic';
 
 @Catch()
 export class ReservationExceptionFilter implements RpcExceptionFilter<unknown> {
   private readonly logger = new Logger('ReservationService');
-  catch(error: unknown): Observable<never> { const safe = safeGrpcError(error); if (safe.details === 'INTERNAL_ERROR') this.logger.error(`internal error: ${error instanceof Error ? error.name : typeof error}`); return throwError(() => safe); }
+  catch(error: unknown): Observable<never> { const safe = safeGrpcError(error); if (safe.details === 'INTERNAL_ERROR') this.logger.error(prismaDiagnostic(error)); return throwError(() => safe); }
 }
 @Injectable()
 export class LoggingInterceptor implements NestInterceptor {
