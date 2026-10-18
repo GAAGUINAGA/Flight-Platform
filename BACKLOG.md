@@ -52,3 +52,7 @@
 - Faltan pruebas de check-in con vuelo salido o cancelado, y con cupón distinto de ISSUED (el código lo implementa).
 - Faltan pruebas de ConfirmSeats, ReleaseSeats y del índice único sobre un asiento CHECKED_IN; ANC-SEC-02 de AssignSeatAtCheckIn no ejercita markCheckedIn con una asignación existente de otro owner.
 - Un asiento RELEASED aborta todo el check-in en lugar de marcar solo a ese pasajero como FAILED.
+
+## Observaciones de docs/audit/audits/F10/audit-2.md
+- El smoke de check-in no muestra el vuelo ni la ventana usados: imprimir número de vuelo, fecha y minutos hasta la salida (sin datos personales).
+- La evidencia de despliegue debería incluir el describe de todos los servicios redesplegados o afectados, no solo de los modificados.
