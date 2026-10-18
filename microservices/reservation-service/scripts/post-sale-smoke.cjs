@@ -22,7 +22,7 @@ const Pricing = grpc.loadPackageDefinition(load(['flightplatform', 'pricing', 'v
 const credentials = insecure ? grpc.credentials.createInsecure() : grpc.credentials.createSsl();
 const reservation = new Reservation(target, credentials);
 const pricing = new Pricing(pricingTarget, credentials);
-const ownerId = `pst-smoke-${randomUUID()}`;
+const ownerId = process.env.POST_SALE_SMOKE_OWNER_ID || `pst-smoke-${randomUUID()}`;
 const outcomes = [];
 const metadata = () => { const value = new grpc.Metadata(); value.set('x-internal-key', key); value.set('x-owner-id', ownerId); value.set('x-role', 'customer'); value.set('x-correlation-id', `pst-smoke-${randomUUID()}`); return value; };
 const call = (client, method, request) => new Promise((resolve, reject) => client[method](request, metadata(), { deadline: Date.now() + 20000 }, (error, response) => error ? reject(error) : resolve(response)));
@@ -40,11 +40,11 @@ const run = async (name, action, predicate = () => true) => {
 (async () => {
   const date = new Date(Date.now() + 2 * 86_400_000).toISOString().slice(0, 10);
   const search = await run('Pricing.SearchOffers', () => call(pricing, 'searchOffers', { legs: [{ origin: 'UIO', destination: 'GYE', departureDate: date }], passengers: { adults: 1, youths: 0, children: 0, infants: 0 } }), (value) => value.offers?.length > 0);
-  const offer = search?.offers?.[0];
-  const itinerary = offer?.itineraries?.[0];
-  const fare = itinerary?.pricingOptions?.find((option) => option.fareRules?.isChangeable) ?? itinerary?.pricingOptions?.[0];
+  const selection = search?.offers?.flatMap((offer) => (offer.itineraries ?? []).map((itinerary) => ({ offer, itinerary, fare: itinerary.pricingOptions?.find((option) => option.fareRules?.isChangeable === true || (option.fareRules == null && ['CLASSIC', 'FLEX'].includes(option.fareBrand))) }))).find((item) => item.fare);
+  const { offer, itinerary, fare } = selection ?? {};
   const hold = await run('Pricing.HoldOffer', () => {
-    if (!offer || !itinerary || !fare) throw Object.assign(new Error('offer unavailable'), { code: 'NOT_READY', details: 'NOT_READY' });
+    if (!search) throw Object.assign(new Error('offer unavailable'), { code: 'NOT_READY', details: 'NOT_READY' });
+    if (!offer || !itinerary || !fare) throw Object.assign(new Error('no changeable fare available'), { code: 'NO_CHANGEABLE_FARE', details: 'NO_CHANGEABLE_FARE' });
     return call(pricing, 'holdOffer', { ownerId, offerId: offer.offerId, itinerarySelections: [{ itineraryId: itinerary.itineraryId, cabinClass: fare.cabinClass, fareBrand: fare.fareBrand }], passengersBreakdown: { adults: 1, youths: 0, children: 0, infants: 0 }, idempotencyKey: randomUUID() });
   }, (value) => Boolean(value.holdId));
   const passengerId = randomUUID();
@@ -53,18 +53,21 @@ const run = async (name, action, predicate = () => true) => {
     return call(reservation, 'createReservation', { holdId: hold.holdId, passengers: [{ passengerId, passengerType: 'ADULT', firstName: 'Smoke', lastName: 'Passenger', documentType: 'PASSPORT', documentNumber: 'SMOKE123', nationality: 'EC', documentExpiryDate: '2030-01-01', birthDate: '1990-01-01', gender: 'X', contact: { email: 'smoke@example.invalid', phone: '+593999999999' }, assignedSeats: [], extraBaggage: [] }], payment: { paymentReference: `pay_ok_${randomUUID()}` }, idempotencyKey: randomUUID() });
   }, (value) => Boolean(value.bookingId) && value.status === 'CONFIRMED');
   const detail = await run('GetReservation', () => booking && call(reservation, 'getReservation', { bookingId: booking.bookingId }), (value) => value.status === 'CONFIRMED' && value.itineraries?.length > 0);
-  const baggageOptions = await run('GetBaggageOptions', () => booking && call(reservation, 'getBaggageOptions', { bookingId: booking.bookingId }), (value) => Array.isArray(value) && value.some((item) => item.passengerId === passengerId && item.maxAllowed > 0));
-  const baggage = baggageOptions?.find((item) => item.passengerId === passengerId && item.maxAllowed > 0);
+  const baggageOptions = await run('GetBaggageOptions', () => booking && call(reservation, 'getBaggageOptions', { bookingId: booking.bookingId }), (value) => Array.isArray(value?.options) && value.options.some((item) => item.passengerId === passengerId && item.maxAllowed > 0));
+  const baggage = baggageOptions?.options.find((item) => item.passengerId === passengerId && item.maxAllowed > 0);
   await run('AddBaggage', () => {
     if (!booking || !baggage) throw Object.assign(new Error('baggage unavailable'), { code: 'NOT_READY', details: 'NOT_READY' });
     return call(reservation, 'addBaggage', { bookingId: booking.bookingId, passengerId, itineraryId: baggage.itineraryId, quantity: 1, payment: { paymentReference: `pay_ok_${randomUUID()}` }, idempotencyKey: randomUUID() });
   }, (value) => value.passengerId === passengerId && value.totalBaggage >= 1);
   const first = detail?.itineraries?.[0];
   const oldDate = first?.segments?.[0]?.departure?.at;
-  const nextDate = oldDate ? new Date(oldDate) : new Date(Date.now() + 3 * 86_400_000);
-  nextDate.setUTCDate(nextDate.getUTCDate() + 1);
-  const dateSearch = await run('SearchDateChange', () => booking && first && call(reservation, 'searchDateChange', { bookingId: booking.bookingId, changes: [{ itineraryId: first.itineraryId, newDepartureDate: nextDate.toISOString().slice(0, 10) }] }), (value) => value.offers?.length > 0);
-  const changeOffer = dateSearch?.offers?.[0];
+  const nextDate = oldDate ? new Date(oldDate) : null;
+  if (nextDate && !Number.isNaN(nextDate.getTime())) nextDate.setUTCDate(nextDate.getUTCDate() + 1);
+  const dateSearch = await run('SearchDateChange', () => {
+    if (!booking || !first?.itineraryId || !nextDate || Number.isNaN(nextDate.getTime())) throw Object.assign(new Error('itinerary departure unavailable'), { code: 'NOT_READY', details: 'NOT_READY' });
+    return call(reservation, 'searchDateChange', { bookingId: booking.bookingId, changes: [{ itineraryId: first.itineraryId, newDepartureDate: nextDate.toISOString().slice(0, 10) }] });
+  }, (value) => Array.isArray(value?.offers) && value.offers.some((item) => Boolean(item.changeOfferId)));
+  const changeOffer = dateSearch?.offers.find((item) => item.changeOfferId);
   const changed = await run('ConfirmDateChange', () => {
     if (!booking || !changeOffer) throw Object.assign(new Error('change offer unavailable'), { code: 'NOT_READY', details: 'NOT_READY' });
     return call(reservation, 'confirmDateChange', { bookingId: booking.bookingId, changeOfferId: changeOffer.changeOfferId, payment: { paymentReference: `pay_ok_${randomUUID()}` }, assignedSeats: [], idempotencyKey: randomUUID() });

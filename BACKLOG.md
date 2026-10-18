@@ -39,3 +39,7 @@
 - ancillaries: maxWait + timeout de transacción por defecto (4 s + 4 s) pueden superar el deadline gRPC de 5 s de reservation. Ajustar los valores por defecto (p. ej. 1,5 s + 3 s) o subir el deadline, y documentarlo.
 - Los errores internos que no son de Prisma ya no registran el nombre de la excepción; recuperarlo sin exponer mensajes ni valores.
 - Confirmar con los logs de Cloud Run el código real del fallo de producción (P2028 fue la reproducción local).
+
+## Observaciones de docs/audit/audits/F9/audit-5.md
+- La prueba opt-in del smoke de postventa usa un puerto fijo (29661); usar un puerto libre asignado dinámicamente.
+- En los clones del auditor aparecen archivos generados de packages/contracts como modificados tras la instalación; revisar que la regla LF de .gitattributes y el paso de generación no ensucien el árbol.

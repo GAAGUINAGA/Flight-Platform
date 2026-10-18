@@ -1,8 +1,10 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from '@jest/globals';
 import { randomUUID } from 'node:crypto';
+import { execFile } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import process from 'node:process';
+import { promisify } from 'node:util';
 import Ajv from 'ajv';
 import dotenv from 'dotenv';
 import { parse } from 'yaml';
@@ -45,12 +47,14 @@ import { SystemClock } from '@flight-platform/shared';
  * RSV-12 is deliberately opt-in: it writes to all six local service schemas.
  * Run only in the principal checkout (never a clean clone):
  *   $env:RUN_RSV12_REAL='true'; npx jest microservices/reservation-service/test/integration/rsv-12-real.spec.ts --runInBand --verbose
+ * RUN_PST_SMOKE_REAL=true also runs the actual post-sale smoke with all six
+ * services in process; combine it with RUN_RSV12_REAL and RUN_PST_REAL.
  *
  * dotenv loads each local service .env into an isolated object. Values are never
  * copied to stdout/stderr. The test owns every Nest server and Prisma client and
  * closes them even if setup fails.
  */
-const run = process.env.RUN_RSV12_REAL === 'true' || process.env.RUN_PST_REAL === 'true';
+const run = process.env.RUN_RSV12_REAL === 'true' || process.env.RUN_PST_REAL === 'true' || process.env.RUN_PST_SMOKE_REAL === 'true';
 const describeReal = run ? describe : describe.skip;
 const key = 'rsv-12-internal-key-that-is-at-least-32-bytes';
 const ownerId = `rsv12-${randomUUID()}`;
@@ -186,10 +190,10 @@ describeReal('RSV-12: integración local con Inventory, Pricing, Ancillaries, Ti
     return { holdId: response.holdId, segmentId: snapshot.segmentId, seatNumber: await availableSeat(snapshot.segmentId, offer.itinerarySelections[0].cabinClass), pricingPort };
   };
   const services = (pricingPort: PricingPort, payment: PaymentVerifier = new FakePaymentVerifier(), ticketingPort = new GrpcTicketingGateway(factory(`127.0.0.1:${ports.ticketing}`, 'flightplatform.ticketing.v1', 'flightplatform/ticketing/v1/ticketing.proto', 'TicketingService'))) => { const ancillary = new GrpcAncillariesGateway(factory(`127.0.0.1:${ports.ancillaries}`, 'flightplatform.ancillaries.v1', 'flightplatform/ancillaries/v1/ancillaries.proto', 'AncillariesService')); const inventoryPort = new GrpcInventoryGateway(factory(`127.0.0.1:${ports.inventory}`, 'flightplatform.inventory.v1', 'flightplatform/inventory/v1/inventory.proto', 'InventoryService')); const events = new GrpcEventPublisher(factory(`127.0.0.1:${ports.webhooks}`, 'flightplatform.webhooks.v1', 'flightplatform/webhooks/v1/webhooks.proto', 'WebhooksService')); const useCase = new CreateReservation(store, pricingPort, payment, ancillary, inventoryPort, ticketingPort, events); return { useCase, resume: new ResumePending(store, payment, events, ancillary, inventoryPort, ticketingPort) }; };
-  const openComposedReservationRpc = async () => {
+  const openComposedReservationRpc = async (pricingPortNumber = ports.pricing) => {
     const ancillary = new GrpcAncillariesGateway(factory(`127.0.0.1:${ports.ancillaries}`, 'flightplatform.ancillaries.v1', 'flightplatform/ancillaries/v1/ancillaries.proto', 'AncillariesService'));
     const inventoryPort = new GrpcInventoryGateway(factory(`127.0.0.1:${ports.inventory}`, 'flightplatform.inventory.v1', 'flightplatform/inventory/v1/inventory.proto', 'InventoryService'));
-    const pricingPort = new GrpcPricingGateway(factory(`127.0.0.1:${ports.pricing}`, 'flightplatform.pricing.v1', 'flightplatform/pricing/v1/pricing.proto', 'PricingService'));
+    const pricingPort = new GrpcPricingGateway(factory(`127.0.0.1:${pricingPortNumber}`, 'flightplatform.pricing.v1', 'flightplatform/pricing/v1/pricing.proto', 'PricingService'));
     const ticketingPort = new GrpcTicketingGateway(factory(`127.0.0.1:${ports.ticketing}`, 'flightplatform.ticketing.v1', 'flightplatform/ticketing/v1/ticketing.proto', 'TicketingService'));
     const events = new GrpcEventPublisher(factory(`127.0.0.1:${ports.webhooks}`, 'flightplatform.webhooks.v1', 'flightplatform/webhooks/v1/webhooks.proto', 'WebhooksService'));
     const payment = new FakePaymentVerifier();
@@ -202,6 +206,39 @@ describeReal('RSV-12: integración local con Inventory, Pricing, Ancillaries, Ti
     const metadata = new Metadata(); metadata.set('x-internal-key', key); metadata.set('x-owner-id', ownerId); metadata.set('x-role', 'customer');
     return { app, client, metadata, call: (method: 'createReservation' | 'getBaggageOptions' | 'addBaggage' | 'searchDateChange' | 'confirmDateChange' | 'getCancellationQuote' | 'cancelReservation', value: unknown, requestOwner = ownerId) => { const requestMetadata = new Metadata(); requestMetadata.set('x-internal-key', key); requestMetadata.set('x-owner-id', requestOwner); requestMetadata.set('x-role', 'customer'); return new Promise<unknown>((resolve, reject) => client[method](value, requestMetadata, (error, response) => error ? reject(error) : resolve(response))); } };
   };
+  const smokeIntegration = process.env.RUN_PST_SMOKE_REAL === 'true' ? it : it.skip;
+  smokeIntegration('PST-SMOKE / I: el script real completa sus diez pasos contra servicios reales', async () => {
+    const smokeOwner = `pst-smoke-test-${randomUUID()}`;
+    const smokePricingPort = 29661;
+    const inventoryClient = createGrpcService({ url: `127.0.0.1:${ports.inventory}`, grpcTls: false, internalApiKey: key, correlationId: 'pricing-service', role: 'customer', packageName: 'flightplatform.inventory.v1', protoPath: join(findProtoRoot(), 'flightplatform/inventory/v1/inventory.proto'), serviceName: 'InventoryService' });
+    const smokePricing = await createPricingServer({ url: `127.0.0.1:${smokePricingPort}`, internalApiKey: key, runtime: { prisma: pricing, inventory: new PricingInventoryGateway(inventoryClient as never) } });
+    let rpc: Awaited<ReturnType<typeof openComposedReservationRpc>> | undefined;
+    try {
+      await smokePricing.listen();
+      rpc = await openComposedReservationRpc(smokePricingPort);
+      const result = await promisify(execFile)(process.execPath, [join(process.cwd(), 'microservices/reservation-service/scripts/post-sale-smoke.cjs'), '127.0.0.1:29660', '--insecure'], {
+        env: { ...process.env, INTERNAL_API_KEY: key, PRICING_GRPC_URL: `127.0.0.1:${smokePricingPort}`, POST_SALE_SMOKE_OWNER_ID: smokeOwner }, timeout: 120_000
+      }).catch((error: Error & { stdout?: string }) => { throw new Error(`post-sale smoke failed:\n${error.stdout ?? ''}`); });
+      expect(result.stdout.trim().split(/\r?\n/)).toEqual([
+        'OK   Pricing.SearchOffers', 'OK   Pricing.HoldOffer', 'OK   CreateReservation', 'OK   GetReservation',
+        'OK   GetBaggageOptions', 'OK   AddBaggage', 'OK   SearchDateChange', 'OK   ConfirmDateChange',
+        'OK   GetCancellationQuote', 'OK   CancelReservation'
+      ]);
+    } finally {
+      try {
+        const rows = await reservation.reservation.findMany({ where: { ownerId: smokeOwner }, select: { id: true } });
+        const ownerRows = await ancillaries.bookingOwner.findMany({ where: { ownerId: smokeOwner }, select: { bookingId: true } });
+        const bookingIds = [...new Set([...rows.map((row) => row.id), ...ownerRows.map((row) => row.bookingId)])];
+        const ancillary = new GrpcAncillariesGateway(factory(`127.0.0.1:${ports.ancillaries}`, 'flightplatform.ancillaries.v1', 'flightplatform/ancillaries/v1/ancillaries.proto', 'AncillariesService'));
+        const inventoryPort = new GrpcInventoryGateway(factory(`127.0.0.1:${ports.inventory}`, 'flightplatform.inventory.v1', 'flightplatform/inventory/v1/inventory.proto', 'InventoryService'));
+        for (const bookingId of bookingIds) await Promise.allSettled([ancillary.releaseAll({ bookingId, ownerId: smokeOwner }), inventoryPort.releaseReservedInventory({ bookingId, ownerId: smokeOwner })]);
+        const holds = await inventory.hold.findMany({ where: { ownerId: smokeOwner, status: 'HELD' }, select: { id: true } });
+        const inventoryRpc = factory(`127.0.0.1:${ports.inventory}`, 'flightplatform.inventory.v1', 'flightplatform/inventory/v1/inventory.proto', 'InventoryService')(smokeOwner, 'system') as { releaseHold(input: unknown): import('rxjs').Observable<unknown> };
+        for (const hold of holds) await firstValueFrom(inventoryRpc.releaseHold({ holdId: hold.id, ownerId: smokeOwner }));
+        if (bookingIds.length) await Promise.all([ancillaries.baggageItem.deleteMany({ where: { bookingId: { in: bookingIds }, ownerId: smokeOwner } }), ancillaries.baggageAllowance.deleteMany({ where: { bookingId: { in: bookingIds }, ownerId: smokeOwner } }), ancillaries.seatAssignment.deleteMany({ where: { bookingId: { in: bookingIds }, ownerId: smokeOwner } }), ancillaries.bookingOwner.deleteMany({ where: { bookingId: { in: bookingIds }, ownerId: smokeOwner } }), ticketing.ticket.deleteMany({ where: { bookingId: { in: bookingIds }, ownerId: smokeOwner } }), reservation.reservation.deleteMany({ where: { id: { in: bookingIds }, ownerId: smokeOwner } })]);
+      } finally { rpc?.client.close(); await Promise.allSettled([rpc?.app.close(), smokePricing.close()]); }
+    }
+  }, 150_000);
   const searchOfferForBrand = async (brand: string) => {
     for (let offset = 2; offset <= 21; offset += 1) {
       const date = new Date(Date.now() + offset * 86_400_000).toISOString().slice(0, 10);
