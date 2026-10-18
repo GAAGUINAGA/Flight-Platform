@@ -15,8 +15,12 @@ export class PrismaSeatAssignmentStore implements AssignmentStore {
   }
   async list(bookingId: string, ownerId: string): Promise<Assignment[]> { return (await this.prisma.seatAssignment.findMany({ where: { bookingId, ownerId } })).map(map); }
   async updateStatus(bookingId: string, ownerId: string, status: 'CONFIRMED' | 'RELEASED'): Promise<Assignment[]> {
-    await this.prisma.seatAssignment.updateMany({ where: { bookingId, ownerId, status: { not: 'RELEASED' } }, data: { status } });
+    await this.prisma.seatAssignment.updateMany({ where: { bookingId, ownerId, status: status === 'CONFIRMED' ? 'PROVISIONAL' : { not: 'RELEASED' } }, data: { status } });
     return this.list(bookingId, ownerId);
+  }
+  async markCheckedIn(bookingId: string, ownerId: string, passengerId: string, segmentId: string): Promise<Assignment> {
+    try { return map(await this.prisma.seatAssignment.update({ where: { bookingId_passengerId_segmentId: { bookingId, passengerId, segmentId }, ownerId, status: { in: ['PROVISIONAL', 'CONFIRMED', 'CHECKED_IN'] } }, data: { status: 'CHECKED_IN' } })); }
+    catch (error) { if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') throw new DomainError('NOT_FOUND'); throw error; }
   }
   async activeSeatNumbers(flightInstanceId: string): Promise<string[]> { return (await this.prisma.seatAssignment.findMany({ where: { flightInstanceId, status: { not: 'RELEASED' } }, select: { seatNumber: true } })).map((value) => value.seatNumber); }
 }

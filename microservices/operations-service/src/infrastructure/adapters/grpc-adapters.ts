@@ -1,5 +1,8 @@
 import { firstValueFrom, Observable } from 'rxjs';
-import { EventPublisher, InventoryFlight, InventoryGateway } from '../../application/ports';
+import { randomUUID } from 'node:crypto';
+import { status } from '@grpc/grpc-js';
+import { DomainError } from '@flight-platform/shared';
+import { EventPublisher, InventoryFlight, InventoryGateway, InventoryUnavailable } from '../../application/ports';
 
 interface InventoryGrpcService {
   findFlightInstance(input: { flightNumber: string; departureDate: string }): Observable<{ flightInstanceId: string; segment?: InventoryFlight }>;
@@ -15,7 +18,14 @@ export class GrpcInventoryGateway implements InventoryGateway {
   constructor(private readonly client: InventoryGrpcService) {}
 
   async findFlight(input: { flightNumber: string; date: string }): Promise<InventoryFlight> {
-    const response = await firstValueFrom(this.client.findFlightInstance({ flightNumber: input.flightNumber, departureDate: input.date }));
+    let response: { flightInstanceId: string; segment?: InventoryFlight };
+    try { response = await firstValueFrom(this.client.findFlightInstance({ flightNumber: input.flightNumber, departureDate: input.date })); }
+    catch (error) {
+      const code = typeof error === 'object' && error !== null && 'code' in error ? error.code : undefined;
+      if (code === status.NOT_FOUND) throw new DomainError('NOT_FOUND');
+      if (code === status.UNAVAILABLE) throw new InventoryUnavailable();
+      throw error;
+    }
     if (!response.segment) throw new Error('Inventory returned a flight without segment');
     return { ...response.segment, flightInstanceId: response.flightInstanceId };
   }
@@ -33,6 +43,7 @@ export class GrpcEventPublisher implements EventPublisher {
     await firstValueFrom(this.client.publishEvent({
       ownerId: input.ownerId,
       payload: {
+        eventId: randomUUID(),
         eventType: input.eventType,
         occurredAt: input.occurredAt,
         apiVersion: '1.5.0.0',

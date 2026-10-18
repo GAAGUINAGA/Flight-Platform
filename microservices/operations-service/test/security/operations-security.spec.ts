@@ -1,9 +1,10 @@
 import { afterAll, beforeAll, expect, it } from '@jest/globals';
 import { randomUUID } from 'node:crypto';
+import { Buffer } from 'node:buffer';
 import { join } from 'node:path';
 import { Writable } from 'node:stream';
 import process from 'node:process';
-import { credentials, loadPackageDefinition, Metadata, ServiceError } from '@grpc/grpc-js';
+import { Client as GrpcClient, credentials, loadPackageDefinition, Metadata, ServiceError } from '@grpc/grpc-js';
 import { loadSync } from '@grpc/proto-loader';
 import { INestMicroservice } from '@nestjs/common';
 import { Logger as PinoLogger } from 'pino';
@@ -88,6 +89,58 @@ describe('OPS-05 / OPS-SEC-01 / OPS-SEC-02', () => {
 
   it('OPS-SEC-02: customer no puede registrar una actualización operacional', async () => {
     await expect(call('recordOperationalUpdate', { flightInstanceId: customerId, status: 'DELAYED', estimatedDepartureAt: `${date}T10:15:00.000Z` }, { role: 'customer' })).rejects.toMatchObject({ code: 7, details: 'PERMISSION_DENIED' });
+  });
+
+  it('OPS-05: repetir cancelación por RPC no repite efectos', async () => {
+    const id = randomUUID();
+    const flightNumber = `FP${1000 + Math.floor(Math.random() * 8000)}`;
+    await prisma.operationalFlight.create({ data: { flightInstanceId: id, flightNumber, date: '2099-01-02', marketingCarrier: 'FP', operatingCarrier: 'FP', departureIata: 'UIO', arrivalIata: 'BOG', scheduledDepartureAt, scheduledArrivalAt, status: 'SCHEDULED' } });
+    const before = events.length;
+    try {
+      await call('recordOperationalUpdate', { flightInstanceId: id, status: 'CANCELLED' }, { role: 'admin' });
+      await call('recordOperationalUpdate', { flightInstanceId: id, status: 'CANCELLED' }, { role: 'admin' });
+      expect(closed.filter((value) => value === id)).toHaveLength(1);
+      expect(events.slice(before)).toEqual([expect.objectContaining({ eventType: 'flight.cancelled' })]);
+    } finally { await prisma.operationalFlight.deleteMany({ where: { flightInstanceId: id } }); }
+  });
+
+  it('OPS-05: repetir horario retrasado por RPC no repite evento', async () => {
+    const id = randomUUID();
+    const flightNumber = `FP${1000 + Math.floor(Math.random() * 8000)}`;
+    await prisma.operationalFlight.create({ data: { flightInstanceId: id, flightNumber, date: '2099-01-03', marketingCarrier: 'FP', operatingCarrier: 'FP', departureIata: 'UIO', arrivalIata: 'BOG', scheduledDepartureAt, scheduledArrivalAt, status: 'SCHEDULED' } });
+    const before = events.length;
+    try {
+      const request = { flightInstanceId: id, status: 'DELAYED', estimatedDepartureAt: `${date}T10:15:00.000Z` };
+      await call('recordOperationalUpdate', request, { role: 'admin' });
+      await call('recordOperationalUpdate', request, { role: 'admin' });
+      expect(events.slice(before)).toEqual([expect.objectContaining({ eventType: 'flight.schedule_changed' })]);
+    } finally { await prisma.operationalFlight.deleteMany({ where: { flightInstanceId: id } }); }
+  });
+
+  it('OPS-SEC-01: fecha inválida por RPC devuelve VALIDATION_FAILED', async () => {
+    await expect(call('getFlightStatus', { flightNumber: 'FP62', date: '2026-02-30' }, { role: 'customer' })).rejects.toMatchObject({ code: 3, details: 'VALIDATION_FAILED' });
+  });
+
+  it('OPS-SEC-01: campo protobuf extra por RPC devuelve VALIDATION_FAILED', async () => {
+    const metadata = new Metadata();
+    metadata.set('x-internal-key', key);
+    metadata.set('x-role', 'customer');
+    const raw = Buffer.concat([Buffer.from([10, 4]), Buffer.from('FP62'), Buffer.from([18, 10]), Buffer.from(date), Buffer.from([0x98, 0x06, 0x01])]);
+    const result = new Promise((resolve, reject) => (client as unknown as GrpcClient).makeUnaryRequest(
+      '/flightplatform.operations.v1.OperationsService/GetFlightStatus', () => raw, (data) => data, {}, metadata,
+      (error, response) => error ? reject(error) : resolve(response)
+    ));
+    await expect(result).rejects.toMatchObject({ code: 3, details: 'VALIDATION_FAILED' });
+  });
+
+  it('OPS-SEC-01: transición no permitida por RPC devuelve VALIDATION_FAILED y no altera el vuelo', async () => {
+    const id = randomUUID();
+    const flightNumber = `FP${1000 + Math.floor(Math.random() * 8000)}`;
+    await prisma.operationalFlight.create({ data: { flightInstanceId: id, flightNumber, date: '2099-01-01', marketingCarrier: 'FP', operatingCarrier: 'FP', departureIata: 'UIO', arrivalIata: 'BOG', scheduledDepartureAt, scheduledArrivalAt, status: 'SCHEDULED' } });
+    try {
+      await expect(call('recordOperationalUpdate', { flightInstanceId: id, status: 'ARRIVED' }, { role: 'admin' })).rejects.toMatchObject({ code: 3, details: 'VALIDATION_FAILED' });
+      expect((await prisma.operationalFlight.findUniqueOrThrow({ where: { flightInstanceId: id } })).status).toBe('SCHEDULED');
+    } finally { await prisma.operationalFlight.deleteMany({ where: { flightInstanceId: id } }); }
   });
 
   it('OPS-SEC-02: error interno forzado no expone detalles ni PII en logs', async () => {

@@ -6,6 +6,7 @@ COPY packages ./packages
 COPY microservices ./microservices
 COPY platform ./platform
 COPY contracts/proto ./contracts/proto
+COPY contracts/openapi ./contracts/openapi
 RUN npm ci
 RUN npm run build -w @flight-platform/shared
 RUN npm run build -w @flight-platform/operations-service

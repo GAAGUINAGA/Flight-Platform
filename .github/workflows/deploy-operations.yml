@@ -9,6 +9,9 @@ on:
       - 'packages/shared/**'
       - 'contracts/proto/flightplatform/common/**'
       - 'contracts/proto/flightplatform/inventory/**'
+      - 'contracts/proto/flightplatform/reservation/**'
+      - 'contracts/proto/flightplatform/ticketing/**'
+      - 'contracts/proto/flightplatform/ancillaries/**'
       - 'contracts/proto/flightplatform/operations/**'
       - 'contracts/proto/flightplatform/webhooks/**'
       - 'package-lock.json'
@@ -22,6 +25,9 @@ on:
       - 'packages/shared/**'
       - 'contracts/proto/flightplatform/common/**'
       - 'contracts/proto/flightplatform/inventory/**'
+      - 'contracts/proto/flightplatform/reservation/**'
+      - 'contracts/proto/flightplatform/ticketing/**'
+      - 'contracts/proto/flightplatform/ancillaries/**'
       - 'contracts/proto/flightplatform/operations/**'
       - 'contracts/proto/flightplatform/webhooks/**'
       - 'package-lock.json'
@@ -44,7 +50,7 @@ jobs:
       runtime_service_account: operations-service-runtime@project-a1d2e3ba-f6ff-469e-854.iam.gserviceaccount.com
       secret_name: internal-api-key
       extra_secrets: DATABASE_URL=operations-database-url:latest
-      extra_env_vars: INVENTORY_GRPC_URL=inventory-service-gtl24uc77a-ue.a.run.app:443,WEBHOOKS_GRPC_URL=webhooks-service-gtl24uc77a-ue.a.run.app:443,GRPC_TLS=true
+      extra_env_vars: INVENTORY_GRPC_URL=inventory-service-gtl24uc77a-ue.a.run.app:443,WEBHOOKS_GRPC_URL=webhooks-service-gtl24uc77a-ue.a.run.app:443,RESERVATION_GRPC_URL=reservation-service-gtl24uc77a-ue.a.run.app:443,TICKETING_GRPC_URL=ticketing-service-gtl24uc77a-ue.a.run.app:443,ANCILLARIES_GRPC_URL=ancillaries-service-gtl24uc77a-ue.a.run.app:443,GRPC_TLS=true
       test_command: npx jest microservices/operations-service/test --runInBand --testPathIgnorePatterns='(integration|security)'
     secrets:
       workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}

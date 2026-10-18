@@ -43,3 +43,12 @@
 ## Observaciones de docs/audit/audits/F9/audit-5.md
 - La prueba opt-in del smoke de postventa usa un puerto fijo (29661); usar un puerto libre asignado dinámicamente.
 - En los clones del auditor aparecen archivos generados de packages/contracts como modificados tras la instalación; revisar que la regla LF de .gitattributes y el paso de generación no ensucien el árbol.
+
+- El seed de inventory en Supabase cubre 60 días desde el 7 de octubre de 2026; regenerarlo (o hacerlo rodante) antes de inicios de diciembre, o los smokes de compra, postventa y check-in dejarán de encontrar vuelos.
+
+## Observaciones de docs/audit/audits/F10/audit-1.md
+- PRIORIDAD F11: si operations muere con un check-in en IN_PROGRESS, toda llamada posterior responde CHECK_IN_NOT_AVAILABLE sin recuperación (ADR-F10-02/05). Resolver con el scheduler de F11: reanudar o revertir check-ins IN_PROGRESS vencidos.
+- Si operations muere entre complete y publish, booking.checked_in no se publica nunca. Considerar publicar desde el estado persistido (reintento en el scheduler de F11).
+- Faltan pruebas de check-in con vuelo salido o cancelado, y con cupón distinto de ISSUED (el código lo implementa).
+- Faltan pruebas de ConfirmSeats, ReleaseSeats y del índice único sobre un asiento CHECKED_IN; ANC-SEC-02 de AssignSeatAtCheckIn no ejercita markCheckedIn con una asignación existente de otro owner.
+- Un asiento RELEASED aborta todo el check-in en lugar de marcar solo a ese pasajero como FAILED.

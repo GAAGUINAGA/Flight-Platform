@@ -16,6 +16,7 @@ class MemoryAssignments implements AssignmentStore {
   async find() { return null; }
   async list() { return this.values; }
   async updateStatus() { return this.values; }
+  async markCheckedIn(): Promise<Assignment> { throw new Error('not used in this test'); }
   async activeSeatNumbers() { return []; }
 }
 

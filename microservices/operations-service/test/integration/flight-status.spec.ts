@@ -10,6 +10,8 @@ import { parse } from 'yaml';
 import { INestMicroservice } from '@nestjs/common';
 import { PrismaClient } from '../../src/infrastructure/persistence/prisma-client/client';
 import { createOperationsServer, findProtoRoot } from '../../src/infrastructure/grpc/server';
+import { DomainError } from '@flight-platform/shared';
+import { InventoryUnavailable } from '../../src/application/ports';
 
 const key = 'o'.repeat(40);
 const flightInstanceId = randomUUID();
@@ -44,7 +46,11 @@ describe('OPS-04: GetFlightStatus', () => {
       runtime: {
         prisma,
         inventory: {
-          findFlight: async () => ({ flightInstanceId, flightNumber, departure: { iataCode: 'UIO', at: `${date}T10:00:00.000Z` }, arrival: { iataCode: 'BOG', at: `${date}T11:30:00.000Z` }, marketingCarrier: 'FP', operatingCarrier: 'FP', aircraft: 'E190' }),
+          findFlight: async (input) => {
+            if (input.flightNumber === 'FP9998') throw new DomainError('NOT_FOUND');
+            if (input.flightNumber === 'FP9999') throw new InventoryUnavailable();
+            return { flightInstanceId, flightNumber, departure: { iataCode: 'UIO', at: `${date}T10:00:00.000Z` }, arrival: { iataCode: 'BOG', at: `${date}T11:30:00.000Z` }, marketingCarrier: 'FP', operatingCarrier: 'FP', aircraft: 'E190' };
+          },
           closeFlightInstance: async () => undefined
         }
       }
@@ -66,5 +72,13 @@ describe('OPS-04: GetFlightStatus', () => {
     expect(response).toMatchObject({ flightNumber, date, status: 'SCHEDULED', departure: { iataCode: 'UIO', scheduledAt: `${date}T10:00:00.000Z` } });
     expect(await prisma.operationalFlight.findUnique({ where: { flightInstanceId } })).toMatchObject({ flightNumber, status: 'SCHEDULED' });
     validateFlightStatus(response);
+  });
+
+  it('OPS-04: vuelo inexistente por RPC devuelve FLIGHT_STATUS_NOT_AVAILABLE', async () => {
+    await expect(call({ flightNumber: 'FP9998', date: '2099-12-01' })).rejects.toMatchObject({ code: 5, details: 'FLIGHT_STATUS_NOT_AVAILABLE' });
+  });
+
+  it('OPS-04: Inventory no disponible por RPC devuelve UNAVAILABLE', async () => {
+    await expect(call({ flightNumber: 'FP9999', date: '2099-12-01' })).rejects.toMatchObject({ code: 14, details: 'UNAVAILABLE' });
   });
 });

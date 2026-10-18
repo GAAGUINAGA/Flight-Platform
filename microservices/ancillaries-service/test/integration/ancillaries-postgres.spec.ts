@@ -56,7 +56,7 @@ describe('ANC-02/03/06/07/09: integración PostgreSQL', () => {
     const input = { bookingId: ids.bookingId, ownerId, assignments: [{ passengerId: '00000000-0000-4000-8000-000000000021', segmentId: ids.segmentId, seatNumber: '1A', passengerType: 'ADULT' as const, cabinClass: 'BUSINESS' as const }] };
     await expect(seats.reserve(input)).resolves.toHaveLength(1);
     await expect(seats.reserve({ ...input, assignments: [{ ...input.assignments[0], passengerId: '00000000-0000-4000-8000-000000000022' }] })).rejects.toThrow(expect.objectContaining({ code: 'SEAT_TAKEN' }));
-    await expect(seats.assignAtCheckIn({ bookingId: ids.bookingId, ownerId, passengerId: input.assignments[0].passengerId, segmentId: ids.segmentId, passengerType: 'ADULT', cabinClass: 'BUSINESS' })).resolves.toMatchObject({ seatNumber: '1A', status: 'CONFIRMED' });
+    await expect(seats.assignAtCheckIn({ bookingId: ids.bookingId, ownerId, passengerId: input.assignments[0].passengerId, segmentId: ids.segmentId, passengerType: 'ADULT', cabinClass: 'BUSINESS' })).resolves.toMatchObject({ seatNumber: '1A', status: 'CHECKED_IN' });
   });
 
   it('ANC-09 / C: diez reservas simultáneas del mismo asiento producen un solo éxito', async () => {
