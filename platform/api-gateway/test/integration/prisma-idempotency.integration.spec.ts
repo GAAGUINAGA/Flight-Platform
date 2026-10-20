@@ -1,6 +1,6 @@
-import { PrismaClient } from '../generated/prisma-client';
+import { PrismaClient } from '../../generated/prisma-client';
 import { afterAll, beforeAll, describe, expect, it } from '@jest/globals';
-import { PrismaIdempotencyStore } from './prisma-idempotency';
+import { PrismaIdempotencyStore } from '../../src/prisma-idempotency';
 
 describe('GW-04 integration: idempotency_keys', () => {
   const prisma = new PrismaClient();

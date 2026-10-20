@@ -29,6 +29,7 @@
 - reservation-service: la repetición idempotente de CreateReservation por gRPC devuelve la vista persistida sin tickets (ADR-F8-05). El Gateway repite la respuesta original a nivel HTTP, pero conviene que gRPC también incluya los tickets.
 
 - pricing-service: ordenar `pricingOptions` de forma determinista, por ejemplo por precio y marca; los consumidores no deben depender de su orden actual.
+- OP-02: ResolveSegment debe devolver el offerId del segmento, mediante un cambio aditivo en pricing.proto, para validar la pertenencia y expiracion de la oferta; contemplar segmentos compartidos por varias ofertas (ver docs/dev/adr/ADR-F11-03-seatmap-segmento.md).
 
 ## Observaciones de docs/audit/audits/F9/audit-2.md
 - Quedan selecciones de tarifa por posición: selectOfferForHold (pricing-hold-fixture.ts:14,20; offers[0] y pricingOptions[0]), resume-pending.ts:13 y un fallback en post-sale-smoke.cjs:45. Elegir siempre por fareBrand.
@@ -58,3 +59,10 @@
 - La evidencia de despliegue debería incluir el describe de todos los servicios redesplegados o afectados, no solo de los modificados.
 
 - Seed rodante: Inventory y Pricing generan 60 días desde la fecha de ejecución con createMany + skipDuplicates (no tocan held/sold). Para extenderlo en Supabase, ejecutar primero el seed de inventory y luego el de pricing, cargando .env.supabase en la sesión sin imprimirlo. Repetir antes de que el último vuelo quede a menos de 3 días.
+
+## Observaciones de docs/audit/audits/F11/audit-1.md (tarea 0 de F11b)
+- CI del gateway: el workflow solo ejecuta platform/api-gateway/src/gateway.spec.ts; ampliarlo a todas las pruebas unitarias del gateway (excluyendo integration y e2e), incluidas partner-issuer.spec.ts y openapi-path.spec.ts.
+- Faltan pruebas: OP-05 (liberar hold), reserva con un hold de otro sub (404) y que el listado de reservas no muestre reservas ajenas.
+- OP-02 (ADR-F11-03): el alcance real es mayor que el segmento compartido. Ancillaries no usa offerId, así que un offerId inexistente o expirado con un segmento presente en alguna oferta activa devuelve 200. Actualizar el ADR; la solución sigue siendo que ResolveSegment devuelva el offerId (cambio aditivo en pricing.proto).
+- Sin prueba con token partner contra rutas REST; los webhooks llegan en F11c.
+- El smoke de Supabase (supabase-auth-smoke.cjs) espera 403 en una ruta admin que llega en F11c; la prueba S completa de PLT-SEC-01 se cierra en F11c.
