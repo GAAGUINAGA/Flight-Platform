@@ -66,3 +66,9 @@
 - OP-02 (ADR-F11-03): el alcance real es mayor que el segmento compartido. Ancillaries no usa offerId, así que un offerId inexistente o expirado con un segmento presente en alguna oferta activa devuelve 200. Actualizar el ADR; la solución sigue siendo que ResolveSegment devuelva el offerId (cambio aditivo en pricing.proto).
 - Sin prueba con token partner contra rutas REST; los webhooks llegan en F11c.
 - El smoke de Supabase (supabase-auth-smoke.cjs) espera 403 en una ruta admin que llega en F11c; la prueba S completa de PLT-SEC-01 se cierra en F11c.
+
+## Tarea 0 de F11b: latencia y errores en frío (despliegue de F11a)
+- createReservation tarda de 6 a 7 s en Cloud Run con dependencias recién arrancadas; el gateway agota su espera y responde 503 aunque la reserva pueda haberse creado. Ajustar el deadline del gateway para OP-07 (y documentarlo), y confirmar que el reintento con la misma Idempotency-Key devuelve la reserva creada.
+- Se observó createReservation con INTERNAL_ERROR tras 6953 ms (ver bitácora de despliegue de F11a): identificar la dependencia o el código Prisma con los logs.
+- El limitador de búsqueda responde 503 RATE_LIMIT_EXCEEDED cuando no puede consultar su almacén: documentar la decisión (fallar cerrado), usar un código coherente (503 SERVICE_UNAVAILABLE con Retry-After, no RATE_LIMIT_EXCEEDED) y probarlo.
+- Evaluar min-instances=1 en reservation (y sus dependencias críticas) en Cloud Run frente a su costo.
