@@ -78,3 +78,5 @@
 - Los nombres de los tres it nuevos de F11b (OP-05 / S y PLT-I5 / E) muestran ? en lugar de ?, ú y ó: corregir la codificación del archivo (UTF-8).
 - El gateway tolera estados no declarados en app.ts:83; revisar.
 - Sigue sin prueba con token partner contra rutas REST (F11c).
+
+- Arranques en frío de Cloud Run: la primera llamada de cada flujo (createReservation en F11a, checkIn en F11b) puede responder 503 por plazo agotado. Antes de PLT-J3, decidir entre min-instances=1 en los servicios críticos (con su costo) o un precalentamiento de los servicios antes de ejecutar los recorridos.
