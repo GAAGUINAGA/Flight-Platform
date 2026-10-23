@@ -23,4 +23,13 @@ describe('GW-04 integration: idempotency_keys', () => {
     await expect(store.begin(owner, 'same-key', { value: 1 })).resolves.toMatchObject({ status: 'COMPLETED' });
     await expect(store.begin(owner, 'same-key', { value: 2 })).resolves.toBe('MISMATCH');
   });
+  it('permite un solo reintento tras un timeout sin aceptar otro cuerpo', async () => {
+    const first = await store.begin(owner, 'retry-key', { value: 1 });
+    if (typeof first === 'string') throw new Error('claim missing');
+    await store.retry(first.id);
+    await expect(store.begin(owner, 'retry-key', { value: 2 })).resolves.toBe('MISMATCH');
+    const results = await Promise.all(Array.from({ length: 5 }, () => store.begin(owner, 'retry-key', { value: 1 })));
+    expect(results.filter((result) => typeof result === 'object')).toHaveLength(1);
+    expect(results.filter((result) => result === 'IN_PROGRESS')).toHaveLength(4);
+  });
 });

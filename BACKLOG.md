@@ -72,3 +72,9 @@
 - Se observó createReservation con INTERNAL_ERROR tras 6953 ms (ver bitácora de despliegue de F11a): identificar la dependencia o el código Prisma con los logs.
 - El limitador de búsqueda responde 503 RATE_LIMIT_EXCEEDED cuando no puede consultar su almacén: documentar la decisión (fallar cerrado), usar un código coherente (503 SERVICE_UNAVAILABLE con Retry-After, no RATE_LIMIT_EXCEEDED) y probarlo.
 - Evaluar min-instances=1 en reservation (y sus dependencias críticas) en Cloud Run frente a su costo.
+
+## Observaciones de docs/audit/audits/F11/audit-3.md y audit-4.md
+- Las pruebas reales opt-in (RUN_*_REAL) usan el plazo por defecto de Jest (5 s); PST-03/04 lo superó una vez con 6,2 s bajo carga. Darles un plazo propio y holgado (p. ej. 30 s) por archivo o por it.
+- Los nombres de los tres it nuevos de F11b (OP-05 / S y PLT-I5 / E) muestran ? en lugar de ?, ú y ó: corregir la codificación del archivo (UTF-8).
+- El gateway tolera estados no declarados en app.ts:83; revisar.
+- Sigue sin prueba con token partner contra rutas REST (F11c).

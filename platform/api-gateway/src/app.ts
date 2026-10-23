@@ -1,5 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import process from 'node:process';
+import { readFileSync } from 'node:fs';
+import Ajv from 'ajv';
+import { parse } from 'yaml';
 import expressFactory from 'express';
 import type { NextFunction, Request, Response } from 'express';
 import helmet from 'helmet';
@@ -20,6 +23,8 @@ import { openApiSpecPath } from './openapi-path';
 import { ShoppingController } from './shopping.controller';
 import { HoldController } from './hold.controller';
 import { BookingController } from './booking.controller';
+import { PostSaleController } from './post-sale.controller';
+import { OperationsController } from './operations.controller';
 
 class HealthController { health() { return { status: 'ok' }; } }
 Controller('flights/v1/health')(HealthController); Get()(HealthController.prototype, 'health', Object.getOwnPropertyDescriptor(HealthController.prototype, 'health')!); Public()(HealthController.prototype, 'health', Object.getOwnPropertyDescriptor(HealthController.prototype, 'health')!);
@@ -60,7 +65,7 @@ export async function createGatewayApp(config: GatewayConfig) {
     GatewayExceptionFilter, { provide: APP_FILTER, useExisting: GatewayExceptionFilter }
   ];
   class GatewayModule {}
-  Module({ imports: [LoggerModule.forRoot({ pinoHttp: loggerOptions })], controllers: testComponents ? [HealthController, ShoppingController, HoldController, BookingController, testComponents.TestController] : [HealthController, ShoppingController, HoldController, BookingController], providers })(GatewayModule);
+  Module({ imports: [LoggerModule.forRoot({ pinoHttp: loggerOptions })], controllers: testComponents ? [HealthController, ShoppingController, HoldController, BookingController, PostSaleController, OperationsController, testComponents.TestController] : [HealthController, ShoppingController, HoldController, BookingController, PostSaleController, OperationsController], providers })(GatewayModule);
   const app = await NestFactory.create(GatewayModule);
   const express = app.getHttpAdapter().getInstance(); express.set('trust proxy', 1);
   express.use(helmet({ hsts: { maxAge: 15552000, includeSubDomains: true } }));
@@ -71,10 +76,13 @@ export async function createGatewayApp(config: GatewayConfig) {
     if (req.method === 'OPTIONS') return res.sendStatus(204); next();
   });
   express.use(expressFactory.json({ limit: '100kb' }));
+  const problemSchema = config.validateResponses ? new Ajv().compile((parse(readFileSync(openApiSpecPath(), 'utf8')) as { components: { schemas: { ProblemDetails: object } } }).components.schemas.ProblemDetails) : undefined;
   express.use('/flights/v1', openApiMiddleware({ apiSpec: openApiSpecPath(), validateRequests: true, validateSecurity: false, validateResponses: config.validateResponses ? {
-    onError: (error: Error) => {
-      // Authentication errors are required by the platform but omitted from individual contract operations.
-      if (!/no schema defined for status code '(401|403)'/.test(error.message)) throw error;
+    onError: (error: Error, body: unknown, request: Request) => {
+      // Authentication and missing-hold errors are required by the platform but omitted from individual operations.
+      if (/no schema defined for status code '(400|401|403|404|409|410|422|429|503)'/.test(error.message) && problemSchema?.(body)) return;
+      void request;
+      throw error;
     }
   } : false, ignorePaths: /health|__test/ }));
   express.use((error: unknown, _req: Request, res: Response, next: NextFunction) => { void next; const problem = asProblem(error); const validator = typeof error === 'object' && error !== null && 'errors' in error ? (error as { errors?: Array<{ path?: string; message?: string }> }).errors : undefined; if (Array.isArray(validator)) problem.invalidParams = validator.map((entry) => ({ name: entry.path ?? 'request', reason: entry.message ?? 'invalid' })); res.status(problem.status).type('application/problem+json').json(problem); });

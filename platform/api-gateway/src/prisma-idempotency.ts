@@ -20,8 +20,13 @@ export class PrismaIdempotencyStore {
         return this.begin(ownerId, key, body);
       }
       if (previous.requestHash !== requestHash) return 'MISMATCH';
+      if (previous.status === 'RETRYABLE') {
+        const claimed = await this.prisma.idempotencyKey.updateMany({ where: { id: previous.id, status: 'RETRYABLE' }, data: { status: 'IN_PROGRESS' } });
+        return claimed.count === 1 ? { ...previous, status: 'IN_PROGRESS' } : 'IN_PROGRESS';
+      }
       return previous.status === 'IN_PROGRESS' ? 'IN_PROGRESS' : previous;
     }
   }
   async complete(id: string, status: number, body: object): Promise<void> { await this.prisma.idempotencyKey.update({ where: { id }, data: { status: 'COMPLETED', responseCode: status, responseBody: body } }); }
+  async retry(id: string): Promise<void> { await this.prisma.idempotencyKey.updateMany({ where: { id, status: 'IN_PROGRESS' }, data: { status: 'RETRYABLE' } }); }
 }

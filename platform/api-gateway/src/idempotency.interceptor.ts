@@ -5,10 +5,12 @@ import { Observable, mergeMap } from 'rxjs';
 import { type GatewayIdempotencyRecord } from './idempotency';
 import { IDEMPOTENT } from './security';
 import { GatewayProblemError } from './web-errors';
+import { status } from '@grpc/grpc-js';
 
 export interface GatewayIdempotencyPort {
   begin(ownerId: string, key: string, body: unknown): Promise<GatewayIdempotencyRecord | 'MISMATCH' | 'IN_PROGRESS'>;
   complete(id: string, status: number, body: object): Promise<void>;
+  retry(id: string): Promise<void>;
 }
 
 @Injectable()
@@ -25,7 +27,16 @@ export class IdempotencyInterceptor implements NestInterceptor {
         if (record === 'MISMATCH') throw new GatewayProblemError(422, 'VALIDATION_FAILED', 'Idempotency key was used with a different request');
         if (record === 'IN_PROGRESS') { response.setHeader('Retry-After', '1'); throw new GatewayProblemError(409, 'VALIDATION_FAILED', 'Request is in progress'); }
         if (record.responseCode) { response.status(record.responseCode); subscriber.next(record.responseBody); subscriber.complete(); return; }
-        next.handle().pipe(mergeMap(async (body) => { await this.store.complete(record.id, response.statusCode || 200, body as object); return body; })).subscribe(subscriber);
+        next.handle().pipe(mergeMap(async (body) => { await this.store.complete(record.id, response.statusCode || 200, body as object); return body; })).subscribe({
+          next: (body) => subscriber.next(body),
+          complete: () => subscriber.complete(),
+          error: (error: unknown) => { void (async () => {
+            const code = typeof error === 'object' && error !== null ? (error as { code?: unknown }).code : undefined;
+            try { if (code === status.DEADLINE_EXCEEDED || code === status.UNAVAILABLE) await this.store.retry(record.id); }
+            catch (retryError) { subscriber.error(retryError); return; }
+            subscriber.error(error);
+          })(); }
+        });
       } catch (error) { subscriber.error(error); }
     })(); });
   }

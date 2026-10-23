@@ -7,7 +7,7 @@ export class GatewayProblemError extends Error {
 }
 
 export function asProblem(error: unknown): ProblemDetails {
-  if (error instanceof GatewayProblemError) return { ...problemFor(error.code), status: error.statusCode, detail: error.safeDetail };
+  if (error instanceof GatewayProblemError) return { ...problemFor(error.code), status: error.statusCode, ...(error.statusCode === 503 ? { title: 'Service Unavailable' } : {}), detail: error.safeDetail };
   if (typeof error === 'object' && error !== null && 'code' in error && typeof error.code === 'number') { const details = (error as { details?: unknown }).details; return problemFromGrpc(error.code, typeof details === 'string' ? details : undefined); }
   if (error instanceof HttpException || (typeof error === 'object' && error !== null && 'getStatus' in error && typeof (error as { getStatus?: unknown }).getStatus === 'function')) {
     const status = (error as HttpException).getStatus();

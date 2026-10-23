@@ -3,7 +3,7 @@ import { Logger } from '@nestjs/common';
 import { of, throwError } from 'rxjs';
 import { ReservationQueries } from '../src/application/queries';
 import { InMemoryReservationStore } from '../src/application/reservation-store';
-import { GrpcAncillariesGateway, GrpcTicketingGateway } from '../src/infrastructure/clients/grpc-gateways';
+import { GrpcAncillariesGateway, GrpcInventoryGateway, GrpcTicketingGateway } from '../src/infrastructure/clients/grpc-gateways';
 
 const bookingId = 'booking';
 const ownerId = 'owner';
@@ -39,6 +39,21 @@ it.each([5, 14])('RSV-08: Ticketing código %i falla y registra dependencia y c�
   const queries = await fixture(undefined, undefined, code);
   await expect(queries.get(input)).rejects.toMatchObject({ code });
   expect(log).toHaveBeenCalledWith(`dependency=ticketing operation=listTickets code=${code}`);
+  expect(JSON.stringify(log.mock.calls)).not.toMatch(/secret|15551234567|owner|booking/);
+});
+
+const failing = (code: number) => () => throwError(() => ({ code, details: 'secret@example.com +15551234567' }));
+it.each([
+  ['inventory', 'createHold', 14, (c: () => unknown) => new GrpcInventoryGateway(() => ({ createHold: c }) as never).createHold({ ownerId, segments: [], expiresAt: '', idempotencyKey: 'key' })],
+  ['inventory', 'releaseReservedInventory', 4, (c: () => unknown) => new GrpcInventoryGateway(() => ({ releaseReservedInventory: c }) as never).releaseReservedInventory(input)],
+  ['ancillaries', 'purchaseBaggage', 14, (c: () => unknown) => new GrpcAncillariesGateway(() => ({ purchaseBaggage: c }) as never).purchaseBaggage({ ...input, passengerId, itineraryId: 'it', quantity: 1, operationId: 'op' })],
+  ['ticketing', 'voidTickets', 14, (c: () => unknown) => new GrpcTicketingGateway(() => ({ voidTickets: c }) as never).voidTickets(input)],
+  ['ticketing', 'reissueTickets', 4, (c: () => unknown) => new GrpcTicketingGateway(() => ({ reissueTickets: c }) as never).reissueTickets({ ...input, newItineraries: [] })],
+  ['ticketing', 'refundTickets', 14, (c: () => unknown) => new GrpcTicketingGateway(() => ({ refundTickets: c }) as never).refundTickets(input)]
+] as const)('RSV-08: %s %s falla y registra dependencia y código sin PII', async (dependency, method, code, run) => {
+  const log = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+  await expect(run(failing(code))).rejects.toMatchObject({ code });
+  expect(log).toHaveBeenCalledWith(`dependency=${dependency} operation=${method} code=${code}`);
   expect(JSON.stringify(log.mock.calls)).not.toMatch(/secret|15551234567|owner|booking/);
 });
 

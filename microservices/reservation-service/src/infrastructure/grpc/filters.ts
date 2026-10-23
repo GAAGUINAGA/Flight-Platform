@@ -3,11 +3,16 @@ import { requestContextFromMetadata, safeGrpcError } from '@flight-platform/shar
 import { Logger as PinoLogger } from 'pino';
 import { Observable, tap, throwError } from 'rxjs';
 import { prismaDiagnostic } from './prisma-diagnostic';
+import { status } from '@grpc/grpc-js';
 
 @Catch()
 export class ReservationExceptionFilter implements RpcExceptionFilter<unknown> {
   private readonly logger = new Logger('ReservationService');
-  catch(error: unknown): Observable<never> { const safe = safeGrpcError(error); if (safe.details === 'INTERNAL_ERROR') this.logger.error(prismaDiagnostic(error)); return throwError(() => safe); }
+  catch(error: unknown): Observable<never> {
+    const code = typeof error === 'object' && error !== null ? (error as { code?: unknown }).code : undefined;
+    if (code === status.UNAVAILABLE || code === status.DEADLINE_EXCEEDED) return throwError(() => ({ code, details: 'Service temporarily unavailable' }));
+    const safe = safeGrpcError(error); if (safe.details === 'INTERNAL_ERROR') this.logger.error(prismaDiagnostic(error)); return throwError(() => safe);
+  }
 }
 @Injectable()
 export class LoggingInterceptor implements NestInterceptor {

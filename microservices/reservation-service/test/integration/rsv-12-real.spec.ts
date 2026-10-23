@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeAll, describe, expect, it } from '@jest/globals';
+import { afterAll, afterEach, beforeAll, describe, expect, it, jest } from '@jest/globals';
 import { randomUUID } from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { readFileSync } from 'node:fs';
@@ -9,7 +9,7 @@ import Ajv from 'ajv';
 import dotenv from 'dotenv';
 import { parse } from 'yaml';
 import { INestMicroservice } from '@nestjs/common';
-import { credentials, loadPackageDefinition, Metadata, ServiceError } from '@grpc/grpc-js';
+import { credentials, loadPackageDefinition, Metadata, ServiceError, status } from '@grpc/grpc-js';
 import { loadSync } from '@grpc/proto-loader';
 import { createGrpcService } from '@flight-platform/shared';
 import { CreateReservation } from '../../src/application/create-reservation';
@@ -497,6 +497,25 @@ describeReal('RSV-12: integración local con Inventory, Pricing, Ancillaries, Ti
   });
   it('RSV-12 / I: ruta feliz emite tickets con los cinco servicios reales', async () => { const fixture = await hold(false, 'BASIC'); await webhooks.subscription.create({ data: { id: randomUUID(), ownerId, url: 'https://example.test/hook', events: ['booking.confirmed'], encryptedSecret: 'test', active: true } }); const created = await services(fixture.pricingPort).useCase.execute({ ownerId, holdId: fixture.holdId, passengers: [passenger(fixture.segmentId, fixture.seatNumber)], payment: { paymentReference: `pay_ok_${randomUUID()}` }, idempotencyKey: randomUUID() }); reservations.push(created.id); await expect(ticketing.ticket.findMany({ where: { bookingId: created.id } })).resolves.toEqual(expect.arrayContaining([expect.objectContaining({ status: 'ISSUED' })])); await expect(ancillaries.seatAssignment.findFirst({ where: { bookingId: created.id } })).resolves.toMatchObject({ status: 'CONFIRMED' }); await expect(inventory.hold.findUnique({ where: { id: fixture.holdId } })).resolves.toMatchObject({ status: 'CONSUMED' }); await expect(inventory.cabinInventory.findFirst({ where: { sold: { gt: 0 } } })).resolves.toBeTruthy(); await expect(webhooks.delivery.findFirst({ where: { payload: { path: ['data', 'bookingId'], equals: created.id } } })).resolves.toBeTruthy(); });
   it('RSV-12 / I: pago pendiente pasa por ResumePending hasta CONFIRMED', async () => { const fixture = await hold(); let authorized = false; const payment: PaymentVerifier = { verify: async (): Promise<PaymentResult> => authorized ? 'AUTHORIZED' : 'PENDING', void: async () => undefined }; const flow = services(fixture.pricingPort, payment); const created = await flow.useCase.execute({ ownerId, holdId: fixture.holdId, passengers: [passenger(fixture.segmentId, fixture.seatNumber)], payment: { paymentReference: `pay_pending_${randomUUID()}` }, idempotencyKey: randomUUID() }); reservations.push(created.id); expect(created.status).toBe('PENDING_PAYMENT'); authorized = true; await flow.resume.execute({ limit: 50 }); await expect(reservation.reservation.findUnique({ where: { id: created.id } })).resolves.toMatchObject({ status: 'CONFIRMED' }); await expect(ticketing.ticket.findFirst({ where: { bookingId: created.id } })).resolves.toMatchObject({ status: 'ISSUED' }); });
+  it('timeout tras emitir tickets deja una compra recuperable por ResumePending', async () => {
+    const fixture = await hold();
+    const port = new GrpcTicketingGateway(factory(`127.0.0.1:${ports.ticketing}`, 'flightplatform.ticketing.v1', 'flightplatform/ticketing/v1/ticketing.proto', 'TicketingService'));
+    const issue = port.issueTickets.bind(port);
+    const failure = jest.spyOn(port, 'issueTickets').mockImplementationOnce(async (input) => { await issue(input); throw Object.assign(new Error('deadline'), { code: status.DEADLINE_EXCEEDED }); });
+    const flow = services(fixture.pricingPort, new FakePaymentVerifier(), port);
+    const input = { ownerId, holdId: fixture.holdId, passengers: [passenger(fixture.segmentId, fixture.seatNumber)], payment: { paymentReference: `pay_ok_${randomUUID()}` }, idempotencyKey: randomUUID() };
+    try {
+      await expect(flow.useCase.execute(input)).rejects.toMatchObject({ code: status.DEADLINE_EXCEEDED });
+      const row = await reservation.reservation.findFirstOrThrow({ where: { ownerId, idempotencyKey: input.idempotencyKey } });
+      reservations.push(row.id);
+      expect(row.status).toBe('TICKET_ISSUING');
+      await expect(inventory.hold.findUnique({ where: { id: fixture.holdId } })).resolves.toMatchObject({ status: 'CONSUMED' });
+      await flow.resume.execute({ limit: 50 });
+      await expect(reservation.reservation.findUnique({ where: { id: row.id } })).resolves.toMatchObject({ status: 'CONFIRMED' });
+      expect(await ticketing.ticket.count({ where: { bookingId: row.id, status: 'ISSUED' } })).toBe(1);
+      await expect(ancillaries.seatAssignment.findFirst({ where: { bookingId: row.id } })).resolves.toMatchObject({ status: 'CONFIRMED' });
+    } finally { failure.mockRestore(); }
+  });
   it('RSV-12 / I: TICKETING_FAIL_MODE=always libera recursos', async () => { const fixture = await hold(false, 'BASIC'); const line = await inventory.holdLine.findFirstOrThrow({ where: { holdId: fixture.holdId } }); const before = await inventory.cabinInventory.findUniqueOrThrow({ where: { flightInstanceId_cabinClass: { flightInstanceId: line.flightInstanceId, cabinClass: line.cabinClass } } }); const port = 29656; const failingApp = await createTicketingServer({ url: `127.0.0.1:${port}`, internalApiKey: key, prisma: ticketing, config: { failMode: 'always' } }); await failingApp.listen(); try { const failing = new GrpcTicketingGateway(factory(`127.0.0.1:${port}`, 'flightplatform.ticketing.v1', 'flightplatform/ticketing/v1/ticketing.proto', 'TicketingService')); const flow = services(fixture.pricingPort, new FakePaymentVerifier(), failing); const input = { ownerId, holdId: fixture.holdId, passengers: [passenger(fixture.segmentId, fixture.seatNumber)], payment: { paymentReference: `pay_ok_${randomUUID()}` }, idempotencyKey: randomUUID() }; await expect(flow.useCase.execute(input)).rejects.toThrow('TICKET_ISSUANCE_FAILED'); const row = await reservation.reservation.findFirstOrThrow({ where: { ownerId, idempotencyKey: input.idempotencyKey } }); reservations.push(row.id); await flow.resume.execute({}); await flow.resume.execute({}); await flow.resume.execute({}); await expect(reservation.reservation.findUnique({ where: { id: row.id } })).resolves.toMatchObject({ status: 'FAILED' }); await expect(ticketing.ticket.findMany({ where: { bookingId: row.id } })).resolves.toEqual(expect.not.arrayContaining([expect.objectContaining({ status: 'ISSUED' })])); await expect(ancillaries.seatAssignment.findFirst({ where: { bookingId: row.id } })).resolves.toMatchObject({ status: 'RELEASED' }); await expect(inventory.reservedInventory.findFirst({ where: { reservationId: row.id } })).resolves.toMatchObject({ releasedAt: expect.any(Date) }); await expect(inventory.cabinInventory.findUnique({ where: { flightInstanceId_cabinClass: { flightInstanceId: line.flightInstanceId, cabinClass: line.cabinClass } } })).resolves.toMatchObject({ sold: before.sold }); } finally { await failingApp.close(); } });
   it('RSV-12 / I: hold expirado se rechaza sin crear reserva', async () => { const fixture = await hold(true); const keyId = randomUUID(); await expect(services(fixture.pricingPort).useCase.execute({ ownerId, holdId: fixture.holdId, passengers: [passenger(fixture.segmentId, fixture.seatNumber)], payment: { paymentReference: `pay_ok_${randomUUID()}` }, idempotencyKey: keyId })).rejects.toMatchObject({ message: 'OFFER_NO_LONGER_AVAILABLE' }); await expect(reservation.reservation.count({ where: { ownerId, idempotencyKey: keyId } })).resolves.toBe(0); });
   it('RSV-12 / I: CreateReservation por gRPC usa los adaptadores reales como main con owner smoke no UUID', async () => {

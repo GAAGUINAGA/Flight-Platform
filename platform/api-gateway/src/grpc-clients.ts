@@ -13,7 +13,7 @@ export function configuredGrpcTargets(grpcTls: boolean, env: Record<string, stri
   return ['inventory', 'pricing', 'ancillaries', 'reservation', 'ticketing', 'operations', 'webhooks'].map((service) => ({ service, url: grpcUrl(service, env), tls: grpcTls }));
 }
 
-type GatewayGrpcService = 'pricing' | 'ancillaries' | 'reservation' | 'ticketing';
+type GatewayGrpcService = 'pricing' | 'ancillaries' | 'reservation' | 'ticketing' | 'operations';
 type UnaryMethods = Record<string, (request: object, metadata: ReturnType<typeof createGrpcMetadata>, options: { deadline: Date }) => Observable<unknown>>;
 
 function protoRoot(): string {
@@ -41,7 +41,10 @@ export async function callGatewayGrpc(
   try {
     const grpc = client.getService<UnaryMethods>(serviceName);
     if (typeof grpc[method] !== 'function') throw new Error('Unknown gRPC method');
-    return await lastValueFrom(grpc[method](request, createGrpcMetadata(context), { deadline: new Date(Date.now() + GRPC_DEADLINE_MS) }));
+    const orchestrated = service === 'reservation' && ['createReservation', 'addBaggage', 'confirmDateChange', 'cancelReservation'].includes(method);
+    const configured = Number(process.env.GATEWAY_ORCHESTRATION_DEADLINE_MS ?? 30000);
+    const deadlineMs = orchestrated && Number.isFinite(configured) && configured > 0 ? configured : GRPC_DEADLINE_MS;
+    return await lastValueFrom(grpc[method](request, createGrpcMetadata(context), { deadline: new Date(Date.now() + deadlineMs) }));
   } finally {
     await (client as unknown as { close(): Promise<void> | void }).close();
   }

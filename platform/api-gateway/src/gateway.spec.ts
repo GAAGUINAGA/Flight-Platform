@@ -13,6 +13,7 @@ import { PUBLIC_PROBLEM_CODES } from './errors';
 import { configuredGrpcTargets } from './grpc-clients';
 import { GatewayScheduler } from './scheduler';
 import { createGatewayApp } from './app';
+import { RateLimitGuard } from './security';
 
 const encode = (value: unknown) => Buffer.from(JSON.stringify(value));
 const decode = (value: Buffer) => JSON.parse(value.toString('utf8'));
@@ -56,6 +57,17 @@ describe('F4 Gateway base', () => {
   it('GW-SEC-02/GW-05 deny scopes and limit authenticated callers by sub', async () => {
     const instance = await app({ RATE_LIMIT_AUTH_PER_MIN: '1' }); const server = instance.getHttpServer();
     try { expect((await request(server).post('/flights/v1/__test/secured').set('Authorization', token('scope', 'customer', 'flights:hold')).set('Idempotency-Key', key()).send({})).status).toBe(403); expect((await request(server).post('/flights/v1/__test/admin').set('Authorization', token('role')).send({})).status).toBe(403); expect((await request(server).post('/flights/v1/__test/secured').set('Authorization', token('limited')).set('Idempotency-Key', key()).send({})).status).toBe(201); const limited = await request(server).post('/flights/v1/__test/secured').set('Authorization', token('limited')).set('Idempotency-Key', key(1)).send({}); expect(limited.status).toBe(429); expect(limited.body.code).toBe('RATE_LIMIT_EXCEEDED'); expect(limited.headers['retry-after']).toBeTruthy(); } finally { await instance.close(); }
+  });
+
+  it('search: fallo del almacén del limitador devuelve 503 y Retry-After', async () => {
+    const instance = await app({ VALIDATE_RESPONSES: 'true' });
+    const guard = instance.get(RateLimitGuard) as unknown as { windows: Map<string, unknown> };
+    const get = jest.spyOn(guard.windows, 'get').mockImplementation(() => { throw new Error('private store failure'); });
+    try {
+      const response = await request(instance.getHttpServer()).post('/flights/v1/search').set('X-Device-Fingerprint', 'store-failure').send({ itineraries: [{ origin: 'ZZZ', destination: 'YYY', departureDate: '2099-01-01' }], passengers: { adults: 1 } });
+      expect(response.status).toBe(503); expect(response.body.code).toBe('RATE_LIMIT_EXCEEDED'); expect(response.headers['retry-after']).toBe('5');
+      expect(JSON.stringify(response.body)).not.toContain('private store failure');
+    } finally { get.mockRestore(); await instance.close(); }
   });
 
   it.each([status.UNAVAILABLE, status.DEADLINE_EXCEEDED])('GW-06: gRPC %s ⇒ 503 RATE_LIMIT_EXCEEDED y Retry-After 5', async (failure) => { const instance = await app(); try { grpcFailure = failure; grpcFailureDetails = undefined; const response = await request(instance.getHttpServer()).post('/flights/v1/__test/secured').set('Authorization', token(`unavailable-${failure}`)).set('Idempotency-Key', key()).send({}); expect(response.status).toBe(503); expect(response.body.code).toBe('RATE_LIMIT_EXCEEDED'); expect(response.headers['retry-after']).toBe('5'); } finally { grpcFailure = undefined; grpcFailureDetails = undefined; await instance.close(); } });

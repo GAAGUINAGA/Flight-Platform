@@ -18,4 +18,4 @@ jobs:
       - run: npm run build -w @flight-platform/shared
       - run: npm run build -w @flight-platform/api-gateway
       - run: npm audit --audit-level=high
-      - run: npx jest platform/api-gateway/src/gateway.spec.ts --runInBand
+      - run: npx jest platform/api-gateway/src --runInBand
