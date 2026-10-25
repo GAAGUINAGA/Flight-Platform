@@ -121,6 +121,23 @@ describe('OPS-05 / OPS-SEC-01 / OPS-SEC-02', () => {
     await expect(call('getFlightStatus', { flightNumber: 'FP62', date: '2026-02-30' }, { role: 'customer' })).rejects.toMatchObject({ code: 3, details: 'VALIDATION_FAILED' });
   });
 
+  it('F11d-1 / ADR-F11-16: fecha sin segundos o con +0200 por RPC es VALIDATION_FAILED', async () => {
+    for (const estimatedDepartureAt of ['2026-10-24T00:00Z', '2026-10-24T00:00:00+0200']) {
+      await expect(call('recordOperationalUpdate', { flightInstanceId: customerId, status: 'DELAYED', estimatedDepartureAt }, { role: 'admin' })).rejects.toMatchObject({ code: 3, details: 'VALIDATION_FAILED' });
+    }
+  });
+
+  it('F11d-1 / ADR-F11-16: un desplazamiento +02:00 se guarda y se devuelve como el mismo instante en UTC', async () => {
+    const id = randomUUID();
+    const flightNumber = `FP${1000 + Math.floor(Math.random() * 8000)}`;
+    await prisma.operationalFlight.create({ data: { flightInstanceId: id, flightNumber, date: '2099-01-04', marketingCarrier: 'FP', operatingCarrier: 'FP', departureIata: 'UIO', arrivalIata: 'BOG', scheduledDepartureAt, scheduledArrivalAt, status: 'SCHEDULED' } });
+    try {
+      const response = await call<{ departure: { estimatedAt: string } }>('recordOperationalUpdate', { flightInstanceId: id, status: 'DELAYED', estimatedDepartureAt: '2026-11-20T10:00:00+02:00' }, { role: 'admin' });
+      expect(response.departure.estimatedAt).toBe('2026-11-20T08:00:00.000Z');
+      expect((await prisma.operationalFlight.findUniqueOrThrow({ where: { flightInstanceId: id } })).estimatedDepartureAt?.toISOString()).toBe('2026-11-20T08:00:00.000Z');
+    } finally { await prisma.operationalFlight.deleteMany({ where: { flightInstanceId: id } }); }
+  });
+
   it('OPS-SEC-01: campo protobuf extra por RPC devuelve VALIDATION_FAILED', async () => {
     const metadata = new Metadata();
     metadata.set('x-internal-key', key);

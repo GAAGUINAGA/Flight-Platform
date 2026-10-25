@@ -61,6 +61,7 @@ jobs:
           SERVICE: ${{ inputs.service }}
       - run: npm run lint
       - run: npm run build -w @flight-platform/shared
+      - run: npm run build -w @flight-platform/contracts
       - run: npm run build -w "$SERVICE"
         env:
           SERVICE: ${{ inputs.service }}

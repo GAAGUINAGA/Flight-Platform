@@ -14,19 +14,19 @@ export interface ReservationHandlers {
   cancelReservation?(input: unknown): Promise<unknown>;
 }
 export const RESERVATION_DEPS = Symbol('RESERVATION_DEPS');
-const passengerSchema = z.object({ passengerId: rpcString(128), passengerType: z.enum(['ADULT', 'YOUTH', 'CHILD', 'INFANT']), associatedAdultId: z.string().uuid().optional(), firstName: z.string().trim().min(1).max(50), lastName: z.string().trim().min(1).max(50), documentType: z.enum(['PASSPORT', 'NATIONAL_ID']), documentNumber: z.string().regex(/^[A-Za-z0-9]{5,20}$/), nationality: z.string().trim().min(2).max(3), documentExpiryDate: z.string().date().optional(), birthDate: z.string().date(), gender: z.enum(['M', 'F', 'X']), contact: z.object({ email: z.string().email(), phone: z.string().regex(/^\+[1-9]\d{1,14}$/) }).strict(), assignedSeats: z.array(z.object({ segmentId: z.string().uuid(), seatNumber: rpcString(4) }).strict()), extraBaggage: z.array(z.object({ itineraryId: z.string().uuid(), quantity: z.number().int().min(1).max(3) }).strict()) }).strict();
-const createSchema = z.object({ holdId: z.string().uuid(), passengers: z.array(passengerSchema).min(1).max(9), payment: z.object({ paymentReference: rpcString(255) }).strict(), idempotencyKey: rpcString(255) }).strict();
-const getSchema = z.object({ bookingId: z.string().uuid() }).strict();
+const passengerSchema = z.object({ passengerId: rpcString(128), passengerType: z.enum(['ADULT', 'YOUTH', 'CHILD', 'INFANT']), associatedAdultId: z.string().guid().optional(), firstName: z.string().trim().min(1).max(50), lastName: z.string().trim().min(1).max(50), documentType: z.enum(['PASSPORT', 'NATIONAL_ID']), documentNumber: z.string().regex(/^[A-Za-z0-9]{5,20}$/), nationality: z.string().trim().min(2).max(3), documentExpiryDate: z.string().date().optional(), birthDate: z.string().date(), gender: z.enum(['M', 'F', 'X']), contact: z.object({ email: z.string().email(), phone: z.string().regex(/^\+[1-9]\d{1,14}$/) }).strict(), assignedSeats: z.array(z.object({ segmentId: z.string().guid(), seatNumber: rpcString(4) }).strict()), extraBaggage: z.array(z.object({ itineraryId: z.string().guid(), quantity: z.number().int().min(1).max(3) }).strict()) }).strict();
+const createSchema = z.object({ holdId: z.string().guid(), passengers: z.array(passengerSchema).min(1).max(9), payment: z.object({ paymentReference: rpcString(255) }).strict(), idempotencyKey: rpcString(255) }).strict();
+const getSchema = z.object({ bookingId: z.string().guid() }).strict();
 const listSchema = z.object({ pnr: z.string().trim().length(6).optional(), page: z.object({ cursor: z.string().optional(), limit: z.number().int().min(1).max(50) }).strict().optional() }).strict();
-const flightSchema = z.object({ flightInstanceId: z.string().uuid(), limit: z.number().int().min(1).max(50).optional(), cursor: z.string().uuid().optional() }).strict();
+const flightSchema = z.object({ flightInstanceId: z.string().guid(), limit: z.number().int().min(1).max(50).optional(), cursor: z.string().guid().optional() }).strict();
 const resumeSchema = z.object({ limit: z.number().int().min(0).max(4294967295).optional() }).strict();
-const baggageSchema = z.object({ bookingId: z.string().uuid(), passengerId: z.string().uuid(), itineraryId: z.string().uuid(), quantity: z.number().int().min(1).max(3), payment: z.object({ paymentReference: rpcString(255) }).strict(), idempotencyKey: z.string().uuid() }).strict();
-const dateChangeSchema = z.object({ bookingId: z.string().uuid(), changes: z.array(z.object({ itineraryId: z.string().uuid(), newDepartureDate: z.string().date() }).strict()).min(1).max(6) }).strict();
-const confirmChangeSchema = z.object({ bookingId: z.string().uuid(), changeOfferId: rpcString(128), payment: z.object({ paymentReference: rpcString(255) }).strict().optional(), assignedSeats: z.array(z.object({ segmentId: z.string().uuid(), seatNumber: rpcString(4) }).strict()).max(9), idempotencyKey: z.string().uuid() }).strict();
-const cancelSchema = z.object({ bookingId: z.string().uuid(), quoteId: rpcString(128), reason: z.string().trim().max(255).optional(), idempotencyKey: z.string().uuid() }).strict();
+const baggageSchema = z.object({ bookingId: z.string().guid(), passengerId: z.string().guid(), itineraryId: z.string().guid(), quantity: z.number().int().min(1).max(3), payment: z.object({ paymentReference: rpcString(255) }).strict(), idempotencyKey: z.string().guid() }).strict();
+const dateChangeSchema = z.object({ bookingId: z.string().guid(), changes: z.array(z.object({ itineraryId: z.string().guid(), newDepartureDate: z.string().date() }).strict()).min(1).max(6) }).strict();
+const confirmChangeSchema = z.object({ bookingId: z.string().guid(), changeOfferId: rpcString(128), payment: z.object({ paymentReference: rpcString(255) }).strict().optional(), assignedSeats: z.array(z.object({ segmentId: z.string().guid(), seatNumber: rpcString(4) }).strict()).max(9), idempotencyKey: z.string().guid() }).strict();
+const cancelSchema = z.object({ bookingId: z.string().guid(), quoteId: rpcString(128), reason: z.string().trim().max(255).optional(), idempotencyKey: z.string().guid() }).strict();
 const validationLogger = new Logger('ReservationValidation');
 const requested = (data: unknown): unknown => { if (typeof data !== 'object' || data === null || Array.isArray(data)) return data; const { ownerId, ...body } = data as Record<string, unknown>; void ownerId; return body; };
-const validate = (data: unknown, schema: z.AnyZodObject, rpc: string): Record<string, unknown> => {
+const validate = (data: unknown, schema: z.ZodObject, rpc: string): Record<string, unknown> => {
   const parsed = schema.strict().safeParse(data);
   if (!parsed.success) {
     const fields = [...new Set(parsed.error.issues.map((issue) => issue.path.map(String).join('.')).filter(Boolean))];
@@ -35,7 +35,7 @@ const validate = (data: unknown, schema: z.AnyZodObject, rpc: string): Record<st
   }
   return parsed.data;
 };
-const withOwner = (data: unknown, metadata: Metadata, schema: z.AnyZodObject, rpc: string): Record<string, unknown> => {
+const withOwner = (data: unknown, metadata: Metadata, schema: z.ZodObject, rpc: string): Record<string, unknown> => {
   const ownerId = (requestContextFromMetadata(metadata) as RequestContext | undefined)?.ownerId;
   if (!ownerId) throw new DomainError('NOT_FOUND');
   return { ...validate(requested(data), schema, rpc), ownerId };

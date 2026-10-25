@@ -7,7 +7,7 @@ const opt = <T extends z.ZodTypeAny>(schema: T) =>
   z.preprocess((v) => (v === '' || v === null ? undefined : v), schema.optional());
 
 export const iata = z.string().regex(/^[A-Z]{3}$/);
-export const uuid = z.string().uuid();
+export const uuid = z.string().guid();
 export const cabin = z.enum(CABIN_CLASSES);
 const isoDate = z
   .string()

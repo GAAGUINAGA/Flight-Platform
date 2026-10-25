@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { CheckInPass, CheckInReservationGateway, CheckInStore } from './check-in-ports';
 import { FlightStore } from './ports';
 
-const requestSchema = z.object({ bookingId: z.string().uuid(), ownerId: z.string().trim().min(1).max(128) }).strict();
+const requestSchema = z.object({ bookingId: z.string().guid(), ownerId: z.string().trim().min(1).max(128) }).strict();
 
 export class ListBoardingPasses {
   constructor(private readonly reservations: CheckInReservationGateway, private readonly flights: FlightStore, private readonly store: CheckInStore) {}

@@ -1,7 +1,7 @@
 import { rpcString } from '@flight-platform/shared';
 import { z } from 'zod';
 
-const uuid = z.string().uuid();
+const uuid = z.string().guid();
 const ownerId = rpcString(128);
 const passenger = z.object({ passengerId: rpcString(128), passengerType: z.string(), firstName: rpcString(128), lastName: rpcString(128) }).passthrough();
 const segment = z.object({ segmentId: rpcString(128) }).passthrough();

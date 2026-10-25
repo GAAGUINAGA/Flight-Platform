@@ -8,6 +8,7 @@ COPY platform ./platform
 COPY contracts/proto ./contracts/proto
 RUN npm ci
 RUN npm run build -w @flight-platform/shared
+RUN npm run build -w @flight-platform/contracts
 RUN npm run build -w @flight-platform/pricing-service
 
 FROM node:20-slim AS runtime
@@ -17,4 +18,4 @@ RUN apt-get update && apt-get install -y --no-install-recommends openssl ca-cert
 RUN groupadd --system flight && useradd --system --gid flight flight
 COPY --from=build --chown=flight:flight /app /app
 USER flight
-CMD ["node", "dist/microservices/pricing-service/src/main.js"]
+CMD ["node", "microservices/pricing-service/dist/main.js"]

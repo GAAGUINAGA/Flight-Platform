@@ -6,7 +6,7 @@ import { EventPublisher, FlightStore } from './ports';
 import { CheckInReservationGateway, CheckInResult, CheckInSeatGateway, CheckInStore, CheckInTicketingGateway } from './check-in-ports';
 import { assertCheckInWindow } from './check-in-window';
 
-const requestSchema = z.object({ bookingId: z.string().uuid(), ownerId: z.string().trim().min(1).max(128) }).strict();
+const requestSchema = z.object({ bookingId: z.string().guid(), ownerId: z.string().trim().min(1).max(128) }).strict();
 
 export class CheckInUseCase {
   constructor(

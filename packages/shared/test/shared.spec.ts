@@ -90,6 +90,17 @@ describe('shared foundations', () => {
     expect(outgoing.get('x-role')).toEqual(['admin']);
   });
 
+  it('F11d-1: preserves UUID-shaped identifiers and maps malformed values to VALIDATION_FAILED', () => {
+    const schema = z.object({ id: z.string().guid() });
+    expect(validate(schema, { id: '11111111-1111-1111-1111-111111111111' })).toEqual({ id: '11111111-1111-1111-1111-111111111111' });
+    try {
+      validate(schema, { id: '11111111-1111-1111-1111-not-hexadecimal' });
+      throw new Error('expected validation failure');
+    } catch (error) {
+      expect((error as { getError(): object }).getError()).toMatchObject({ code: status.INVALID_ARGUMENT, details: 'VALIDATION_FAILED' });
+    }
+  });
+
   it('adds metadata and a five-second deadline to outgoing RPCs', () => {
     const call = jest.fn();
     const client = withGrpcCallContext({ call }, {

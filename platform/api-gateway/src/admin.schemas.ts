@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { GatewayProblemError } from './web-errors';
 
-const uuid = z.string().uuid();
+const uuid = z.string().guid();
 const iata = z.string().regex(/^[A-Z]{3}$/);
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine((value) => new Date(`${value}T00:00:00Z`).toISOString().startsWith(value));
 const dateTime = z.string().datetime({ offset: true });

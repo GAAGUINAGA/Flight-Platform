@@ -16,6 +16,7 @@ jobs:
       - run: npm run prisma:generate -w @flight-platform/api-gateway
       - run: npm run lint
       - run: npm run build -w @flight-platform/shared
+      - run: npm run build -w @flight-platform/contracts
       - run: npm run build -w @flight-platform/api-gateway
       - run: npm run audit:policy
       - run: npx jest platform/api-gateway/src --runInBand

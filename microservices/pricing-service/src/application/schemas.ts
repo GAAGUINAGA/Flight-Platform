@@ -7,7 +7,7 @@ const mix = z.object({
   adults: z.number().int().min(0).max(9), youths: z.number().int().min(0).max(9),
   children: z.number().int().min(0).max(9), infants: z.number().int().min(0).max(9)
 }).strict();
-const uuid = z.string().uuid();
+const uuid = z.string().guid();
 const cabin = z.enum(['ECONOMY', 'PREMIUM_ECONOMY', 'BUSINESS', 'FIRST']);
 const money = z.object({ currency: z.literal('USD'), baseFare: z.string().regex(/^\d+\.\d{2}$/).optional(), taxes: z.string().regex(/^\d+\.\d{2}$/).optional(), total: z.string().regex(/^\d+\.\d{2}$/) }).strict();
 const baggage = z.object({ personalItemIncluded: z.boolean().optional(), carryOnIncluded: z.number().int().min(0).max(9).optional(), checkedBaggageIncluded: z.number().int().min(0).max(9).optional() }).strict();

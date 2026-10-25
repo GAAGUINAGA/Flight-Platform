@@ -2,7 +2,7 @@ import { DomainError, validate } from '@flight-platform/shared';
 import { z } from 'zod';
 import { BookingOwnershipStore } from './booking-ownership';
 
-const uuid = z.string().uuid();
+const uuid = z.string().guid();
 const owner = z.string().trim().min(1).max(128);
 const quantity = z.number().int().min(1).max(3);
 const booking = z.object({ bookingId: uuid, ownerId: owner }).strict();

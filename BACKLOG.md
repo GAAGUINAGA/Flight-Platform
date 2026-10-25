@@ -95,3 +95,7 @@
 - webhooks: webhook-security.spec.ts está en test/security y no corre en CI (el workflow solo ejecuta test/unit); moverla o ampliar el comando de CI.
 
 - Seed de Supabase renovado el 2026-10-25 (inventory y luego pricing, ambos idempotentes con skipDuplicates). Cubre 60 días desde esa fecha; renovarlo antes de que se agoten los vuelos futuros. Documentar el procedimiento en F11d-1.
+
+- deploy-hello.yml fallaría si un push a main toca platform/hello: deploy-service.yml ejecuta prisma:generate y hello no define ese script. Corregirlo o retirar hello del despliegue.
+
+- gateway-ci.yml no incluye packages/contracts/** en sus paths (hoy no afecta: el gateway no importa contracts).

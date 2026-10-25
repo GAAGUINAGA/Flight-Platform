@@ -5,7 +5,7 @@ import { SeatLayoutRow, SeatLayoutStore } from './seat-map';
 import { assertSeatEligibility, PassengerType } from '../domain/seat-eligibility';
 import { BookingOwnershipStore } from './booking-ownership';
 
-const uuid = z.string().uuid();
+const uuid = z.string().guid();
 const seatNumber = z.string().regex(/^[0-9]{1,2}[A-K]$/);
 const passengerType = z.enum(['ADULT', 'YOUTH', 'CHILD', 'INFANT']);
 const cabin = z.enum(['ECONOMY', 'PREMIUM_ECONOMY', 'BUSINESS', 'FIRST']);

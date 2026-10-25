@@ -70,6 +70,7 @@ npx jest microservices/pricing-service/test/integration/inventory-real.spec.ts -
 - CI ejecuta solo lint, build, `npm audit --audit-level=high` y pruebas unitarias del servicio. Integración, concurrencia y seguridad se ejecutan en local y en la auditoría (clon limpio con Docker). Nunca `npm test` de toda la raíz en el workflow de un servicio.
 - Las pruebas deben fallar rápido si falta DATABASE_URL y cerrar servidores y conexiones en afterAll aunque beforeAll falle.
 - Antes de "listo para auditoría", ejecutar en clon limpio (git clone + npm ci) los mismos pasos del workflow.
+- Toda verificación de compilación que se dé por buena debe hacerse desde un clon limpio (`npm ci` y los mismos pasos de build del Dockerfile), nunca solo en el checkout de trabajo, donde quedan restos de compilaciones anteriores.
 - No modificar infra/ ni ejecutar docker compose: la base local la administra el humano.
 - Las migraciones solo crean o alteran objetos dentro del esquema del servicio. Nunca `CREATE SCHEMA`, `CREATE EXTENSION` ni cambios de permisos: el esquema y los roles los administra el humano (`infra/db/roles.sql`).
 - Despliegue solo desde main, después de la auditoría de código (docs/audit/context/flujo-cierre.md).

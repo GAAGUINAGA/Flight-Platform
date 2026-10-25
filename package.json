@@ -12,7 +12,7 @@
   ],
   "scripts": {
     "build": "npm run build --workspaces --if-present",
-    "lint": "eslint . --max-warnings=0",
+    "lint": "eslint . --max-warnings=0 && node scripts/verify-workspace-dist.cjs",
     "test": "jest --passWithNoTests",
     "gen:contracts": "npm run gen --workspace=@flight-platform/contracts",
     "dev:token": "tsx infra/scripts/dev-token.ts",

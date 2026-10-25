@@ -54,10 +54,10 @@ export function requireRole(context: RequestContext, ...roles: Array<'admin' | '
   }
 }
 
-export function validate<T extends z.AnyZodObject>(schema: T, input: unknown): z.output<T> {
+export function validate<T extends z.ZodObject>(schema: T, input: unknown): z.output<T> {
   const result = schema.strict().safeParse(input);
   if (!result.success) throw new RpcException({ code: status.INVALID_ARGUMENT, details: 'VALIDATION_FAILED' });
-  return result.data;
+  return result.data as z.output<T>;
 }
 
 export function rpcString(maxLength = 255) {

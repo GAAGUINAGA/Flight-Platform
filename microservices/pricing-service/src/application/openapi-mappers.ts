@@ -1,4 +1,4 @@
-import type { components } from '../../../../packages/contracts/src/generated/openapi';
+import type { components } from '@flight-platform/contracts';
 import { OfferSnapshot } from './search-offers';
 
 /** Conversión 1:1 del DTO interno gRPC al contrato REST, comprobada por el tipo generado del OpenAPI. */

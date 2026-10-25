@@ -33,9 +33,16 @@ describe('WHK-SEC-05 gRPC security baseline', () => {
     await expect(call('DispatchPending', {}, metadata('customer'))).rejects.toMatchObject({ code: 7, details: 'PERMISSION_DENIED' });
     await expect(call('DeleteSubscription', { id: 'not-a-uuid', ownerId: 'owner' }, metadata('system'))).rejects.toMatchObject({ code: 3, details: 'VALIDATION_FAILED' });
   });
-  it('WHK-VAL-02: rechaza data adicional y acepta holdId por gRPC', async () => {
+  it('WHK-VAL-02 / F11d-1: rechaza data adicional, conserva GUID sin variante RFC y rechaza UUID malformado', async () => {
     await expect(call('PublishEvent', { ownerId: 'owner', payload: { eventType: 'hold.expired', data: { status: 'EXPIRED', additional: 'no' } } }, metadata('system'))).rejects.toMatchObject({ code: 3, details: 'VALIDATION_FAILED' });
-    await expect(call('PublishEvent', { ownerId: 'owner', payload: { eventId: randomUUID(), eventType: 'hold.expired', occurredAt: '2026-10-24T00:00:00.000Z', apiVersion: '1.5.0.0', data: { status: 'EXPIRED', holdId: 'hold-123' } } }, metadata('system'))).resolves.toEqual(expect.objectContaining({ eventId: expect.any(String) }));
+    await expect(call('PublishEvent', { ownerId: 'owner', payload: { eventId: '11111111-1111-1111-1111-111111111111', eventType: 'hold.expired', occurredAt: '2026-10-24T00:00:00.000Z', apiVersion: '1.5.0.0', data: { status: 'EXPIRED', holdId: 'hold-123' } } }, metadata('system'))).resolves.toEqual(expect.objectContaining({ eventId: expect.any(String) }));
+    await expect(call('PublishEvent', { ownerId: 'owner', payload: { eventId: 'not-a-uuid', eventType: 'hold.expired', data: { status: 'EXPIRED' } } }, metadata('system'))).rejects.toMatchObject({ code: 3, details: 'VALIDATION_FAILED' });
+  });
+  it('F11d-1 / ADR-F11-16: occurredAt sin segundos o con +0200 es VALIDATION_FAILED; con +02:00 se acepta', async () => {
+    const publish = (occurredAt: string) => call('PublishEvent', { ownerId: 'owner', payload: { eventId: '11111111-1111-1111-1111-111111111111', eventType: 'hold.expired', occurredAt, apiVersion: '1.5.0.0', data: { status: 'EXPIRED' } } }, metadata('system'));
+    await expect(publish('2026-10-24T00:00Z')).rejects.toMatchObject({ code: 3, details: 'VALIDATION_FAILED' });
+    await expect(publish('2026-10-24T00:00:00+0200')).rejects.toMatchObject({ code: 3, details: 'VALIDATION_FAILED' });
+    await expect(publish('2026-10-24T00:00:00+02:00')).resolves.toEqual(expect.objectContaining({ eventId: expect.any(String) }));
   });
   it('maps an internal failure to a generic error without the implementation detail', async () => {
     await expect(call('ListSubscriptions', { ownerId: `owner-${randomUUID()}` }, metadata('customer'))).rejects.toMatchObject({ code: 13, details: 'INTERNAL_ERROR' });

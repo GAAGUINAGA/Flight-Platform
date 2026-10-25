@@ -1,6 +1,5 @@
 /* global __dirname, console, process */
 const { execFileSync } = require('node:child_process');
-const { readFileSync } = require('node:fs');
 const { join } = require('node:path');
 
 const advisoryIds = (via) => (Array.isArray(via) ? via : [via]).flatMap((entry) => {
@@ -9,17 +8,13 @@ const advisoryIds = (via) => (Array.isArray(via) ? via : [via]).flatMap((entry) 
   return [entry.url, entry.name, entry.title].flatMap((value) => typeof value === 'string' ? value.match(/GHSA-[\w-]+/gi) ?? [] : []);
 }).map((id) => id.toUpperCase());
 
-function evaluateAudit(report, exceptions, now = new Date()) {
-  const allowed = new Map(exceptions.map((entry) => [`${entry.package}:${entry.advisory.toUpperCase()}`, entry]));
+function evaluateAudit(report) {
   const violations = [];
   for (const [name, vulnerability] of Object.entries(report.vulnerabilities ?? {})) {
     const severity = vulnerability.severity;
     if (severity !== 'high' && severity !== 'critical') continue;
     const ids = advisoryIds(vulnerability.via);
-    const exception = severity === 'high' ? ids.map((id) => allowed.get(`${name}:${id}`)).find(Boolean) : undefined;
-    if (!exception) { violations.push(`${name}: ${ids.join(', ') || 'advisory unavailable'} (${severity})`); continue; }
-    const expiry = new Date(`${exception.expiresAt}T23:59:59.999Z`);
-    if (Number.isNaN(expiry.valueOf()) || now > expiry) violations.push(`${name}: ${exception.advisory} exception expired ${exception.expiresAt}`);
+    violations.push(`${name}: ${ids.join(', ') || 'advisory unavailable'} (${severity})`);
   }
   return violations;
 }
@@ -47,13 +42,11 @@ function readAuditReport(execute = execFileSync) {
 }
 
 function main() {
-  const root = join(__dirname, '..');
-  const exceptions = JSON.parse(readFileSync(join(root, 'security', 'npm-audit-exceptions.json'), 'utf8')).exceptions;
   let report;
   try { report = readAuditReport(); } catch (error) { console.error(error.message); process.exitCode = 1; return; }
-  const violations = evaluateAudit(report, exceptions);
+  const violations = evaluateAudit(report);
   if (violations.length) { console.error(`npm audit policy failed:\n${violations.map((line) => `- ${line}`).join('\n')}`); process.exitCode = 1; return; }
-  console.log('npm audit policy passed: no high or critical vulnerabilities outside valid exceptions');
+  console.log('npm audit policy passed: no high or critical vulnerabilities');
 }
 
 if (require.main === module) main();

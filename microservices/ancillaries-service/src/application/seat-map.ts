@@ -2,7 +2,7 @@ import { validate } from '@flight-platform/shared';
 import { z } from 'zod';
 import { PricingGateway } from './ports';
 
-const request = z.object({ offerId: z.string().uuid(), segmentId: z.string().uuid() }).strict();
+const request = z.object({ offerId: z.string().guid(), segmentId: z.string().guid() }).strict();
 export interface SeatLayoutRow { cabinClass: string; seatNumber: string; rowNumber: number; characteristics: string[]; }
 export interface SeatLayoutStore { listByAircraft(aircraft: string): Promise<SeatLayoutRow[]>; }
 export interface SeatAvailabilityStore { activeSeatNumbers(flightInstanceId: string): Promise<string[]>; }
