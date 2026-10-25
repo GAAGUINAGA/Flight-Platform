@@ -33,6 +33,10 @@ describe('WHK-SEC-05 gRPC security baseline', () => {
     await expect(call('DispatchPending', {}, metadata('customer'))).rejects.toMatchObject({ code: 7, details: 'PERMISSION_DENIED' });
     await expect(call('DeleteSubscription', { id: 'not-a-uuid', ownerId: 'owner' }, metadata('system'))).rejects.toMatchObject({ code: 3, details: 'VALIDATION_FAILED' });
   });
+  it('WHK-VAL-02: rechaza data adicional y acepta holdId por gRPC', async () => {
+    await expect(call('PublishEvent', { ownerId: 'owner', payload: { eventType: 'hold.expired', data: { status: 'EXPIRED', additional: 'no' } } }, metadata('system'))).rejects.toMatchObject({ code: 3, details: 'VALIDATION_FAILED' });
+    await expect(call('PublishEvent', { ownerId: 'owner', payload: { eventId: randomUUID(), eventType: 'hold.expired', occurredAt: '2026-10-24T00:00:00.000Z', apiVersion: '1.5.0.0', data: { status: 'EXPIRED', holdId: 'hold-123' } } }, metadata('system'))).resolves.toEqual(expect.objectContaining({ eventId: expect.any(String) }));
+  });
   it('maps an internal failure to a generic error without the implementation detail', async () => {
     await expect(call('ListSubscriptions', { ownerId: `owner-${randomUUID()}` }, metadata('customer'))).rejects.toMatchObject({ code: 13, details: 'INTERNAL_ERROR' });
   });

@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import process from 'node:process';
 import { createGrpcClient, withGrpcCallContext } from '@flight-platform/shared';
 import { PrismaClient } from './infrastructure/persistence/prisma-client/client';
-import { GrpcEventPublisher, GrpcInventoryGateway } from './infrastructure/adapters/grpc-adapters';
+import { GrpcEventPublisher, GrpcInventoryGateway, GrpcReservationGateway } from './infrastructure/adapters/grpc-adapters';
 import { GrpcCheckInReservation, GrpcCheckInSeats, GrpcCheckInTicketing } from './infrastructure/adapters/check-in-grpc';
 import { findProtoRoot, createOperationsServer } from './infrastructure/grpc/server';
 
@@ -29,10 +29,11 @@ export function createOperationsRuntime(internalApiKey: string, prisma: PrismaCl
   const seatsClient = createGrpcClient(seatsOptions);
   const inventory = new GrpcInventoryGateway(withGrpcCallContext(inventoryClient.getService(inventoryOptions.serviceName), inventoryOptions));
   const events = new GrpcEventPublisher(withGrpcCallContext(eventsClient.getService(eventsOptions.serviceName), eventsOptions));
+  const reservations = new GrpcReservationGateway(withGrpcCallContext(reservationClient.getService(reservationOptions.serviceName), { ...reservationOptions, role: 'system' }));
   const checkInReservation = new GrpcCheckInReservation(reservationClient.getService(reservationOptions.serviceName), reservationOptions);
   const checkInTicketing = new GrpcCheckInTicketing(ticketingClient.getService(ticketingOptions.serviceName), ticketingOptions);
   const checkInSeats = new GrpcCheckInSeats(seatsClient.getService(seatsOptions.serviceName), seatsOptions);
-  return { runtime: { prisma, inventory, events, checkInReservation, checkInTicketing, checkInSeats }, close: () => { for (const client of [inventoryClient, eventsClient, reservationClient, ticketingClient, seatsClient]) (client as unknown as { close(): void }).close(); } };
+  return { runtime: { prisma, inventory, reservations, events, checkInReservation, checkInTicketing, checkInSeats }, close: () => { for (const client of [inventoryClient, eventsClient, reservationClient, ticketingClient, seatsClient]) (client as unknown as { close(): void }).close(); } };
 }
 
 async function bootstrap() {

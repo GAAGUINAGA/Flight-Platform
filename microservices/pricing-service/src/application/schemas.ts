@@ -9,6 +9,8 @@ const mix = z.object({
 }).strict();
 const uuid = z.string().uuid();
 const cabin = z.enum(['ECONOMY', 'PREMIUM_ECONOMY', 'BUSINESS', 'FIRST']);
+const money = z.object({ currency: z.literal('USD'), baseFare: z.string().regex(/^\d+\.\d{2}$/).optional(), taxes: z.string().regex(/^\d+\.\d{2}$/).optional(), total: z.string().regex(/^\d+\.\d{2}$/) }).strict();
+const baggage = z.object({ personalItemIncluded: z.boolean().optional(), carryOnIncluded: z.number().int().min(0).max(9).optional(), checkedBaggageIncluded: z.number().int().min(0).max(9).optional() }).strict();
 
 export const searchOffersRequest = z.object({
   legs: z.array(z.object({ origin: iata, destination: iata, departureDate: date }).strict()).min(1).max(6),
@@ -25,3 +27,5 @@ export const quoteChangeRequest = z.object({ bookingId: rpcString(128), ownerId:
 export const changeOfferRequest = z.object({ changeOfferId: uuid, ownerId: rpcString(128) }).strict();
 export const quoteCancellationRequest = z.object({ bookingId: rpcString(128), ownerId: rpcString(128), paidPrice: z.object({ currency: z.literal('USD'), baseFare: z.string().regex(/^\d+\.\d{2}$/).optional(), taxes: z.string().regex(/^\d+\.\d{2}$/).optional(), total: z.string().regex(/^\d+\.\d{2}$/) }).strict(), fareRules: z.object({ isRefundable: z.boolean(), isChangeable: z.boolean() }).strict() }).strict();
 export const baggagePriceRequest = z.object({ itineraryId: uuid, fareBrand: rpcString(32) }).strict();
+export const upsertFareRequest = z.object({ fareId: z.preprocess((value) => value === '' ? undefined : value, uuid.optional()), flightInstanceId: uuid, cabinClass: cabin, fareBrand: rpcString(32), price: money, fareRules: z.object({ isRefundable: z.boolean(), isChangeable: z.boolean() }).strict(), baggageAllowance: baggage, extraCheckedBaggagePrice: money }).strict();
+export const listFaresRequest = z.object({ flightInstanceId: uuid.optional(), page: z.object({}).passthrough().optional() }).strict();

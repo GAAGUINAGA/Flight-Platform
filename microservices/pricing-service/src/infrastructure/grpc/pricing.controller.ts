@@ -6,9 +6,10 @@ import { RequestContext, requestContextFromMetadata, requireRole } from '@flight
 import { SearchOffers } from '../../application/search-offers';
 import { OfferHolds } from '../../application/offer-holds';
 import { PostSalePricing } from '../../application/post-sale-pricing';
+import { FareAdmin } from '../../application/fare-admin';
 
 export const PRICING_DEPS = Symbol('PRICING_DEPS');
-export interface PricingDeps { readonly currency: string; readonly search: SearchOffers; readonly holds: OfferHolds; readonly postSale: PostSalePricing }
+export interface PricingDeps { readonly currency: string; readonly search: SearchOffers; readonly holds: OfferHolds; readonly postSale: PostSalePricing; readonly fares: FareAdmin }
 const ctxOf = (metadata: Metadata): RequestContext => requestContextFromMetadata(metadata) as RequestContext;
 
 /** La frontera gRPC se registra desde el inicio; cada operación se conecta a su caso de uso en los bloques siguientes. */
@@ -23,8 +24,8 @@ export class PricingController {
     throw new RpcException({ code: status.UNIMPLEMENTED, details: 'UNIMPLEMENTED' });
   }
 
-  upsertFare(_data: unknown, metadata: Metadata) { requireRole(ctxOf(metadata), 'admin'); return this.pending(metadata); }
-  listFares(_data: unknown, metadata: Metadata) { requireRole(ctxOf(metadata), 'admin'); return this.pending(metadata); }
+  upsertFare(data: unknown, metadata: Metadata) { requireRole(ctxOf(metadata), 'admin'); return this.deps.fares.upsert(data); }
+  listFares(data: unknown, metadata: Metadata) { requireRole(ctxOf(metadata), 'admin'); return this.deps.fares.list(data); }
   async searchOffers(data: unknown, metadata: Metadata) {
     void ctxOf(metadata);
     return this.deps.search.execute(data);

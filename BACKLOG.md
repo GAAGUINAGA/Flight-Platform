@@ -90,3 +90,6 @@
 - PLAN §1.3 (GAP-025) describe hold.expired como { status: "EXPIRED" }; actualizarlo con holdId (ADR-F11-13).
 - Faltan pruebas: PrismaSchedulerStore contra Postgres, y la rama de reversión de RecoverCheckIns (markBlocked) con almacén real.
 - SCHEDULER_BATCH_SIZE solo acota resumePending y recoverCheckIns; expireHolds y dispatchPending usan lotes fijos de 500 y 100.
+
+- operations: al retrasar o cancelar un vuelo, también se notifica a las reservas ya canceladas; filtrar por estado. La notificación fallida solo se reintenta si un admin repite la actualización; considerar reintento desde el scheduler.
+- webhooks: webhook-security.spec.ts está en test/security y no corre en CI (el workflow solo ejecuta test/unit); moverla o ampliar el comando de CI.

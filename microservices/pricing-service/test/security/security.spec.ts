@@ -47,6 +47,9 @@ describe('PRC-SEC-01/03: frontera segura de Pricing', () => {
   it('PRC-SEC-03: RPC administrativo con customer es PERMISSION_DENIED', async () => {
     await expect(call('listFares', {}, internal())).rejects.toMatchObject({ code: 7 });
   });
+  it('PRC-ADM-01: UpsertFare valida el cuerpo antes de persistir', async () => {
+    await expect(call('upsertFare', { flightInstanceId: 'not-a-uuid' }, internal('admin'))).rejects.toMatchObject({ code: 3 });
+  });
   it('PRC-SEC-03: error interno forzado en RPC responde INTERNAL sin stack ni mensaje interno', async () => {
     await expect(call('searchOffers', { legs: [{ origin: 'UIO', destination: 'GYE', departureDate: '2026-12-15' }], passengers: { adults: 1, youths: 0, children: 0, infants: 0 } }, internal())).rejects.toMatchObject({ code: 13, details: 'INTERNAL_ERROR' });
     await expect(call('searchOffers', { legs: [{ origin: 'UIO', destination: 'GYE', departureDate: '2026-12-15' }], passengers: { adults: 1, youths: 0, children: 0, infants: 0 } }, internal())).rejects.not.toMatchObject({ details: expect.stringContaining('forced internal failure') });

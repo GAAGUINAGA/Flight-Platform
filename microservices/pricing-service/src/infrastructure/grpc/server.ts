@@ -20,6 +20,7 @@ import { FakeInventoryGateway } from '../inventory/fake-inventory.gateway';
 import { PrismaOfferStore } from '../persistence/prisma-offers';
 import { LoggingInterceptor, PricingExceptionFilter } from './filters';
 import { PRICING_DEPS, PricingController, PricingDeps } from './pricing.controller';
+import { FareAdmin } from '../../application/fare-admin';
 
 export const GRPC_PACKAGE = 'flightplatform.pricing.v1';
 
@@ -61,7 +62,7 @@ export function buildDeps(runtime: PricingRuntime): PricingDeps {
     airlineName: runtime.config?.airlineName ?? process.env.AIRLINE_NAME ?? 'Flight Platform'
   };
   const store = new PrismaOfferStore(runtime.prisma);
-  return { currency: config.currency, search: new SearchOffers(inventory, store, clock, config), holds: new OfferHolds(inventory, store, clock, config), postSale: new PostSalePricing(store, inventory, clock, config) };
+  return { currency: config.currency, search: new SearchOffers(inventory, store, clock, config), holds: new OfferHolds(inventory, store, clock, config), postSale: new PostSalePricing(store, inventory, clock, config), fares: new FareAdmin(store) };
 }
 
 @Module({})

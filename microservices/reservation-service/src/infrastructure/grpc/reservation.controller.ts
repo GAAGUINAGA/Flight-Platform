@@ -18,7 +18,7 @@ const passengerSchema = z.object({ passengerId: rpcString(128), passengerType: z
 const createSchema = z.object({ holdId: z.string().uuid(), passengers: z.array(passengerSchema).min(1).max(9), payment: z.object({ paymentReference: rpcString(255) }).strict(), idempotencyKey: rpcString(255) }).strict();
 const getSchema = z.object({ bookingId: z.string().uuid() }).strict();
 const listSchema = z.object({ pnr: z.string().trim().length(6).optional(), page: z.object({ cursor: z.string().optional(), limit: z.number().int().min(1).max(50) }).strict().optional() }).strict();
-const flightSchema = z.object({ flightInstanceId: z.string().uuid() }).strict();
+const flightSchema = z.object({ flightInstanceId: z.string().uuid(), limit: z.number().int().min(1).max(50).optional(), cursor: z.string().uuid().optional() }).strict();
 const resumeSchema = z.object({ limit: z.number().int().min(0).max(4294967295).optional() }).strict();
 const baggageSchema = z.object({ bookingId: z.string().uuid(), passengerId: z.string().uuid(), itineraryId: z.string().uuid(), quantity: z.number().int().min(1).max(3), payment: z.object({ paymentReference: rpcString(255) }).strict(), idempotencyKey: z.string().uuid() }).strict();
 const dateChangeSchema = z.object({ bookingId: z.string().uuid(), changes: z.array(z.object({ itineraryId: z.string().uuid(), newDepartureDate: z.string().date() }).strict()).min(1).max(6) }).strict();
@@ -60,7 +60,7 @@ export class ReservationController {
   getReservation(data: unknown, metadata: Metadata) { return this.deps.getReservation ? this.deps.getReservation(withOwner(data, metadata, getSchema, 'GetReservation')).then(grpcResponse) : unavailable(); }
   listReservations(data: unknown, metadata: Metadata) { return this.deps.listReservations ? this.deps.listReservations(withOwner(data, metadata, listSchema, 'ListReservations')).then(grpcResponse) : unavailable(); }
   getReservationSnapshot(data: unknown, metadata: Metadata) { return this.deps.getReservationSnapshot ? this.deps.getReservationSnapshot(withOwner(data, metadata, getSchema, 'GetReservationSnapshot')).then(grpcResponse) : unavailable(); }
-  listReservationsByFlightInstance(data: unknown, metadata: Metadata) { void metadata; return this.deps.listReservationsByFlightInstance ? this.deps.listReservationsByFlightInstance(validate(data, flightSchema, 'ListReservationsByFlightInstance')).then(grpcResponse) : unavailable(); }
+  listReservationsByFlightInstance(data: unknown, metadata: Metadata) { requireRole(requestContextFromMetadata(metadata) as RequestContext, 'system'); return this.deps.listReservationsByFlightInstance ? this.deps.listReservationsByFlightInstance(validate(data, flightSchema, 'ListReservationsByFlightInstance')).then(grpcResponse) : unavailable(); }
   getBaggageOptions(data: unknown, metadata: Metadata) { return this.deps.getBaggageOptions ? this.deps.getBaggageOptions(withOwner(data, metadata, getSchema, 'GetBaggageOptions')).then((options) => ({ options })) : unavailable(); }
   addBaggage(data: unknown, metadata: Metadata) { return this.deps.addBaggage ? this.deps.addBaggage(withOwner(data, metadata, baggageSchema, 'AddBaggage')) : unavailable(); }
   searchDateChange(data: unknown, metadata: Metadata) { return this.deps.searchDateChange ? this.deps.searchDateChange(withOwner(data, metadata, dateChangeSchema, 'SearchDateChange')).then((offers) => ({ offers })) : unavailable(); }

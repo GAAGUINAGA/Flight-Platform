@@ -37,8 +37,8 @@ describe('PRC-06/07: búsqueda y resolución de oferta', () => {
   let client: Client;
   const offerIds: string[] = [];
   const holdIds: string[] = [];
-  const call = <T>(method: string, request: unknown) => new Promise<T>((resolve, reject) => {
-    const metadata = new Metadata(); metadata.set('x-internal-key', key); metadata.set('x-owner-id', owner);
+  const call = <T>(method: string, request: unknown, role = 'customer') => new Promise<T>((resolve, reject) => {
+    const metadata = new Metadata(); metadata.set('x-internal-key', key); metadata.set('x-owner-id', owner); metadata.set('x-role', role);
     client[method](request, metadata, (error, response) => error ? reject(error) : resolve(response as T));
   });
 
@@ -54,7 +54,7 @@ describe('PRC-06/07: búsqueda y resolución de oferta', () => {
     client = new pkg.flightplatform.pricing.v1.PricingService(`127.0.0.1:${port}`, credentials.createInsecure());
   });
   afterAll(async () => {
-    try { await prisma.priceLock.deleteMany({ where: { holdId: { in: holdIds } } }); await prisma.offer.deleteMany({ where: { id: { in: offerIds } } }); await prisma.fare.delete({ where: { flightInstanceId_cabinClass_brand: { flightInstanceId: flightId, cabinClass: 'ECONOMY', brand: 'BASIC' } } }); }
+    try { await prisma.priceLock.deleteMany({ where: { holdId: { in: holdIds } } }); await prisma.offer.deleteMany({ where: { id: { in: offerIds } } }); await prisma.fare.deleteMany({ where: { flightInstanceId: flightId } }); }
     finally { await app?.close(); await prisma?.$disconnect(); }
   });
 
@@ -66,6 +66,18 @@ describe('PRC-06/07: búsqueda y resolución de oferta', () => {
     const mapped = toSearchResponse({ totalOffers: response.totalOffers, offers: [offer.snapshot as never] });
     expect(mapped).toMatchObject({ totalOffers: 1, offers: [{ offerId: response.offers[0].offerId, itineraries: [{ pricingOptions: [{ fareBrand: 'BASIC', availableSeats: 9 }] }] }] });
     validateOpenApi('SearchResponse', mapped);
+  });
+
+  it('PRC-ADM-02 / I: crea, actualiza e idempotentemente conserva una tarifa usada en búsqueda real', async () => {
+    const fare = { flightInstanceId: flightId, cabinClass: 'ECONOMY', fareBrand: 'FLEX', price: { currency: 'USD', baseFare: '130.00', taxes: '20.00', total: '150.00' }, fareRules: { isRefundable: true, isChangeable: true }, baggageAllowance: { checkedBaggageIncluded: 1 }, extraCheckedBaggagePrice: { currency: 'USD', total: '50.00' } };
+    await call('upsertFare', fare, 'admin');
+    await call('upsertFare', { ...fare, price: { currency: 'USD', baseFare: '140.00', taxes: '20.00', total: '160.00' } }, 'admin');
+    expect(await prisma.fare.count({ where: { flightInstanceId: flightId, cabinClass: 'ECONOMY', brand: 'FLEX' } })).toBe(1);
+    await expect(prisma.fare.findUnique({ where: { flightInstanceId_cabinClass_brand: { flightInstanceId: flightId, cabinClass: 'ECONOMY', brand: 'FLEX' } }, select: { baseFareMinor: true, taxesMinor: true } })).resolves.toEqual({ baseFareMinor: 14_000, taxesMinor: 2_000 });
+    const searched = await call<{ offers: Array<{ offerId: string; itineraries: Array<{ pricingOptions: Array<{ fareBrand: string; pricePerPassengerType: Array<{ passengerType: string; price: { total: string } }> }> }> }> }>('searchOffers', { legs: [{ origin: 'UIO', destination: 'GYE', departureDate }], passengers: { adults: 1, youths: 0, children: 0, infants: 0 } });
+    offerIds.push(searched.offers[0].offerId);
+    const option = searched.offers[0].itineraries[0].pricingOptions.find((item) => item.fareBrand === 'FLEX');
+    expect(option?.pricePerPassengerType.find((item) => item.passengerType === 'TOTAL')?.price.total).toBe('160.00');
   });
 
   it('PRC-08 / PRC-09 / K: crea, consulta y libera el hold con precio bloqueado', async () => {

@@ -7,7 +7,7 @@ service ReservationService {
   rpc GetReservation(GetReservationRequest) returns (flightplatform.common.v1.BookingDetail);
   rpc ListReservations(ListReservationsRequest) returns (ListReservationsResponse);
   rpc GetReservationSnapshot(GetReservationRequest) returns (flightplatform.common.v1.BookingDetail);
-  rpc ListReservationsByFlightInstance(ListReservationsByFlightInstanceRequest) returns (ListReservationsResponse);
+  rpc ListReservationsByFlightInstance(ListReservationsByFlightInstanceRequest) returns (ListReservationsByFlightInstanceResponse);
   rpc GetBaggageOptions(GetReservationRequest) returns (BaggageOptionsResponse);
   rpc AddBaggage(AddBaggageRequest) returns (BaggageAddedResponse);
   rpc SearchDateChange(SearchDateChangeRequest) returns (DateChangeSearchResponse);
@@ -34,7 +34,26 @@ message ListReservationsResponse {
   repeated flightplatform.common.v1.BookingSummary items = 1;
   optional string next_cursor = 2;
 }
-message ListReservationsByFlightInstanceRequest { string flight_instance_id = 1; }
+message ListReservationsByFlightInstanceRequest {
+  string flight_instance_id = 1;
+  optional uint32 limit = 2;
+  optional string cursor = 3;
+}
+// Campos 1-7 idénticos a common.v1.BookingSummary (compatible en el cable); owner_id es aditivo.
+message FlightReservationSummary {
+  string booking_id = 1;
+  string pnr = 2;
+  string status = 3;
+  string origin = 4;
+  string destination = 5;
+  string departure_date = 6;
+  flightplatform.common.v1.MoneyAmount grand_total = 7;
+  string owner_id = 8;
+}
+message ListReservationsByFlightInstanceResponse {
+  repeated FlightReservationSummary items = 1;
+  optional string next_cursor = 2;
+}
 message BaggageOptionsResponse { repeated flightplatform.common.v1.BaggageOption options = 1; }
 message AddBaggageRequest {
   string booking_id = 1;

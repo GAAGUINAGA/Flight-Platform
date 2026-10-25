@@ -28,6 +28,8 @@ import { HoldController } from './hold.controller';
 import { BookingController } from './booking.controller';
 import { PostSaleController } from './post-sale.controller';
 import { OperationsController } from './operations.controller';
+import { WebhooksController } from './webhooks.controller';
+import { AdminController } from './admin.controller';
 
 class HealthController { health() { return { status: 'ok' }; } }
 Controller('flights/v1/health')(HealthController); Get()(HealthController.prototype, 'health', Object.getOwnPropertyDescriptor(HealthController.prototype, 'health')!); Public()(HealthController.prototype, 'health', Object.getOwnPropertyDescriptor(HealthController.prototype, 'health')!);
@@ -70,7 +72,7 @@ export async function createGatewayApp(config: GatewayConfig) {
     GatewayExceptionFilter, { provide: APP_FILTER, useExisting: GatewayExceptionFilter }
   ];
   class GatewayModule {}
-  Module({ imports: [LoggerModule.forRoot({ pinoHttp: loggerOptions })], controllers: testComponents ? [HealthController, ShoppingController, HoldController, BookingController, PostSaleController, OperationsController, testComponents.TestController] : [HealthController, ShoppingController, HoldController, BookingController, PostSaleController, OperationsController], providers })(GatewayModule);
+  Module({ imports: [LoggerModule.forRoot({ pinoHttp: loggerOptions })], controllers: testComponents ? [HealthController, ShoppingController, HoldController, BookingController, PostSaleController, OperationsController, WebhooksController, AdminController, testComponents.TestController] : [HealthController, ShoppingController, HoldController, BookingController, PostSaleController, OperationsController, WebhooksController, AdminController], providers })(GatewayModule);
   const app = await NestFactory.create(GatewayModule);
   const express = app.getHttpAdapter().getInstance(); express.set('trust proxy', 1);
   express.use(helmet({ hsts: { maxAge: 15552000, includeSubDomains: true } }));
@@ -90,7 +92,7 @@ export async function createGatewayApp(config: GatewayConfig) {
       void request;
       throw error;
     }
-  } : false, ignorePaths: /health|__test/ }));
+  } : false, ignorePaths: /health|__test|\/admin(\/|$)/ }));
   express.use((error: unknown, _req: Request, res: Response, next: NextFunction) => { void next; const problem = asProblem(error); const validator = typeof error === 'object' && error !== null && 'errors' in error ? (error as { errors?: Array<{ path?: string; message?: string }> }).errors : undefined; if (Array.isArray(validator)) problem.invalidParams = validator.map((entry) => ({ name: entry.path ?? 'request', reason: entry.message ?? 'invalid' })); res.status(problem.status).type('application/problem+json').json(problem); });
   await app.init();
   return app;

@@ -1,4 +1,6 @@
 import { createServer } from 'node:net';
+import { createServer as createHttpServer, type Server as HttpServer } from 'node:http';
+import { exportJWK, generateKeyPair, SignJWT } from 'jose';
 import process from 'node:process';
 import { join } from 'node:path';
 import { generateKeyPairSync, randomInt, randomUUID } from 'node:crypto';
@@ -52,6 +54,7 @@ import { PrismaSchedulerStore } from '../../src/scheduler-store';
 import { createDevToken } from '../../../../infra/scripts/dev-token';
 import { openApiSpecPath } from '../../src/openapi-path';
 
+type SigningKey = Awaited<ReturnType<typeof generateKeyPair>>['privateKey'];
 const describeReal = process.env.RUN_GATEWAY_REAL === 'true' ? describe : describe.skip;
 const key = 'gateway-real-internal-key-for-local-testing';
 type Name = 'inventory' | 'pricing' | 'ancillaries' | 'reservation' | 'ticketing' | 'webhooks' | 'operations';
@@ -75,7 +78,7 @@ describeReal('Gateway: composición gRPC real en proceso', () => {
   const prior = new Map<string, string | undefined>();
   let gateway: INestApplication | undefined;
   let keyDir: string | undefined;
-  let token: (scope: string, owner?: string) => string;
+  let token: (scope: string, owner?: string, role?: string) => string;
   let inventoryDb: InventoryPrisma;
   let pricingDb: PricingPrisma;
   let ancillariesDb: AncillariesPrisma;
@@ -149,7 +152,7 @@ describeReal('Gateway: composición gRPC real en proceso', () => {
     const keys = generateKeyPairSync('rsa', { modulusLength: 2048, privateKeyEncoding: { format: 'pem', type: 'pkcs8' }, publicKeyEncoding: { format: 'pem', type: 'spki' } });
     const publicKey = join(keyDir, 'public.pem');
     writeFileSync(publicKey, keys.publicKey);
-    token = (scope, owner = 'gateway-real-owner') => `Bearer ${createDevToken(keys.privateKey, { sub: owner, app_role: 'customer', scope })}`;
+    token = (scope, owner = 'gateway-real-owner', role = 'customer') => `Bearer ${createDevToken(keys.privateKey, { sub: owner, app_role: role, scope })}`;
     const output = jest.spyOn(process.stdout, 'write').mockImplementation(((chunk: string | Uint8Array) => { gatewayLogs += chunk.toString(); return true; }) as typeof process.stdout.write);
     restoreGatewayOutput = () => output.mockRestore();
     // La composicion usa las bases reales de los servicios; el schema gateway no pertenece a esos roles.
@@ -720,5 +723,389 @@ describeReal('Gateway: composición gRPC real en proceso', () => {
       await inventoryDb.flightInstance.deleteMany({ where: { id: flightId } });
     }
   }, 30_000);
+  describe('PLT-G: webhooks REST (OP-15, OP-16, OP-17)', () => {
+    const base = '/flights/v1/webhooks';
+    const scope = 'flights:webhooks';
+    const created: string[] = [];
+    const subscription = (secret: string) => ({ url: 'https://93.184.216.34/hook', events: ['booking.confirmed', 'hold.expired'], secret });
+    const register = async (owner: string, role: string, secret: string) => {
+      const response = await request(gateway!.getHttpServer()).post(base).set('Authorization', token(scope, owner, role)).send(subscription(secret));
+      if (response.body?.id) created.push(owner);
+      return response;
+    };
+    afterAll(async () => { if (created.length) await webhooksDb.subscription.deleteMany({ where: { ownerId: { in: created } } }); });
+
+    it('OP-15 / K: partner registra un webhook y la respuesta cumple WebhookSubscription con el secreto enmascarado', async () => {
+      const owner = `plt-g-${randomUUID()}`; const secret = `s3cr3t-${randomUUID()}`;
+      const response = await register(owner, 'partner', secret);
+      expect(response.status).toBe(201); validate('WebhookSubscription', response.body);
+      expect(response.body.secret).toBe(`****${secret.slice(-4)}`);
+      expect(JSON.stringify(response.body)).not.toContain(secret);
+    }, 30_000);
+
+    it('OP-15 / K: admin registra un webhook con la misma forma', async () => {
+      const owner = `plt-g-${randomUUID()}`; const secret = `s3cr3t-${randomUUID()}`;
+      const response = await register(owner, 'admin', secret);
+      expect(response.status).toBe(201); validate('WebhookSubscription', response.body);
+      expect(response.body.secret).toBe(`****${secret.slice(-4)}`);
+    }, 30_000);
+
+    it('OP-16 / K: lista solo las suscripciones del sub con el secreto enmascarado', async () => {
+      const owner = `plt-g-${randomUUID()}`; const other = `plt-g-${randomUUID()}`; const secret = `s3cr3t-${randomUUID()}`;
+      const mine = await register(owner, 'partner', secret); const theirs = await register(other, 'partner', `s3cr3t-${randomUUID()}`);
+      expect(mine.status).toBe(201); expect(theirs.status).toBe(201);
+      const response = await request(gateway!.getHttpServer()).get(base).set('Authorization', token(scope, owner, 'partner'));
+      expect(response.status).toBe(200);
+      const items = response.body as Array<{ id: string; secret: string }>;
+      const check = ajv.compile({ type: 'array', items: { $ref: '#/components/schemas/WebhookSubscription' }, components: spec.components });
+      expect({ valid: check(items), errors: check.errors }).toEqual({ valid: true, errors: null });
+      expect(items.map((item) => item.id)).toEqual([mine.body.id]);
+      expect(items[0].secret).toBe(`****${secret.slice(-4)}`);
+      expect(JSON.stringify(items)).not.toContain(secret);
+    }, 30_000);
+
+    it('OP-17 / K: elimina la suscripción propia con 204 y desaparece del listado', async () => {
+      const owner = `plt-g-${randomUUID()}`;
+      const mine = await register(owner, 'partner', `s3cr3t-${randomUUID()}`);
+      const removed = await request(gateway!.getHttpServer()).delete(`${base}/${mine.body.id}`).set('Authorization', token(scope, owner, 'partner'));
+      expect(removed.status).toBe(204); expect(removed.text).toBe('');
+      const listed = await request(gateway!.getHttpServer()).get(base).set('Authorization', token(scope, owner, 'partner'));
+      expect(listed.body).toEqual([]);
+    }, 30_000);
+
+    it.each([['OP-15', 'post'], ['OP-16', 'get'], ['OP-17', 'delete']] as const)('%s / S: sin token ⇒ 401', async (_id, method) => {
+      const path = method === 'delete' ? `${base}/${randomUUID()}` : base;
+      const response = await request(gateway!.getHttpServer())[method](path).send(method === 'post' ? subscription('abcdefgh') : undefined);
+      expect(response.status).toBe(401); validate('ProblemDetails', response.body);
+    });
+
+    it.each([['OP-15', 'post'], ['OP-16', 'get'], ['OP-17', 'delete']] as const)('%s / S: customer ⇒ 403', async (_id, method) => {
+      const path = method === 'delete' ? `${base}/${randomUUID()}` : base;
+      const response = await request(gateway!.getHttpServer())[method](path).set('Authorization', token(scope, `plt-g-${randomUUID()}`, 'customer')).send(method === 'post' ? subscription('abcdefgh') : undefined);
+      expect(response.status).toBe(403); validate('ProblemDetails', response.body);
+    });
+
+    it('OP-15 / S: partner sin el scope flights:webhooks ⇒ 403', async () => {
+      const response = await request(gateway!.getHttpServer()).get(base).set('Authorization', token('flights:read', `plt-g-${randomUUID()}`, 'partner'));
+      expect(response.status).toBe(403); validate('ProblemDetails', response.body);
+    });
+
+    it('OP-17 / S: eliminar la suscripción de otro sub ⇒ 404 y sigue activa para su dueño', async () => {
+      const owner = `plt-g-${randomUUID()}`; const intruder = `plt-g-${randomUUID()}`;
+      const mine = await register(owner, 'partner', `s3cr3t-${randomUUID()}`);
+      const response = await request(gateway!.getHttpServer()).delete(`${base}/${mine.body.id}`).set('Authorization', token(scope, intruder, 'partner'));
+      expect(response.status).toBe(404); validate('ProblemDetails', response.body);
+      expect(await webhooksDb.subscription.count({ where: { id: mine.body.id, ownerId: owner } })).toBe(1);
+    }, 30_000);
+
+    it('OP-17 / S: id que no es UUID ⇒ 400', async () => {
+      const response = await request(gateway!.getHttpServer()).delete(`${base}/no-es-uuid`).set('Authorization', token(scope, `plt-g-${randomUUID()}`, 'partner'));
+      expect(response.status).toBe(400); validate('ProblemDetails', response.body);
+    });
+
+    it.each([
+      ['sin secret', { url: 'https://93.184.216.34/hook', events: ['booking.confirmed'] }],
+      ['evento fuera del catálogo', { url: 'https://93.184.216.34/hook', events: ['booking.unknown'], secret: 'abcdefgh' }],
+      ['url inválida', { url: 'no-es-url', events: ['booking.confirmed'], secret: 'abcdefgh' }]
+    ])('OP-15 / S: %s ⇒ 400', async (_name, body) => {
+      const response = await request(gateway!.getHttpServer()).post(base).set('Authorization', token(scope, `plt-g-${randomUUID()}`, 'partner')).send(body);
+      expect(response.status).toBe(400); validate('ProblemDetails', response.body);
+    });
+
+    it('OP-15 / S: URL de destino privada ⇒ rechazada sin crear la suscripción', async () => {
+      const owner = `plt-g-${randomUUID()}`;
+      const response = await request(gateway!.getHttpServer()).post(base).set('Authorization', token(scope, owner, 'partner')).send({ ...subscription('abcdefgh'), url: 'http://127.0.0.1/hook' });
+      expect(response.status).toBe(400); validate('ProblemDetails', response.body);
+      expect(await webhooksDb.subscription.count({ where: { ownerId: owner } })).toBe(0);
+    });
+
+    it('OP-15 / S: el secreto en claro no aparece en los logs del Gateway', async () => {
+      const owner = `plt-g-${randomUUID()}`; const secret = `log-check-${randomUUID()}`;
+      expect((await register(owner, 'partner', secret)).status).toBe(201);
+      await request(gateway!.getHttpServer()).get(base).set('Authorization', token(scope, owner, 'partner'));
+      expect(gatewayLogs).not.toContain(secret);
+    }, 30_000);
+  });
+
+  describe('PLT-H1: rutas /flights/v1/admin/*', () => {
+    const admin = (owner = `admin-${randomUUID()}`) => token('flights:admin', owner, 'admin');
+    const flightIds: string[] = [];
+    const flightBody = (overrides: Record<string, unknown> = {}) => {
+      const { origin, destination } = randomRoute(); const departure = new Date(Date.now() + 9 * 86_400_000); departure.setUTCHours(10, 0, 0, 0);
+      return { flightNumber: `FP${randomInt(1000, 10000)}`, departureIata: origin, arrivalIata: destination, departureAt: departure.toISOString(), arrivalAt: new Date(departure.getTime() + 3_600_000).toISOString(), cabins: [{ cabinClass: 'ECONOMY', capacity: 20 }], ...overrides };
+    };
+    const createFlight = async (body = flightBody()) => {
+      const response = await request(gateway!.getHttpServer()).post('/flights/v1/admin/flights').set('Authorization', admin()).send(body);
+      if (response.body?.flightInstanceId) flightIds.push(response.body.flightInstanceId);
+      return response;
+    };
+    const fareBody = (flightInstanceId: string, total = '120.00', taxes = '20.00') => ({ flightInstanceId, cabinClass: 'ECONOMY', fareBrand: 'FLEX', price: { currency: 'USD', baseFare: (Number(total) - Number(taxes)).toFixed(2), taxes, total }, fareRules: { isRefundable: true, isChangeable: false }, baggageAllowance: { personalItemIncluded: true, carryOnIncluded: 1, checkedBaggageIncluded: 0 }, extraCheckedBaggagePrice: { currency: 'USD', total: '50.00' } });
+    afterAll(async () => {
+      if (!flightIds.length) return;
+      await pricingDb.fare.deleteMany({ where: { flightInstanceId: { in: flightIds } } });
+      await operationsDb.operationalFlight.deleteMany({ where: { flightInstanceId: { in: flightIds } } });
+      await inventoryDb.flightInstance.deleteMany({ where: { id: { in: flightIds } } });
+    });
+
+    const routes = [
+      ['H1-01', 'post', '/flights/v1/admin/flights', () => flightBody()],
+      ['H1-02', 'get', '/flights/v1/admin/flights', () => undefined],
+      ['H1-03', 'post', `/flights/v1/admin/flights/${randomUUID()}/close`, () => undefined],
+      ['H1-04', 'put', '/flights/v1/admin/fares', () => fareBody(randomUUID())],
+      ['H1-05', 'get', '/flights/v1/admin/fares', () => undefined],
+      ['H1-06', 'post', `/flights/v1/admin/flights/${randomUUID()}/operational-updates`, () => ({ status: 'DELAYED' })]
+    ] as const;
+
+    it.each(routes)('%s / S: sin token ⇒ 401', async (_id, method, path, body) => {
+      const response = await request(gateway!.getHttpServer())[method](path).send(body());
+      expect(response.status).toBe(401); validate('ProblemDetails', response.body);
+    });
+    it.each(routes)('%s / S: customer ⇒ 403', async (_id, method, path, body) => {
+      const response = await request(gateway!.getHttpServer())[method](path).set('Authorization', token('flights:read flights:book flights:hold', `plt-h1-${randomUUID()}`, 'customer')).send(body());
+      expect(response.status).toBe(403); validate('ProblemDetails', response.body);
+    });
+    it.each(routes)('%s / S: partner ⇒ 403', async (_id, method, path, body) => {
+      const response = await request(gateway!.getHttpServer())[method](path).set('Authorization', token('flights:webhooks flights:admin', `plt-h1-${randomUUID()}`, 'partner')).send(body());
+      expect(response.status).toBe(403); validate('ProblemDetails', response.body);
+    });
+    it.each(routes)('%s / S: admin sin el scope flights:admin ⇒ 403', async (_id, method, path, body) => {
+      const response = await request(gateway!.getHttpServer())[method](path).set('Authorization', token('flights:read', `plt-h1-${randomUUID()}`, 'admin')).send(body());
+      expect(response.status).toBe(403); validate('ProblemDetails', response.body);
+    });
+
+    it('H1-01 / K: admin crea un vuelo, lo lista por fecha y repetir la misma clave natural no lo duplica', async () => {
+      const body = flightBody(); const first = await createFlight(body);
+      expect(first.status).toBe(200); expect(first.body.flightInstanceId).toMatch(/^[0-9a-f-]{36}$/); expect(first.body.closed).toBeFalsy();
+      const again = await createFlight({ ...body, cabins: [{ cabinClass: 'ECONOMY', capacity: 25 }] });
+      expect(again.status).toBe(200); expect(again.body.flightInstanceId).toBe(first.body.flightInstanceId);
+      expect(await inventoryDb.flightInstance.count({ where: { flightNumber: body.flightNumber, departureAt: new Date(body.departureAt) } })).toBe(1);
+      const listed = await request(gateway!.getHttpServer()).get('/flights/v1/admin/flights').query({ date: body.departureAt.slice(0, 10), limit: 200 }).set('Authorization', admin());
+      expect(listed.status).toBe(200); expect(listed.body.items.map((item: { flightInstanceId: string }) => item.flightInstanceId)).toContain(first.body.flightInstanceId);
+    }, 30_000);
+
+    it('H1-04 / K: admin fija la tarifa; repetir la clave natural la actualiza y el listado muestra el precio vigente', async () => {
+      const flight = await createFlight(); const id = flight.body.flightInstanceId as string;
+      const first = await request(gateway!.getHttpServer()).put('/flights/v1/admin/fares').set('Authorization', admin()).send(fareBody(id));
+      expect(first.status).toBe(200); expect(first.body.fare).toMatchObject({ flightInstanceId: id, cabinClass: 'ECONOMY', fareBrand: 'FLEX' });
+      const second = await request(gateway!.getHttpServer()).put('/flights/v1/admin/fares').set('Authorization', admin()).send(fareBody(id, '140.00'));
+      expect(second.status).toBe(200); expect(second.body.fare.fareId).toBe(first.body.fare.fareId); expect(second.body.fare.price.total).toBe('140.00');
+      const listed = await request(gateway!.getHttpServer()).get('/flights/v1/admin/fares').query({ flightInstanceId: id }).set('Authorization', admin());
+      expect(listed.status).toBe(200); expect(listed.body.fares).toHaveLength(1); expect(listed.body.fares[0].fare.price.total).toBe('140.00');
+    }, 30_000);
+
+    it('H1-06 / K: admin registra un retraso y la respuesta cumple FlightStatus', async () => {
+      const body = flightBody(); const flight = await createFlight(body); const id = flight.body.flightInstanceId as string;
+      const date = body.departureAt.slice(0, 10); const estimated = new Date(new Date(body.departureAt).getTime() + 90 * 60_000).toISOString();
+      const response = await request(gateway!.getHttpServer()).post(`/flights/v1/admin/flights/${id}/operational-updates`).set('Authorization', admin()).send({ status: 'DELAYED', estimatedDepartureAt: estimated, departureTerminal: 'B' });
+      expect(response.status).toBe(200); validate('FlightStatus', response.body);
+      expect(response.body).toMatchObject({ flightNumber: body.flightNumber, date, status: 'DELAYED' });
+      expect(response.body.departure).toMatchObject({ estimatedAt: estimated, terminal: 'B' });
+    }, 30_000);
+
+    it('H1-03 / K: admin cierra la venta del vuelo', async () => {
+      const flight = await createFlight(); const id = flight.body.flightInstanceId as string;
+      const response = await request(gateway!.getHttpServer()).post(`/flights/v1/admin/flights/${id}/close`).set('Authorization', admin());
+      expect(response.status).toBe(200); expect(response.body.closed).toBe(true);
+      expect((await inventoryDb.flightInstance.findUnique({ where: { id } }))?.closed).toBe(true);
+    }, 30_000);
+
+    it.each([
+      ['H1-01', 'post', '/flights/v1/admin/flights', () => flightBody({ departureIata: 'abc' })],
+      ['H1-01', 'post', '/flights/v1/admin/flights', () => flightBody({ cabins: [] })],
+      ['H1-01', 'post', '/flights/v1/admin/flights', () => flightBody({ unexpected: true })],
+      ['H1-01', 'post', '/flights/v1/admin/flights', () => flightBody({ cabins: [{ cabinClass: 'ECONOMY', capacity: '20' }] })],
+      ['H1-02', 'get', '/flights/v1/admin/flights?unknown=1', () => undefined],
+      ['H1-02', 'get', '/flights/v1/admin/flights?limit=abc', () => undefined],
+      ['H1-03', 'post', '/flights/v1/admin/flights/no-es-uuid/close', () => undefined],
+      ['H1-04', 'put', '/flights/v1/admin/fares', () => ({ ...fareBody(randomUUID()), cabinClass: 'LUXURY' })],
+      ['H1-04', 'put', '/flights/v1/admin/fares', () => ({ ...fareBody(randomUUID()), unexpected: 1 })],
+      ['H1-04', 'put', '/flights/v1/admin/fares', () => ({ ...fareBody(randomUUID()), fareRules: { isRefundable: 'yes', isChangeable: false } })],
+      ['H1-05', 'get', '/flights/v1/admin/fares?flightInstanceId=no-es-uuid', () => undefined],
+      ['H1-06', 'post', `/flights/v1/admin/flights/${randomUUID()}/operational-updates`, () => ({ status: 'EXPLODED' })],
+      ['H1-06', 'post', `/flights/v1/admin/flights/${randomUUID()}/operational-updates`, () => ({ status: 'DELAYED', unexpected: true })],
+      ['H1-06', 'post', `/flights/v1/admin/flights/${randomUUID()}/operational-updates`, () => ({ status: 'DELAYED', estimatedDepartureAt: 12345 })]
+    ] as const)('%s / S: entrada inválida ⇒ 400 (%#)', async (_id, method, path, body) => {
+      const response = await request(gateway!.getHttpServer())[method](path).set('Authorization', admin()).send(body());
+      expect(response.status).toBe(400); validate('ProblemDetails', response.body);
+    });
+
+    it('PLT-I6 / J6 admin / E: retraso ⇒ flight.schedule_changed y cancelación ⇒ flight.cancelled por cada reserva afectada, con la venta cerrada', async () => {
+      const owners = [`j6-${randomUUID()}`, `j6-${randomUUID()}`]; const server = gateway!.getHttpServer(); const offerIds: string[] = [];
+      const aircraft = `T${randomUUID().replace(/-/g, '').slice(0, 20)}`;
+      const body = flightBody({ aircraft }); const date = body.departureAt.slice(0, 10);
+      const bookings = new Map<string, string>();
+      try {
+        const flight = await createFlight(body); expect(flight.status).toBe(200); const id = flight.body.flightInstanceId as string;
+        expect((await request(server).put('/flights/v1/admin/fares').set('Authorization', admin()).send(fareBody(id))).status).toBe(200);
+        await ancillariesDb.seatLayout.createMany({ data: ['1A', '1B'].map((seatNumber) => ({ aircraft, cabinClass: 'ECONOMY' as const, seatNumber, rowNumber: 1, characteristics: ['WINDOW'] })) });
+        const search = await request(server).post('/flights/v1/search').set('X-Device-Fingerprint', randomUUID()).send({ itineraries: [{ origin: body.departureIata, destination: body.arrivalIata, departureDate: date }], passengers: { adults: 1 } });
+        expect(search.status).toBe(200); offerIds.push(...search.body.offers.map((item: { offerId: string }) => item.offerId));
+        const offer = search.body.offers[0]; const itinerary = offer.itineraries[0]; const segment = itinerary.segments[0];
+        const option = itinerary.pricingOptions.find((item: { cabinClass: string; fareBrand: string }) => item.cabinClass === 'ECONOMY' && item.fareBrand === 'FLEX');
+        const holdBody = { offerId: offer.offerId, itinerarySelections: [{ itineraryId: itinerary.itineraryId, cabinClass: option.cabinClass, fareBrand: option.fareBrand }], passengersBreakdown: { adults: 1 } };
+        for (const [index, owner] of owners.entries()) {
+          const hook = await request(server).post('/flights/v1/webhooks').set('Authorization', token('flights:webhooks', owner, 'partner')).send({ url: 'https://93.184.216.34/j6', events: ['flight.schedule_changed', 'flight.cancelled'], secret: `j6-${randomUUID()}` });
+          expect(hook.status).toBe(201);
+          const hold = await request(server).post('/flights/v1/offers/hold').set('Authorization', token('flights:hold', owner)).set('Idempotency-Key', randomUUID()).send(holdBody);
+          expect(hold.status).toBe(201);
+          const booking = await request(server).post('/flights/v1/bookings').set('Authorization', token('flights:book', owner)).set('Idempotency-Key', randomUUID()).send({ holdId: hold.body.holdId, passengers: [{ passengerId: randomUUID(), passengerType: 'ADULT', firstName: 'Test', lastName: 'Passenger', documentType: 'PASSPORT', documentNumber: 'TEST123', nationality: 'EC', documentExpiryDate: '2035-01-01', birthDate: '1990-01-01', gender: 'X', contact: { email: 'test@example.invalid', phone: '+593999999999' }, assignedSeats: [{ segmentId: segment.segmentId, seatNumber: index === 0 ? '1A' : '1B' }], extraBaggage: [] }], payment: { paymentReference: `pay_ok_${randomUUID()}` } });
+          if (booking.status !== 201) throw new Error(JSON.stringify(booking.body));
+          bookings.set(owner, booking.body.bookingId);
+        }
+        const deliveries = async (eventType: string) => (await webhooksDb.delivery.findMany({ where: { subscription: { ownerId: { in: owners } } }, include: { subscription: true } })).filter((delivery) => (delivery.payload as { eventType?: string }).eventType === eventType);
+        const expectPerBooking = async (eventType: string) => {
+          const rows = await deliveries(eventType); expect(rows).toHaveLength(owners.length);
+          for (const owner of owners) {
+            const own = rows.filter((row) => row.subscription.ownerId === owner); expect(own).toHaveLength(1);
+            validate('WebhookPayload', own[0].payload); expect((own[0].payload as { data: { bookingId: string } }).data.bookingId).toBe(bookings.get(owner));
+          }
+        };
+        // El vuelo no tiene estado operativo: la actualización lo crea desde Inventory.
+        expect(await operationsDb.operationalFlight.count({ where: { flightInstanceId: id } })).toBe(0);
+        const delayed = await request(server).post(`/flights/v1/admin/flights/${id}/operational-updates`).set('Authorization', admin()).send({ status: 'DELAYED', estimatedDepartureAt: new Date(new Date(body.departureAt).getTime() + 90 * 60_000).toISOString() });
+        expect(delayed.status).toBe(200); validate('FlightStatus', delayed.body);
+        await expectPerBooking('flight.schedule_changed');
+        expect((await inventoryDb.flightInstance.findUnique({ where: { id } }))?.closed).toBe(false);
+        const cancelled = await request(server).post(`/flights/v1/admin/flights/${id}/operational-updates`).set('Authorization', admin()).send({ status: 'CANCELLED' });
+        expect(cancelled.status).toBe(200); validate('FlightStatus', cancelled.body); expect(cancelled.body.status).toBe('CANCELLED');
+        await expectPerBooking('flight.cancelled');
+        expect((await inventoryDb.flightInstance.findUnique({ where: { id } }))?.closed).toBe(true);
+        const repeated = await request(server).post(`/flights/v1/admin/flights/${id}/operational-updates`).set('Authorization', admin()).send({ status: 'CANCELLED' });
+        expect(repeated.status).toBe(200); expect(await deliveries('flight.cancelled')).toHaveLength(owners.length);
+        const afterClose = await request(server).post('/flights/v1/offers/hold').set('Authorization', token('flights:hold', owners[0])).set('Idempotency-Key', randomUUID()).send(holdBody);
+        expect(afterClose.status).not.toBe(201); validate('ProblemDetails', afterClose.body);
+      } finally {
+        const rows = await reservationDb.reservation.findMany({ where: { ownerId: { in: owners } }, select: { id: true } }); const ids = rows.map((row) => row.id);
+        const holds = await inventoryDb.hold.findMany({ where: { ownerId: { in: owners } }, select: { id: true } });
+        await webhooksDb.subscription.deleteMany({ where: { ownerId: { in: owners } } });
+        await ancillariesDb.baggageAllowance.deleteMany({ where: { ownerId: { in: owners } } }); await ancillariesDb.seatAssignment.deleteMany({ where: { ownerId: { in: owners } } }); await ancillariesDb.bookingOwner.deleteMany({ where: { ownerId: { in: owners } } });
+        await ticketingDb.issuanceRequest.deleteMany({ where: { bookingId: { in: ids } } }); await ticketingDb.ticket.deleteMany({ where: { ownerId: { in: owners } } }); await reservationDb.reservation.deleteMany({ where: { ownerId: { in: owners } } });
+        await pricingDb.priceLock.deleteMany({ where: { ownerId: { in: owners } } }); await pricingDb.offer.deleteMany({ where: { id: { in: offerIds } } }); await inventoryDb.reservedInventory.deleteMany({ where: { ownerId: { in: owners } } }); await inventoryDb.hold.deleteMany({ where: { id: { in: holds.map((row) => row.id) } } });
+        await ancillariesDb.seatLayout.deleteMany({ where: { aircraft } });
+      }
+    }, 120_000);
+
+    it('H1-03 / S: cerrar un vuelo inexistente ⇒ 404', async () => {
+      const response = await request(gateway!.getHttpServer()).post(`/flights/v1/admin/flights/${randomUUID()}/close`).set('Authorization', admin());
+      expect(response.status).toBe(404); validate('ProblemDetails', response.body);
+    });
+    it('H1-06 / S: actualización operacional de un vuelo que no existe en Inventory ⇒ 404', async () => {
+      const response = await request(gateway!.getHttpServer()).post(`/flights/v1/admin/flights/${randomUUID()}/operational-updates`).set('Authorization', admin()).send({ status: 'DELAYED' });
+      expect(response.status).toBe(404); validate('ProblemDetails', response.body);
+    });
+  });
+
+  describe('PLT-SEC-01 / PLT-SEC-02: roles y emisores', () => {
+    const adminRoutes = [
+      ['post', '/flights/v1/admin/flights', () => ({})],
+      ['get', '/flights/v1/admin/flights', () => undefined],
+      ['post', `/flights/v1/admin/flights/${randomUUID()}/close`, () => undefined],
+      ['put', '/flights/v1/admin/fares', () => ({})],
+      ['get', '/flights/v1/admin/fares', () => undefined],
+      ['post', `/flights/v1/admin/flights/${randomUUID()}/operational-updates`, () => ({ status: 'DELAYED' })]
+    ] as const;
+    const owner = `sec-${randomUUID()}`; const customerScopes = 'flights:read flights:book flights:hold';
+    const aircraft = `T${randomUUID().replace(/-/g, '').slice(0, 20)}`; const flightId = randomUUID();
+    const offerIds: string[] = [];
+    let issuerServer: HttpServer | undefined; let secured: INestApplication | undefined; let bookingId = '';
+    let sign: (claims: { sub: string; app_role: string; scope: string }, options?: { key?: SigningKey; iss?: string }) => Promise<string>;
+    let wrongKey: SigningKey;
+
+    beforeAll(async () => {
+      const { publicKey, privateKey } = await generateKeyPair('RS256'); wrongKey = (await generateKeyPair('RS256')).privateKey;
+      const jwk = { ...(await exportJWK(publicKey)), kid: 'supabase-test', alg: 'RS256', use: 'sig' };
+      issuerServer = createHttpServer((_req, res) => { res.setHeader('content-type', 'application/json'); res.end(JSON.stringify({ keys: [jwk] })); });
+      await new Promise<void>((resolve) => issuerServer!.listen(0, '127.0.0.1', resolve));
+      const port = (issuerServer.address() as { port: number }).port; const iss = `http://127.0.0.1:${port}/auth/v1`;
+      sign = (claims, options = {}) => new SignJWT(claims).setProtectedHeader({ alg: 'RS256', kid: 'supabase-test' }).setIssuer(options.iss ?? iss).setAudience('authenticated').setIssuedAt().setExpirationTime('1h').sign(options.key ?? privateKey);
+      const keyDir = mkdtempSync(join(tmpdir(), 'gateway-sec-jwt-')); const keys = generateKeyPairSync('rsa', { modulusLength: 2048, privateKeyEncoding: { format: 'pem', type: 'pkcs8' }, publicKeyEncoding: { format: 'pem', type: 'spki' } });
+      const publicFile = join(keyDir, 'public.pem'); writeFileSync(publicFile, keys.publicKey);
+      partnerToken = (sub: string, scope = 'flights:webhooks flights:read') => `Bearer ${createDevToken(keys.privateKey, { sub, app_role: 'partner', scope }, undefined, { iss: 'flight-platform-partner-dev' })}`;
+      secured = await createGatewayApp(loadConfig({ NODE_ENV: 'test', INTERNAL_API_KEY: key, JWT_ISSUERS: JSON.stringify([{ iss, aud: 'authenticated', jwksUri: `${iss}/.well-known/jwks.json` }, { iss: 'flight-platform-partner-dev', aud: 'flight-platform', publicKeyFile: publicFile }]), VALIDATE_RESPONSES: 'true', SCHEDULER_ENABLED: 'false' }));
+      cleanupKeys = () => rmSync(keyDir, { recursive: true, force: true });
+      // Reserva real del `owner`, creada con la composición principal.
+      const { origin, destination } = randomRoute(); const departure = new Date(Date.now() + 7 * 86_400_000); departure.setUTCHours(12, 0, 0, 0); const date = departure.toISOString().slice(0, 10); const server = gateway!.getHttpServer();
+      await inventoryDb.flightInstance.create({ data: { id: flightId, flightNumber: `FP${randomInt(1000, 10000)}`, departureIata: origin, arrivalIata: destination, departureAt: departure, arrivalAt: new Date(departure.getTime() + 3_600_000), aircraft, cabins: { create: { cabinClass: 'ECONOMY', sellable: 5 } } } });
+      await pricingDb.fare.create({ data: { flightInstanceId: flightId, cabinClass: 'ECONOMY', brand: 'CLASSIC', baseFareMinor: 10000, taxesMinor: 2000, rules: { changeable: true, refundable: true }, baggage: { checkedBags: 0 }, extraBagMinor: 5000 } });
+      await ancillariesDb.seatLayout.create({ data: { aircraft, cabinClass: 'ECONOMY', seatNumber: '1A', rowNumber: 1, characteristics: ['WINDOW'] } });
+      const search = await request(server).post('/flights/v1/search').set('X-Device-Fingerprint', randomUUID()).send({ itineraries: [{ origin, destination, departureDate: date }], passengers: { adults: 1 } });
+      offerIds.push(...search.body.offers.map((item: { offerId: string }) => item.offerId));
+      const offer = search.body.offers[0]; const itinerary = offer.itineraries[0]; const segment = itinerary.segments[0]; const option = itinerary.pricingOptions[0];
+      const hold = await request(server).post('/flights/v1/offers/hold').set('Authorization', token('flights:hold', owner)).set('Idempotency-Key', randomUUID()).send({ offerId: offer.offerId, itinerarySelections: [{ itineraryId: itinerary.itineraryId, cabinClass: option.cabinClass, fareBrand: option.fareBrand }], passengersBreakdown: { adults: 1 } });
+      const booking = await request(server).post('/flights/v1/bookings').set('Authorization', token('flights:book', owner)).set('Idempotency-Key', randomUUID()).send({ holdId: hold.body.holdId, passengers: [{ passengerId: randomUUID(), passengerType: 'ADULT', firstName: 'Test', lastName: 'Passenger', documentType: 'PASSPORT', documentNumber: 'TEST123', nationality: 'EC', documentExpiryDate: '2035-01-01', birthDate: '1990-01-01', gender: 'X', contact: { email: 'test@example.invalid', phone: '+593999999999' }, assignedSeats: [{ segmentId: segment.segmentId, seatNumber: '1A' }], extraBaggage: [] }], payment: { paymentReference: `pay_ok_${randomUUID()}` } });
+      if (booking.status !== 201) throw new Error(JSON.stringify(booking.body));
+      bookingId = booking.body.bookingId;
+    }, 90_000);
+
+    let partnerToken: (sub: string, scope?: string) => string; let cleanupKeys: () => void = () => undefined;
+    afterAll(async () => {
+      await secured?.close(); await new Promise<void>((resolve) => issuerServer ? issuerServer.close(() => resolve()) : resolve()); cleanupKeys();
+      const rows = await reservationDb.reservation.findMany({ where: { ownerId: owner }, select: { id: true } }); const ids = rows.map((row) => row.id);
+      const holds = await inventoryDb.hold.findMany({ where: { ownerId: owner }, select: { id: true } });
+      await webhooksDb.subscription.deleteMany({ where: { ownerId: { startsWith: 'sec-' } } });
+      await ancillariesDb.baggageAllowance.deleteMany({ where: { ownerId: owner } }); await ancillariesDb.seatAssignment.deleteMany({ where: { ownerId: owner } }); await ancillariesDb.bookingOwner.deleteMany({ where: { ownerId: owner } });
+      await ticketingDb.issuanceRequest.deleteMany({ where: { bookingId: { in: ids } } }); await ticketingDb.ticket.deleteMany({ where: { ownerId: owner } }); await reservationDb.reservation.deleteMany({ where: { ownerId: owner } });
+      await pricingDb.priceLock.deleteMany({ where: { ownerId: owner } }); await pricingDb.offer.deleteMany({ where: { id: { in: offerIds } } }); await inventoryDb.reservedInventory.deleteMany({ where: { ownerId: owner } }); await inventoryDb.hold.deleteMany({ where: { id: { in: holds.map((row) => row.id) } } });
+      await pricingDb.fare.deleteMany({ where: { flightInstanceId: flightId } }); await ancillariesDb.seatLayout.deleteMany({ where: { aircraft } }); await inventoryDb.flightInstance.deleteMany({ where: { id: flightId } });
+    });
+
+    const bearer = async (claims: { sub: string; app_role: string; scope: string }, options?: { key?: SigningKey; iss?: string }) => `Bearer ${await sign(claims, options)}`;
+
+    it('PLT-SEC-01 / S: el customer de un emisor JWKS (forma Supabase) lee sus reservas', async () => {
+      const authorization = await bearer({ sub: owner, app_role: 'customer', scope: customerScopes });
+      const list = await request(secured!.getHttpServer()).get('/flights/v1/bookings').set('Authorization', authorization);
+      expect(list.status).toBe(200); expect(JSON.stringify(list.body)).toContain(bookingId);
+      const detail = await request(secured!.getHttpServer()).get(`/flights/v1/bookings/${bookingId}`).set('Authorization', authorization);
+      expect(detail.status).toBe(200); expect(detail.body.bookingId).toBe(bookingId);
+    }, 30_000);
+
+    it.each(adminRoutes)('PLT-SEC-01 / S: el customer NO accede a %s %s (403), ni con el scope flights:admin', async (method, path, body) => {
+      for (const scope of [customerScopes, `${customerScopes} flights:admin flights:webhooks`]) {
+        const response = await request(secured!.getHttpServer())[method](path).set('Authorization', await bearer({ sub: owner, app_role: 'customer', scope })).send(body());
+        expect(response.status).toBe(403); validate('ProblemDetails', response.body);
+      }
+    });
+
+    it('PLT-SEC-01 / S: el admin sí accede a /admin y a los webhooks, pero no ve reservas ajenas (404)', async () => {
+      const authorization = await bearer({ sub: `sec-admin-${randomUUID()}`, app_role: 'admin', scope: 'flights:read flights:book flights:hold flights:webhooks flights:admin' });
+      expect((await request(secured!.getHttpServer()).get('/flights/v1/admin/flights').query({ limit: 1 }).set('Authorization', authorization)).status).toBe(200);
+      expect((await request(secured!.getHttpServer()).get('/flights/v1/admin/fares').set('Authorization', authorization)).status).toBe(200);
+      expect((await request(secured!.getHttpServer()).get('/flights/v1/webhooks').set('Authorization', authorization)).status).toBe(200);
+      const foreign = await request(secured!.getHttpServer()).get(`/flights/v1/bookings/${bookingId}`).set('Authorization', authorization);
+      expect(foreign.status).toBe(404); validate('ProblemDetails', foreign.body);
+    });
+
+    it('PLT-SEC-01 / S: el customer no gestiona webhooks (403)', async () => {
+      const response = await request(secured!.getHttpServer()).get('/flights/v1/webhooks').set('Authorization', await bearer({ sub: owner, app_role: 'customer', scope: `${customerScopes} flights:webhooks` }));
+      expect(response.status).toBe(403);
+    });
+
+    it('PLT-SEC-01 / S: firma ajena y emisor desconocido ⇒ 401', async () => {
+      const claims = { sub: owner, app_role: 'admin', scope: 'flights:admin' };
+      for (const authorization of [await bearer(claims, { key: wrongKey }), await bearer(claims, { iss: 'https://otro.example/auth/v1' })]) {
+        const response = await request(secured!.getHttpServer()).get('/flights/v1/admin/flights').set('Authorization', authorization);
+        expect(response.status).toBe(401); validate('ProblemDetails', response.body);
+      }
+    });
+
+    it('PLT-SEC-02 / S: el token partner de desarrollo gestiona webhooks (crear, listar, eliminar)', async () => {
+      const sub = `sec-partner-${randomUUID()}`; const server = secured!.getHttpServer();
+      const created = await request(server).post('/flights/v1/webhooks').set('Authorization', partnerToken(sub)).send({ url: 'https://93.184.216.34/sec', events: ['booking.confirmed'], secret: `sec-${randomUUID()}` });
+      expect(created.status).toBe(201); validate('WebhookSubscription', created.body);
+      const listed = await request(server).get('/flights/v1/webhooks').set('Authorization', partnerToken(sub)); expect(listed.body.map((item: { id: string }) => item.id)).toEqual([created.body.id]);
+      expect((await request(server).delete(`/flights/v1/webhooks/${created.body.id}`).set('Authorization', partnerToken(sub))).status).toBe(204);
+    }, 30_000);
+
+    it('PLT-SEC-02 / S: con el token partner, la reserva de otro sub ⇒ 404', async () => {
+      const response = await request(secured!.getHttpServer()).get(`/flights/v1/bookings/${bookingId}`).set('Authorization', partnerToken(`sec-partner-${randomUUID()}`));
+      expect(response.status).toBe(404); validate('ProblemDetails', response.body);
+    });
+
+    it.each(adminRoutes)('PLT-SEC-02 / S: el token partner NO accede a %s %s (403)', async (method, path, body) => {
+      const response = await request(secured!.getHttpServer())[method](path).set('Authorization', partnerToken(`sec-partner-${randomUUID()}`, 'flights:webhooks flights:read flights:admin')).send(body());
+      expect(response.status).toBe(403); validate('ProblemDetails', response.body);
+    });
+  });
+
   it.todo('OP-02: oferta expirada con segmento compartido por otra oferta activa ⇒ 404 (requiere offerId en ResolveSegment; ver ADR-F11-03 y BACKLOG)');
 });

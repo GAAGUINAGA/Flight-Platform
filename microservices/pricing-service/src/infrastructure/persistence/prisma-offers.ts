@@ -3,8 +3,9 @@ import { Fare, OfferSnapshot, OfferStore } from '../../application/search-offers
 import { PassengerMix } from '../../domain/pricing';
 import { OfferHoldStore, PriceLock } from '../../application/offer-holds';
 import { ChangeOffer, PostSaleStore } from '../../application/post-sale-pricing';
+import { AdminFare, FareAdminStore } from '../../application/fare-admin';
 
-export class PrismaOfferStore implements OfferStore, OfferHoldStore, PostSaleStore {
+export class PrismaOfferStore implements OfferStore, OfferHoldStore, PostSaleStore, FareAdminStore {
   constructor(private readonly prisma: PrismaClient) {}
   async findFares(ids: string[]): Promise<Fare[]> {
     return (await this.prisma.fare.findMany({ where: { flightInstanceId: { in: ids } } })).map((fare) => ({
@@ -12,6 +13,9 @@ export class PrismaOfferStore implements OfferStore, OfferHoldStore, PostSaleSto
       baseFareMinor: fare.baseFareMinor, taxesMinor: fare.taxesMinor, rules: fare.rules as Fare['rules'], baggage: fare.baggage as Fare['baggage'], extraBagMinor: fare.extraBagMinor
     }));
   }
+  private mapFare(fare: { id: string; flightInstanceId: string; cabinClass: string; brand: string; baseFareMinor: number; taxesMinor: number; rules: unknown; baggage: unknown; extraBagMinor: number }): AdminFare { return { id: fare.id, flightInstanceId: fare.flightInstanceId, cabinClass: fare.cabinClass as Fare['cabinClass'], brand: fare.brand, baseFareMinor: fare.baseFareMinor, taxesMinor: fare.taxesMinor, rules: fare.rules as Fare['rules'], baggage: fare.baggage as Fare['baggage'], extraBagMinor: fare.extraBagMinor }; }
+  async upsertFare(input: Fare): Promise<AdminFare> { return this.mapFare(await this.prisma.fare.upsert({ where: { flightInstanceId_cabinClass_brand: { flightInstanceId: input.flightInstanceId, cabinClass: input.cabinClass, brand: input.brand } }, create: { ...input }, update: { baseFareMinor: input.baseFareMinor, taxesMinor: input.taxesMinor, rules: input.rules, baggage: input.baggage, extraBagMinor: input.extraBagMinor } })); }
+  async listFares(flightInstanceId?: string): Promise<AdminFare[]> { return (await this.prisma.fare.findMany({ where: flightInstanceId ? { flightInstanceId } : {}, orderBy: { createdAt: 'asc' } })).map((fare) => this.mapFare(fare)); }
   async saveOffer(snapshot: OfferSnapshot, mix: PassengerMix, expiresAt: Date): Promise<void> {
     // JSON no admite propiedades undefined; los DTOs opcionales se omiten al persistir.
     const json = JSON.parse(JSON.stringify(snapshot));

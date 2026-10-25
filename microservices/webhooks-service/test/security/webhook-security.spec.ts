@@ -7,7 +7,8 @@ import { AesGcmCipher, WebhookUrlPolicy } from '../../src/infrastructure/securit
 
 describe('webhook security', () => {
   it('rejects an incorrectly typed holdId with INVALID_ARGUMENT', () => {
-    expect(() => validate(publishEvent, { ownerId: 'owner', payload: { eventType: 'hold.expired', data: { holdId: 'hold', extension: true } } })).not.toThrow();
+    expect(() => validate(publishEvent, { ownerId: 'owner', payload: { eventType: 'hold.expired', data: { holdId: 'hold' } } })).not.toThrow();
+    expect(() => validate(publishEvent, { ownerId: 'owner', payload: { eventType: 'hold.expired', data: { holdId: 'hold', extension: true } } })).toThrow();
     let rejection: unknown; try { validate(publishEvent, { ownerId: 'owner', payload: { eventType: 'hold.expired', data: { holdId: 7 } } }); } catch (error) { rejection = error; }
     expect(rejection).toMatchObject({ error: { details: 'VALIDATION_FAILED' } });
   });

@@ -8,6 +8,8 @@ export class PricingExceptionFilter implements RpcExceptionFilter<unknown> {
   private readonly logger = new Logger('PricingService');
   catch(error: unknown): Observable<never> {
     const safe = safeGrpcError(error);
+    const fields = error instanceof Error && 'validationFields' in error ? (error as Error & { validationFields?: string[] }).validationFields : undefined;
+    if (safe.details === 'VALIDATION_FAILED' && fields?.length) this.logger.warn(`validation failed fields: ${fields.join(',')}`);
     if (safe.details === 'INTERNAL_ERROR') this.logger.error(`internal error: ${error instanceof Error ? error.name : typeof error}`);
     return throwError(() => safe);
   }
