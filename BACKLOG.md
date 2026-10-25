@@ -93,3 +93,5 @@
 
 - operations: al retrasar o cancelar un vuelo, también se notifica a las reservas ya canceladas; filtrar por estado. La notificación fallida solo se reintenta si un admin repite la actualización; considerar reintento desde el scheduler.
 - webhooks: webhook-security.spec.ts está en test/security y no corre en CI (el workflow solo ejecuta test/unit); moverla o ampliar el comando de CI.
+
+- Seed de Supabase renovado el 2026-10-25 (inventory y luego pricing, ambos idempotentes con skipDuplicates). Cubre 60 días desde esa fecha; renovarlo antes de que se agoten los vuelos futuros. Documentar el procedimiento en F11d-1.
