@@ -1,0 +1,1186 @@
+{
+  "info": {
+    "name": "Flight Platform — GDS Flight Core API v1.5.0.0",
+    "description": "22 operaciones REST del contrato (OP-01 a OP-22), el callback OP-23 y las rutas admin. Sin secretos: define accessToken en tu entorno local y no lo guardes en el archivo. Orden recomendado: carpeta por carpeta, de arriba abajo.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{accessToken}}",
+        "type": "string"
+      }
+    ]
+  },
+  "item": [
+    {
+      "name": "Búsqueda y catálogo (públicas)",
+      "item": [
+        {
+          "name": "OP-01 POST /search — Búsqueda",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "const offer = pm.response.json().offers[0]; const itinerary = offer.itineraries[0]; const option = itinerary.pricingOptions[0];",
+                  "pm.collectionVariables.set('offerId', offer.offerId); pm.collectionVariables.set('itineraryId', itinerary.itineraryId); pm.collectionVariables.set('segmentId', itinerary.segments[0].segmentId);",
+                  "pm.collectionVariables.set('cabinClass', option.cabinClass); pm.collectionVariables.set('fareBrand', option.fareBrand);",
+                  "pm.collectionVariables.set('flightNumber', itinerary.segments[0].flightNumber);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Device-Fingerprint",
+                "value": "{{deviceFingerprint}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"itineraries\": [\n    {\n      \"origin\": \"{{origin}}\",\n      \"destination\": \"{{destination}}\",\n      \"departureDate\": \"{{departureDate}}\"\n    }\n  ],\n  \"passengers\": {\n    \"adults\": 1\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/flights/v1/search",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "flights",
+                "v1",
+                "search"
+              ]
+            }
+          }
+        },
+        {
+          "name": "OP-02 GET /offers/{{offerId}}/seatmap — Mapa de asientos",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Device-Fingerprint",
+                "value": "{{deviceFingerprint}}"
+              }
+            ],
+            "auth": {
+              "type": "noauth"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/flights/v1/offers/{{offerId}}/seatmap?segmentId={{segmentId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "flights",
+                "v1",
+                "offers",
+                "{{offerId}}",
+                "seatmap"
+              ],
+              "query": [
+                {
+                  "key": "segmentId",
+                  "value": "{{segmentId}}"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "OP-22 GET /flights/{{flightNumber}}/status — Estado de vuelo",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Device-Fingerprint",
+                "value": "{{deviceFingerprint}}"
+              }
+            ],
+            "auth": {
+              "type": "noauth"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/flights/v1/flights/{{flightNumber}}/status?date={{departureDate}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "flights",
+                "v1",
+                "flights",
+                "{{flightNumber}}",
+                "status"
+              ],
+              "query": [
+                {
+                  "key": "date",
+                  "value": "{{departureDate}}"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Hold (flights:hold / flights:read)",
+      "item": [
+        {
+          "name": "OP-03 POST /offers/hold — Bloquear inventario",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 201', () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set('holdId', pm.response.json().holdId);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"offerId\": \"{{offerId}}\",\n  \"itinerarySelections\": [\n    {\n      \"itineraryId\": \"{{itineraryId}}\",\n      \"cabinClass\": \"{{cabinClass}}\",\n      \"fareBrand\": \"{{fareBrand}}\"\n    }\n  ],\n  \"passengersBreakdown\": {\n    \"adults\": 1\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/flights/v1/offers/hold",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "flights",
+                "v1",
+                "offers",
+                "hold"
+              ]
+            }
+          }
+        },
+        {
+          "name": "OP-04 GET /offers/hold/{{holdId}} — Consultar hold",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/flights/v1/offers/hold/{{holdId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "flights",
+                "v1",
+                "offers",
+                "hold",
+                "{{holdId}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "OP-05 DELETE /offers/hold/{{holdId}} — Liberar hold",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 204', () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/flights/v1/offers/hold/{{holdId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "flights",
+                "v1",
+                "offers",
+                "hold",
+                "{{holdId}}"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Reservas y tickets (flights:book / flights:read)",
+      "item": [
+        {
+          "name": "OP-07 POST /bookings — Crear reserva (pago simulado)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 o 202', () => pm.expect([201, 202]).to.include(pm.response.code));",
+                  "pm.collectionVariables.set('bookingId', pm.response.json().bookingId);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"holdId\": \"{{holdId}}\",\n  \"passengers\": [\n    {\n      \"passengerId\": \"{{passengerId}}\",\n      \"passengerType\": \"ADULT\",\n      \"firstName\": \"Ana\",\n      \"lastName\": \"Prueba\",\n      \"documentType\": \"PASSPORT\",\n      \"documentNumber\": \"X1234567\",\n      \"nationality\": \"EC\",\n      \"documentExpiryDate\": \"2035-01-01\",\n      \"birthDate\": \"1990-01-01\",\n      \"gender\": \"F\",\n      \"contact\": {\n        \"email\": \"ana@example.invalid\",\n        \"phone\": \"+593999999999\"\n      },\n      \"assignedSeats\": [],\n      \"extraBaggage\": []\n    }\n  ],\n  \"payment\": {\n    \"paymentReference\": \"pay_ok_{{$guid}}\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/flights/v1/bookings",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "flights",
+                "v1",
+                "bookings"
+              ]
+            },
+            "description": "Referencias simuladas: pay_ok_ (201), pay_pending_ (202), pay_denied_ (422)."
+          }
+        },
+        {
+          "name": "OP-06 GET /bookings — Listar reservas",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/flights/v1/bookings?limit=10",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "flights",
+                "v1",
+                "bookings"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "10"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "OP-08 GET /bookings/{{bookingId}} — Detalle de reserva",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/flights/v1/bookings/{{bookingId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "flights",
+                "v1",
+                "bookings",
+                "{{bookingId}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "OP-18 GET /bookings/{{bookingId}}/tickets — Listar tickets",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set('ticketId', pm.response.json().tickets[0].ticketId);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/flights/v1/bookings/{{bookingId}}/tickets",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "flights",
+                "v1",
+                "bookings",
+                "{{bookingId}}",
+                "tickets"
+              ]
+            }
+          }
+        },
+        {
+          "name": "OP-19 GET /bookings/{{bookingId}}/tickets/{{ticketId}} — Detalle de ticket",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/flights/v1/bookings/{{bookingId}}/tickets/{{ticketId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "flights",
+                "v1",
+                "bookings",
+                "{{bookingId}}",
+                "tickets",
+                "{{ticketId}}"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Postventa",
+      "item": [
+        {
+          "name": "OP-09 GET /bookings/{{bookingId}}/baggage-options — Opciones de equipaje",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/flights/v1/bookings/{{bookingId}}/baggage-options",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "flights",
+                "v1",
+                "bookings",
+                "{{bookingId}}",
+                "baggage-options"
+              ]
+            }
+          }
+        },
+        {
+          "name": "OP-10 POST /bookings/{{bookingId}}/baggage — Comprar equipaje",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"passengerId\": \"{{passengerId}}\",\n  \"itineraryId\": \"{{itineraryId}}\",\n  \"quantity\": 1,\n  \"payment\": {\n    \"paymentReference\": \"pay_ok_{{$guid}}\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/flights/v1/bookings/{{bookingId}}/baggage",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "flights",
+                "v1",
+                "bookings",
+                "{{bookingId}}",
+                "baggage"
+              ]
+            }
+          }
+        },
+        {
+          "name": "OP-11 POST /bookings/{{bookingId}}/date-change/search — Buscar cambio de fecha",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "const offers = pm.response.json(); if (offers.length) pm.collectionVariables.set('changeOfferId', offers[0].changeOfferId);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"changes\": [\n    {\n      \"itineraryId\": \"{{itineraryId}}\",\n      \"newDepartureDate\": \"{{newDepartureDate}}\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/flights/v1/bookings/{{bookingId}}/date-change/search",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "flights",
+                "v1",
+                "bookings",
+                "{{bookingId}}",
+                "date-change",
+                "search"
+              ]
+            }
+          }
+        },
+        {
+          "name": "OP-12 POST /bookings/{{bookingId}}/date-change — Confirmar cambio de fecha",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 o 202', () => pm.expect([200, 202]).to.include(pm.response.code));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"changeOfferId\": \"{{changeOfferId}}\",\n  \"assignedSeats\": [],\n  \"payment\": {\n    \"paymentReference\": \"pay_ok_{{$guid}}\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/flights/v1/bookings/{{bookingId}}/date-change",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "flights",
+                "v1",
+                "bookings",
+                "{{bookingId}}",
+                "date-change"
+              ]
+            }
+          }
+        },
+        {
+          "name": "OP-13 GET /bookings/{{bookingId}}/cancellation-quote — Cotizar cancelación",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set('quoteId', pm.response.json().quoteId);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/flights/v1/bookings/{{bookingId}}/cancellation-quote",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "flights",
+                "v1",
+                "bookings",
+                "{{bookingId}}",
+                "cancellation-quote"
+              ]
+            }
+          }
+        },
+        {
+          "name": "OP-14 POST /bookings/{{bookingId}}/cancel — Cancelar",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 o 202', () => pm.expect([200, 202]).to.include(pm.response.code));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"quoteId\": \"{{quoteId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/flights/v1/bookings/{{bookingId}}/cancel",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "flights",
+                "v1",
+                "bookings",
+                "{{bookingId}}",
+                "cancel"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Check-in y boarding pass",
+      "item": [
+        {
+          "name": "OP-20 POST /bookings/{{bookingId}}/check-in — Check-in",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/flights/v1/bookings/{{bookingId}}/check-in",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "flights",
+                "v1",
+                "bookings",
+                "{{bookingId}}",
+                "check-in"
+              ]
+            },
+            "description": "Sin cuerpo: check-in de todos los pasajeros elegibles. Ventana: de 48 h a 60 min antes de la salida."
+          }
+        },
+        {
+          "name": "OP-21 GET /bookings/{{bookingId}}/boarding-passes — Boarding passes",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/flights/v1/bookings/{{bookingId}}/boarding-passes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "flights",
+                "v1",
+                "bookings",
+                "{{bookingId}}",
+                "boarding-passes"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Webhooks (flights:webhooks, solo partner y admin)",
+      "item": [
+        {
+          "name": "OP-16 POST /webhooks — Registrar webhook",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 201', () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set('webhookId', pm.response.json().id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"url\": \"{{webhookUrl}}\",\n  \"events\": [\n    \"booking.confirmed\",\n    \"booking.failed\",\n    \"booking.changed\",\n    \"booking.cancelled\",\n    \"hold.expired\"\n  ],\n  \"secret\": \"{{webhookSecret}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/flights/v1/webhooks",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "flights",
+                "v1",
+                "webhooks"
+              ]
+            }
+          }
+        },
+        {
+          "name": "OP-15 GET /webhooks — Listar webhooks",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/flights/v1/webhooks",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "flights",
+                "v1",
+                "webhooks"
+              ]
+            }
+          }
+        },
+        {
+          "name": "OP-17 DELETE /webhooks/{{webhookId}} — Eliminar webhook",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 204', () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/flights/v1/webhooks/{{webhookId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "flights",
+                "v1",
+                "webhooks",
+                "{{webhookId}}"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Callback entrante (OP-23, no se llama: la plataforma lo envía a tu URL)",
+      "item": [
+        {
+          "name": "OP-23 POST {tu url} — ejemplo de entrega",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Flight-Signature",
+                "value": "t=<unix>,v1=<hmac-sha256-hex>"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"eventId\": \"b0b0a5f0-0000-4000-8000-000000000001\",\n  \"eventType\": \"hold.expired\",\n  \"occurredAt\": \"2026-01-01T12:00:00.000Z\",\n  \"apiVersion\": \"1.5.0.0\",\n  \"data\": {\n    \"holdId\": \"00000000-0000-4000-8000-000000000002\",\n    \"status\": \"EXPIRED\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{webhookUrl}}",
+              "host": [
+                "{{webhookUrl}}"
+              ]
+            },
+            "description": "Solo documentación: muestra la forma de lo que recibe tu endpoint. Verifica la firma como indica docs/booking-integration.md."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Administración (rol admin, scope flights:admin; fuera del contrato)",
+      "item": [
+        {
+          "name": "ADM-01 POST /admin/flights — Crear o actualizar vuelo",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set('flightInstanceId', pm.response.json().flightInstanceId);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"flightNumber\": \"FP9000\",\n  \"departureIata\": \"{{origin}}\",\n  \"arrivalIata\": \"{{destination}}\",\n  \"departureAt\": \"{{adminDepartureAt}}\",\n  \"arrivalAt\": \"{{adminArrivalAt}}\",\n  \"cabins\": [\n    {\n      \"cabinClass\": \"ECONOMY\",\n      \"capacity\": 20\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/flights/v1/admin/flights",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "flights",
+                "v1",
+                "admin",
+                "flights"
+              ]
+            }
+          }
+        },
+        {
+          "name": "ADM-02 GET /admin/flights — Listar vuelos",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/flights/v1/admin/flights?limit=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "flights",
+                "v1",
+                "admin",
+                "flights"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "ADM-03 PUT /admin/fares — Fijar tarifa",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"flightInstanceId\": \"{{flightInstanceId}}\",\n  \"cabinClass\": \"ECONOMY\",\n  \"fareBrand\": \"FLEX\",\n  \"price\": {\n    \"currency\": \"USD\",\n    \"baseFare\": \"100.00\",\n    \"taxes\": \"20.00\",\n    \"total\": \"120.00\"\n  },\n  \"fareRules\": {\n    \"isRefundable\": true,\n    \"isChangeable\": false\n  },\n  \"baggageAllowance\": {\n    \"personalItemIncluded\": true,\n    \"carryOnIncluded\": 1,\n    \"checkedBaggageIncluded\": 0\n  },\n  \"extraCheckedBaggagePrice\": {\n    \"currency\": \"USD\",\n    \"total\": \"50.00\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/flights/v1/admin/fares",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "flights",
+                "v1",
+                "admin",
+                "fares"
+              ]
+            }
+          }
+        },
+        {
+          "name": "ADM-04 GET /admin/fares — Listar tarifas",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/flights/v1/admin/fares?flightInstanceId={{flightInstanceId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "flights",
+                "v1",
+                "admin",
+                "fares"
+              ],
+              "query": [
+                {
+                  "key": "flightInstanceId",
+                  "value": "{{flightInstanceId}}"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "ADM-05 POST /admin/flights/{{flightInstanceId}}/operational-updates — Actualización operacional",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"DELAYED\",\n  \"estimatedDepartureAt\": \"{{adminDelayedAt}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/flights/v1/admin/flights/{{flightInstanceId}}/operational-updates",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "flights",
+                "v1",
+                "admin",
+                "flights",
+                "{{flightInstanceId}}",
+                "operational-updates"
+              ]
+            }
+          }
+        },
+        {
+          "name": "ADM-06 POST /admin/flights/{{flightInstanceId}}/close — Cerrar venta del vuelo",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/flights/v1/admin/flights/{{flightInstanceId}}/close",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "flights",
+                "v1",
+                "admin",
+                "flights",
+                "{{flightInstanceId}}",
+                "close"
+              ]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

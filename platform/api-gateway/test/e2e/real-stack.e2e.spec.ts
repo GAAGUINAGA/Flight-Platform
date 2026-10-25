@@ -53,6 +53,7 @@ import { GatewayScheduler } from '../../src/scheduler';
 import { PrismaSchedulerStore } from '../../src/scheduler-store';
 import { createDevToken } from '../../../../infra/scripts/dev-token';
 import { openApiSpecPath } from '../../src/openapi-path';
+import { cleanupOwnerData, registerAuthorizationMatrix } from './authz-matrix';
 
 type SigningKey = Awaited<ReturnType<typeof generateKeyPair>>['privateKey'];
 const describeReal = process.env.RUN_GATEWAY_REAL === 'true' ? describe : describe.skip;
@@ -410,11 +411,11 @@ describeReal('Gateway: composición gRPC real en proceso', () => {
     const flightId = randomUUID(); const changedFlightId = randomUUID(); const checkInFlightId = randomUUID(); const owner = `gateway-${randomUUID()}`;
     const startedAt = new Date();
     const { origin, destination } = randomRoute();
-    const base = randomInt(1000, 9990); const numberA = `FP${base}`; const numberB = `FP${base + 1}`; const numberC = `FP${base + 2}`;
+    const aircraftC = `C${randomUUID().replace(/-/g, '').slice(0, 20)}`; const base = randomInt(1000, 9990); const numberA = `FP${base}`; const numberB = `FP${base + 1}`; const numberC = `FP${base + 2}`;
     const aircraft = `T${randomUUID().replace(/-/g, '').slice(0, 20)}`;
     const departure = new Date(Date.now() + 5 * 86_400_000); departure.setUTCHours(14, randomInt(0, 60), randomInt(0, 60), 0);
     const departureDate = departure.toISOString().slice(0, 10);
-    const offerIds: string[] = []; const holdIds: string[] = [];
+    const offerIds: string[] = []; const holdIds: string[] = []; const journeyOwners: string[] = [];
     const server = gateway!.getHttpServer();
     try {
       await webhooksDb.subscription.create({ data: { id: randomUUID(), ownerId: owner, url: 'https://example.test/post-sale', events: ['booking.confirmed', 'booking.baggage_added', 'booking.changed', 'booking.cancelled'], encryptedSecret: 'test', active: true } });
@@ -422,8 +423,10 @@ describeReal('Gateway: composición gRPC real en proceso', () => {
       const changedDeparture = new Date(departure.getTime() + 86_400_000);
       await inventoryDb.flightInstance.create({ data: { id: changedFlightId, flightNumber: numberB, departureIata: origin, arrivalIata: destination, departureAt: changedDeparture, arrivalAt: new Date(changedDeparture.getTime() + 3_600_000), aircraft, cabins: { create: { cabinClass: 'ECONOMY', sellable: 9 } } } });
       const checkInDeparture = new Date(Date.now() + 36 * 3_600_000);
-      await inventoryDb.flightInstance.create({ data: { id: checkInFlightId, flightNumber: numberC, departureIata: origin, arrivalIata: destination, departureAt: checkInDeparture, arrivalAt: new Date(checkInDeparture.getTime() + 3_600_000), aircraft, cabins: { create: { cabinClass: 'ECONOMY', sellable: 9 } } } });
-      await operationsDb.operationalFlight.create({ data: { flightInstanceId: checkInFlightId, flightNumber: numberC, date: checkInDeparture.toISOString().slice(0, 10), marketingCarrier: 'FP', operatingCarrier: 'FP', departureIata: origin, arrivalIata: destination, scheduledDepartureAt: checkInDeparture, scheduledArrivalAt: new Date(checkInDeparture.getTime() + 3_600_000), aircraft, status: 'SCHEDULED' } });
+      await inventoryDb.flightInstance.create({ data: { id: checkInFlightId, flightNumber: numberC, departureIata: origin, arrivalIata: destination, departureAt: checkInDeparture, arrivalAt: new Date(checkInDeparture.getTime() + 3_600_000), aircraft: aircraftC, cabins: { create: { cabinClass: 'ECONOMY', sellable: 9 } } } });
+      await operationsDb.operationalFlight.create({ data: { flightInstanceId: checkInFlightId, flightNumber: numberC, date: checkInDeparture.toISOString().slice(0, 10), marketingCarrier: 'FP', operatingCarrier: 'FP', departureIata: origin, arrivalIata: destination, scheduledDepartureAt: checkInDeparture, scheduledArrivalAt: new Date(checkInDeparture.getTime() + 3_600_000), aircraft: aircraftC, status: 'SCHEDULED' } });
+      // El vuelo de check-in usa su propio avión con dos asientos: el humo de F11b ocupa el primero y el recorrido J6 necesita otro.
+      await ancillariesDb.seatLayout.createMany({ data: ['1A', '1B'].map((seatNumber) => ({ aircraft: aircraftC, cabinClass: 'ECONOMY' as const, seatNumber, rowNumber: 1, characteristics: ['WINDOW'] })) });
       for (const id of [flightId, changedFlightId, checkInFlightId]) await pricingDb.fare.create({ data: { flightInstanceId: id, cabinClass: 'ECONOMY', brand: 'CLASSIC', baseFareMinor: 10000, taxesMinor: 2000, rules: { changeable: true, refundable: true }, baggage: { checkedBags: 0 }, extraBagMinor: 5000 } });
       await ancillariesDb.seatLayout.create({ data: { aircraft, cabinClass: 'ECONOMY', seatNumber: '1A', rowNumber: 1, characteristics: ['WINDOW'] } });
       const search = await request(server).post('/flights/v1/search').set('X-Device-Fingerprint', randomUUID()).send({ itineraries: [{ origin: origin, destination: destination, departureDate }], passengers: { adults: 1 } });
@@ -663,7 +666,36 @@ describeReal('Gateway: composición gRPC real en proceso', () => {
       expect(smoke.stdout.trim().split(/\r?\n/)).toEqual(['OK   sin token', 'OK   search', 'OK   seatmap', 'OK   hold', 'OK   booking', 'OK   detalle', 'OK   tickets']);
       const postSaleSmoke = await promisify(execFile)(process.execPath, [join(process.cwd(), 'platform/api-gateway/scripts/render-f11b-smoke.cjs')], { env: { BASE_URL: `http://127.0.0.1:${address.port}`, SUPABASE_CUSTOMER_TOKEN: token('flights:read flights:hold flights:book flights:cancel', owner).slice(7), SMOKE_ORIGIN: origin, SMOKE_DESTINATION: destination, SMOKE_POSTSALE_FLIGHT_NUMBER: numberA, SMOKE_CHECKIN_FLIGHT_NUMBER: numberC }, timeout: 60000 });
       expect(postSaleSmoke.stdout.trim().split(/\r?\n/)).toEqual(['OK   J5 búsqueda', 'OK   J5 hold', 'OK   J5 reserva', 'OK   J5 equipaje opciones', 'OK   J5 equipaje', 'OK   J5 buscar cambio', 'OK   J5 cambio', 'OK   J5 cotización', 'OK   J5 cancelación', 'OK   J6 búsqueda', 'OK   J6 mapa', 'OK   J6 hold', 'OK   J6 reserva', 'OK   J6 check-in', 'OK   J6 pases']);
+      // PLT-J3: el script de recorridos de Render (J1, J2, J5, J6, J7) contra el Gateway local. Un sub propio para cada identidad.
+      journeyOwners.push(`journey-${randomUUID()}`, `journey-admin-${randomUUID()}`);
+      const journeys = promisify(execFile)(process.execPath, [join(process.cwd(), 'platform/api-gateway/scripts/render-journeys.cjs')], {
+        env: { BASE_URL: `http://127.0.0.1:${address.port}`, SUPABASE_CUSTOMER_TOKEN: token('flights:read flights:hold flights:book flights:cancel', journeyOwners[0]).slice(7), SUPABASE_ADMIN_TOKEN: token('flights:read flights:hold flights:book flights:cancel flights:webhooks flights:admin', journeyOwners[1], 'admin').slice(7), SMOKE_ORIGIN: origin, SMOKE_DESTINATION: destination, SMOKE_POSTSALE_FLIGHT_NUMBER: numberA, SMOKE_CHECKIN_FLIGHT_NUMBER: numberC, SMOKE_WEBHOOK_URL: 'https://93.184.216.34/journeys', SMOKE_POLL_SECONDS: '1', SMOKE_J2_EVENT_GRACE_SECONDS: '6', SMOKE_RETRY_SECONDS: '1' }, timeout: 240_000
+      });
+      // El hold TTL real es de 20 min: el hold a vencer del admin se adelanta en la base y el vencimiento por lectura publica hold.expired.
+      let expiring: string | undefined; let finished = false;
+      const outcome = journeys.then((value) => ({ value }), (error: { stdout?: string; stderr?: string }) => ({ error })).finally(() => { finished = true; });
+      for (let attempt = 0; attempt < 600 && !expiring && !finished; attempt++) {
+        // El primer hold del recorrido se libera; el que vence es el segundo.
+        const adminHolds = await inventoryDb.hold.findMany({ where: { ownerId: journeyOwners[1] } }); const target = adminHolds.length >= 2 ? adminHolds.find((item) => item.status === 'HELD') : undefined;
+        if (target) { expiring = target.id; await inventoryDb.hold.update({ where: { id: target.id }, data: { expiresAt: new Date(0) } }); await scheduler.run('expire-holds'); } else await delay(300);
+      }
+      const failed = (error: { stdout?: string; stderr?: string }) => new Error(`render-journeys.cjs falló\n${error.stdout ?? ''}\n${error.stderr ?? ''}`);
+      if (!expiring) { const settled = await outcome; throw 'error' in settled ? failed(settled.error) : new Error('El script terminó sin crear el hold a vencer de J2'); }
+      let expiredEvent = false;
+      for (let attempt = 0; attempt < 40 && !expiredEvent; attempt++) {
+        const rows = await webhooksDb.delivery.findMany({ where: { subscription: { ownerId: journeyOwners[1] } } });
+        expiredEvent = rows.some((row) => { const payload = row.payload as { eventType?: string; data?: { holdId?: string } }; return payload.eventType === 'hold.expired' && payload.data?.holdId === expiring; });
+        if (!expiredEvent) await delay(250);
+      }
+      if (!expiredEvent) { const early = await outcome; throw new Error(`hold.expired no llegó a Webhooks\n${'error' in early ? failed(early.error).message : early.value.stdout}`); }
+      const settled = await outcome; if ('error' in settled) throw failed(settled.error);
+      const journeyRun = settled.value;
+      const lines = journeyRun.stdout.trim().split(/\r?\n/);
+      expect(lines.filter((line) => line.startsWith('==== '))).toEqual(['==== J1 OK', '==== J2 OK', '==== J5 OK', '==== J6 OK', '==== J7 OK']);
+      expect(lines).toEqual(expect.arrayContaining(['OK   precalentamiento Gateway', 'OK   precalentamiento servicios', 'OK   J2 hold idempotente', 'OK   J2 hold vencido', 'OK   J2 reserva con hold vencido', 'OK   J7 429 en /search con Retry-After', 'OK   J7 CORS origen no permitido', 'RESUMEN J1=OK J2=OK J5=OK J6=OK J7=OK']));
+      expect(journeyRun.stdout).not.toContain(journeyOwners[0]);
     } finally {
+      await cleanupOwnerData({ inventory: inventoryDb, pricing: pricingDb, ancillaries: ancillariesDb, ticketing: ticketingDb, webhooks: webhooksDb, reservation: reservationDb, operations: operationsDb }, journeyOwners);
       const ownerHolds = await inventoryDb.hold.findMany({ where: { ownerId: owner }, select: { id: true } });
       await webhooksDb.subscription.deleteMany({ where: { ownerId: owner } });
       holdIds.push(...ownerHolds.map((item) => item.id));
@@ -685,6 +717,7 @@ describeReal('Gateway: composición gRPC real en proceso', () => {
       await inventoryDb.hold.deleteMany({ where: { id: { in: holdIds } } });
       await pricingDb.offer.deleteMany({ where: { id: { in: offerIds } } });
       await pricingDb.fare.deleteMany({ where: { flightInstanceId: { in: [flightId, changedFlightId, checkInFlightId] } } });
+      await ancillariesDb.seatLayout.deleteMany({ where: { aircraft: aircraftC } });
       await ancillariesDb.seatLayout.deleteMany({ where: { aircraft } });
       await inventoryDb.flightInstance.deleteMany({ where: { id: flightId } });
       await inventoryDb.flightInstance.deleteMany({ where: { id: changedFlightId } });
@@ -693,7 +726,7 @@ describeReal('Gateway: composición gRPC real en proceso', () => {
     }
   };
 
-  it('PLT-A/B e I5/I6: compra, postventa y smoke de check-in', () => purchaseScenario('original'), 120_000);
+  it('PLT-A/B e I5/I6: compra, postventa y smoke de check-in', () => purchaseScenario('original'), 300_000);
   it('OP-05 / S: liberar el hold de otro sub ? 404 y el hold sigue HELD para su due?o', () => purchaseScenario('foreign-hold'), 120_000);
   it('PLT-I5 / E: cambio de fecha anula los tickets anteriores y emite tickets nuevos', () => purchaseScenario('changed-tickets'), 120_000);
   it('PLT-I5 / E: cancelaci?n deja la reserva CANCELLED y los tickets liquidados', () => purchaseScenario('cancelled-tickets'), 120_000);
@@ -1106,6 +1139,8 @@ describeReal('Gateway: composición gRPC real en proceso', () => {
       expect(response.status).toBe(403); validate('ProblemDetails', response.body);
     });
   });
+
+  registerAuthorizationMatrix({ server: () => gateway!.getHttpServer(), token: (scope, owner, role) => token(scope, owner, role), validate, route: randomRoute, internalKey: key, dbs: () => ({ inventory: inventoryDb, pricing: pricingDb, ancillaries: ancillariesDb, ticketing: ticketingDb, webhooks: webhooksDb, reservation: reservationDb, operations: operationsDb }) });
 
   it.todo('OP-02: oferta expirada con segmento compartido por otra oferta activa ⇒ 404 (requiere offerId en ResolveSegment; ver ADR-F11-03 y BACKLOG)');
 });
