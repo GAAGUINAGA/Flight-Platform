@@ -13,7 +13,7 @@ export function configuredGrpcTargets(grpcTls: boolean, env: Record<string, stri
   return ['inventory', 'pricing', 'ancillaries', 'reservation', 'ticketing', 'operations', 'webhooks'].map((service) => ({ service, url: grpcUrl(service, env), tls: grpcTls }));
 }
 
-type GatewayGrpcService = 'pricing' | 'ancillaries' | 'reservation' | 'ticketing' | 'operations';
+type GatewayGrpcService = 'inventory' | 'pricing' | 'ancillaries' | 'reservation' | 'ticketing' | 'operations' | 'webhooks';
 type UnaryMethods = Record<string, (request: object, metadata: ReturnType<typeof createGrpcMetadata>, options: { deadline: Date }) => Observable<unknown>>;
 
 function protoRoot(): string {

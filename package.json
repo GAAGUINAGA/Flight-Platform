@@ -16,7 +16,11 @@
     "test": "jest --passWithNoTests",
     "gen:contracts": "npm run gen --workspace=@flight-platform/contracts",
     "dev:token": "tsx infra/scripts/dev-token.ts",
+    "audit:policy": "node scripts/audit-policy.cjs",
     "format:check": "prettier --check ."
+  },
+  "overrides": {
+    "multer": "2.5.0"
   },
   "devDependencies": {
     "@types/jest": "^30.0.0",

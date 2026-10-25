@@ -1,0 +1,12 @@
+{
+  "exceptions": [
+    {
+      "advisory": "GHSA-mrhx-c7xc-m3w5",
+      "package": "zod",
+      "expiresAt": "2026-11-23",
+      "justification": "El único arreglo publicado requiere migrar de Zod 3 a Zod 4, un cambio mayor que no pertenece a F11c-1.",
+      "mitigation": "El Gateway limita el cuerpo JSON a 100kb antes de validar (`express.json({ limit: '100kb' })`); GW-SEC-03 cubre un cuerpo de 200kB con 413.",
+      "owner": "Flight Platform"
+    }
+  ]
+}

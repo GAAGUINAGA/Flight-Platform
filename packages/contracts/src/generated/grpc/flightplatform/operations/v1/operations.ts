@@ -42,6 +42,15 @@ export interface BoardingPassListResponse {
   boardingPasses: BoardingPass[];
 }
 
+export interface RecoverCheckInsRequest {
+  limit: number;
+}
+
+export interface RecoverCheckInsResponse {
+  recoveredCheckIns: number;
+  publishedEvents: number;
+}
+
 export const FLIGHTPLATFORM_OPERATIONS_V1_PACKAGE_NAME = "flightplatform.operations.v1";
 
 export interface OperationsServiceClient {
@@ -52,6 +61,8 @@ export interface OperationsServiceClient {
   checkIn(request: CheckInRequest): Observable<CheckInResponse>;
 
   listBoardingPasses(request: BookingOwnerRequest): Observable<BoardingPassListResponse>;
+
+  recoverCheckIns(request: RecoverCheckInsRequest): Observable<RecoverCheckInsResponse>;
 }
 
 export interface OperationsServiceController {
@@ -66,11 +77,21 @@ export interface OperationsServiceController {
   listBoardingPasses(
     request: BookingOwnerRequest,
   ): Promise<BoardingPassListResponse> | Observable<BoardingPassListResponse> | BoardingPassListResponse;
+
+  recoverCheckIns(
+    request: RecoverCheckInsRequest,
+  ): Promise<RecoverCheckInsResponse> | Observable<RecoverCheckInsResponse> | RecoverCheckInsResponse;
 }
 
 export function OperationsServiceControllerMethods() {
   return function (constructor: Function) {
-    const grpcMethods: string[] = ["getFlightStatus", "recordOperationalUpdate", "checkIn", "listBoardingPasses"];
+    const grpcMethods: string[] = [
+      "getFlightStatus",
+      "recordOperationalUpdate",
+      "checkIn",
+      "listBoardingPasses",
+      "recoverCheckIns",
+    ];
     for (const method of grpcMethods) {
       const descriptor: any = Reflect.getOwnPropertyDescriptor(constructor.prototype, method);
       GrpcMethod("OperationsService", method)(constructor.prototype[method], method, descriptor);

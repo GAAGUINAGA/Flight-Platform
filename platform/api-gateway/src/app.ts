@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import process from 'node:process';
 import { readFileSync } from 'node:fs';
 import Ajv from 'ajv';
+import addFormats from 'ajv-formats';
 import { parse } from 'yaml';
 import expressFactory from 'express';
 import type { NextFunction, Request, Response } from 'express';
@@ -16,6 +17,8 @@ import { PrismaClient } from '../generated/prisma-client';
 import { PrismaIdempotencyStore } from './prisma-idempotency';
 import { IdempotencyInterceptor } from './idempotency.interceptor';
 import { InMemoryGatewayIdempotencyStore } from './idempotency';
+import { PrismaSchedulerStore } from './scheduler-store';
+import { GatewayScheduler } from './scheduler';
 import { Idempotent, JwtAuthGuard, Public, RateLimitGuard, Roles, RolesGuard, Scopes, ScopesGuard } from './security';
 import { GatewayExceptionFilter, asProblem } from './web-errors';
 import type { GatewayTestGrpcClient } from './test-grpc';
@@ -55,6 +58,8 @@ export async function createGatewayApp(config: GatewayConfig) {
     { provide: 'GATEWAY_CONFIG', useValue: config },
     { provide: PrismaClient, useFactory: () => new PrismaClient() },
     { provide: PrismaIdempotencyStore, useFactory: (client: PrismaClient) => new PrismaIdempotencyStore(client, config.idempotencyTtlHours), inject: [PrismaClient] },
+    { provide: PrismaSchedulerStore, useFactory: (client: PrismaClient) => new PrismaSchedulerStore(client), inject: [PrismaClient] },
+    { provide: GatewayScheduler, useFactory: (store: PrismaSchedulerStore) => new GatewayScheduler(config, store), inject: [PrismaSchedulerStore] },
     ...(testComponents ? [{ provide: testComponents.GatewayTestGrpcClient, useFactory: () => new testComponents.GatewayTestGrpcClient(config) }] : []),
     { provide: JwtAuthGuard, useFactory: (reflector: Reflector) => new JwtAuthGuard(reflector, config), inject: [Reflector] },
     { provide: RolesGuard, useFactory: (reflector: Reflector) => new RolesGuard(reflector), inject: [Reflector] },
@@ -76,8 +81,9 @@ export async function createGatewayApp(config: GatewayConfig) {
     if (req.method === 'OPTIONS') return res.sendStatus(204); next();
   });
   express.use(expressFactory.json({ limit: '100kb' }));
-  const problemSchema = config.validateResponses ? new Ajv().compile((parse(readFileSync(openApiSpecPath(), 'utf8')) as { components: { schemas: { ProblemDetails: object } } }).components.schemas.ProblemDetails) : undefined;
-  express.use('/flights/v1', openApiMiddleware({ apiSpec: openApiSpecPath(), validateRequests: true, validateSecurity: false, validateResponses: config.validateResponses ? {
+  const problemAjv = new Ajv({ strict: false }); addFormats(problemAjv);
+  const problemSchema = config.validateResponses ? problemAjv.compile((parse(readFileSync(openApiSpecPath(), 'utf8')) as { components: { schemas: { ProblemDetails: object } } }).components.schemas.ProblemDetails) : undefined;
+  express.use('/flights/v1', openApiMiddleware({ apiSpec: openApiSpecPath(), validateRequests: true, validateSecurity: false, validateFormats: true, ajvFormats: { mode: 'full' }, validateResponses: config.validateResponses ? {
     onError: (error: Error, body: unknown, request: Request) => {
       // Authentication and missing-hold errors are required by the platform but omitted from individual operations.
       if (/no schema defined for status code '(400|401|403|404|409|410|422|429|503)'/.test(error.message) && problemSchema?.(body)) return;

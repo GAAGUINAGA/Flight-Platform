@@ -274,6 +274,7 @@ export interface WebhookEventData {
   pnr?: string | undefined;
   status?: string | undefined;
   refundAmount?: string | undefined;
+  holdId?: string | undefined;
 }
 
 export interface WebhookPayload {

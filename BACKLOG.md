@@ -1,82 +1,92 @@
 # Backlog
 
-- Cada servicio y `packages/shared` debe exponer su propio script `test`, ejecutar sus pruebas de manera aislada y cargar √∫nicamente su `.env`, para que un `DATABASE_URL` de otro workspace no contamine la ejecuci√≥n global de Jest.
-- Aislar el cliente Prisma de inventory-service con la misma convenci√≥n que el resto (requiere correcci√≥n auditada y redespliegue).
-- ticketing-service: la integraci√≥n tarda ~30‚Äì40 s; su `afterAll` puede exceder el timeout bajo carga.
+- Antes del cierre de F11: migrar coordinadamente todos los servicios, Gateway y `packages/shared` de Zod 3 a Zod 4; retirar la excepci√≥n temporal `GHSA-mrhx-c7xc-m3w5` de `security/npm-audit-exceptions.json`.
+
+- Cada servicio y `packages/shared` debe exponer su propio script `test`, ejecutar sus pruebas de manera aislada y cargar √É¬∫nicamente su `.env`, para que un `DATABASE_URL` de otro workspace no contamine la ejecuci√É¬≥n global de Jest.
+- Aislar el cliente Prisma de inventory-service con la misma convenci√É¬≥n que el resto (requiere correcci√É¬≥n auditada y redespliegue).
+- ticketing-service: la integraci√É¬≥n tarda ~30√¢‚Ç¨‚Äú40 s; su `afterAll` puede exceder el timeout bajo carga.
 
 ## Para resolver al inicio de F10 (operations-service), observaciones de docs/audit/audits/F6/audit-1.md
-- OPS-05: idempotencia de RecordOperationalUpdate. Repetir una cancelaciÛn no debe volver a cerrar el vuelo ni publicar flight.cancelled; un retraso repetido no debe republicar flight.schedule_changed si el horario no cambiÛ.
+- OPS-05: idempotencia de RecordOperationalUpdate. Repetir una cancelaci√≥n no debe volver a cerrar el vuelo ni publicar flight.cancelled; un retraso repetido no debe republicar flight.schedule_changed si el horario no cambi√≥.
 - OPS-04: distinguir un vuelo inexistente (FLIGHT_STATUS_NOT_AVAILABLE) de Inventory no disponible (UNAVAILABLE ? 503), con una prueba propia para cada caso.
-- OPS-SEC-01: pruebas de fecha inv·lida, campo extra y transiciÛn no permitida por RPC.
+- OPS-SEC-01: pruebas de fecha inv√°lida, campo extra y transici√≥n no permitida por RPC.
 
-- operations-service/scripts/smoke.cjs: aceptar el target como argumento (como inventory, ticketing y pricing), documentar en su cabecera las variables requeridas e imprimir una lÌnea OK/FAIL por paso.
+- operations-service/scripts/smoke.cjs: aceptar el target como argumento (como inventory, ticketing y pricing), documentar en su cabecera las variables requeridas e imprimir una l√≠nea OK/FAIL por paso.
 
-- ancillaries-service compila a dist/main.js en la RAÕZ del repo (riesgo de colisiÛn con otros servicios); debe emitir en su propia carpeta, como el resto.
+- ancillaries-service compila a dist/main.js en la RA√çZ del repo (riesgo de colisi√≥n con otros servicios); debe emitir en su propia carpeta, como el resto.
 
 - ancillaries-service no carga su .env en local (requiere node --env-file=.env); unificar el arranque local con el resto de servicios.
 
-- F7: audit-1.md (RECHAZADO por ANC-SEC-02: owner-B podÌa comprar equipaje sobre la reserva de owner-A y las lecturas devolvÌan [] en vez de NOT_FOUND) se perdiÛ al recrear el clon del auditor; su resoluciÛn consta en docs/audit/audits/F7/audit-2.md.
+- F7: audit-1.md (RECHAZADO por ANC-SEC-02: owner-B pod√≠a comprar equipaje sobre la reserva de owner-A y las lecturas devolv√≠an [] en vez de NOT_FOUND) se perdi√≥ al recrear el clon del auditor; su resoluci√≥n consta en docs/audit/audits/F7/audit-2.md.
 
-- webhooks-service: documentar en .env.example WEBHOOK_SECRET_ENCRYPTION_KEY (32 bytes en base64) como obligatoria tambiÈn en local.
+- webhooks-service: documentar en .env.example WEBHOOK_SECRET_ENCRYPTION_KEY (32 bytes en base64) como obligatoria tambi√©n en local.
 
-- npx dotenv dejÛ de resolverse tras el merge de F8; usar node --env-file=.env.supabase con prisma/build/index.js, o volver a declarar dotenv-cli como devDependency en la raÌz.
+- npx dotenv dej√≥ de resolverse tras el merge de F8; usar node --env-file=.env.supabase con prisma/build/index.js, o volver a declarar dotenv-cli como devDependency en la ra√≠z.
 
 ## Primera tarea de F9 ? franquicia y owner en Ancillaries
 
 - Registrar al crear una reserva la franquicia incluida de cada pasajero con asiento por itinerario, incluso cuando sea cero, separada del equipaje extra comprado; permitir despu?s consultar y vender equipaje con ownership correcto. Evaluar una extensi?n aditiva del contrato gRPC con ADR y la compatibilidad de los servicios desplegados.
 - An?lisis: ADR-F7-06 fija el owner en la primera escritura. ReserveBaggage exige cantidad 1?3, no transporta passengerId y persiste passengerId nulo; GetBaggageOptions excluye esas filas. BASIC incluye cero maletas facturadas. Por tanto la interfaz actual no representa fielmente la franquicia ni registra todas las reservas. En F8 ADR-F8-06 acepta temporalmente NOT_FOUND como vac?o solo despu?s de validar owner en Reservation; F9 debe sustituir esa limitaci?n con pruebas de creaci?n, postventa, cero incluido, pasajeros, itinerarios y aislamiento por owner.
 
-- reservation-service: la repeticiÛn idempotente de CreateReservation por gRPC devuelve la vista persistida sin tickets (ADR-F8-05). El Gateway repite la respuesta original a nivel HTTP, pero conviene que gRPC tambiÈn incluya los tickets.
+- reservation-service: la repetici√≥n idempotente de CreateReservation por gRPC devuelve la vista persistida sin tickets (ADR-F8-05). El Gateway repite la respuesta original a nivel HTTP, pero conviene que gRPC tambi√©n incluya los tickets.
 
 - pricing-service: ordenar `pricingOptions` de forma determinista, por ejemplo por precio y marca; los consumidores no deben depender de su orden actual.
 - OP-02: ResolveSegment debe devolver el offerId del segmento, mediante un cambio aditivo en pricing.proto, para validar la pertenencia y expiracion de la oferta; contemplar segmentos compartidos por varias ofertas (ver docs/dev/adr/ADR-F11-03-seatmap-segmento.md).
 
 ## Observaciones de docs/audit/audits/F9/audit-2.md
-- Quedan selecciones de tarifa por posiciÛn: selectOfferForHold (pricing-hold-fixture.ts:14,20; offers[0] y pricingOptions[0]), resume-pending.ts:13 y un fallback en post-sale-smoke.cjs:45. Elegir siempre por fareBrand.
-- La exclusiÛn de ConfirmDateChange por changeOfferId es solo en memoria del proceso; entre instancias depende de markChangeOfferUsed en Pricing. Confirmar que ese marcado sea atÛmico en base de datos.
+- Quedan selecciones de tarifa por posici√≥n: selectOfferForHold (pricing-hold-fixture.ts:14,20; offers[0] y pricingOptions[0]), resume-pending.ts:13 y un fallback en post-sale-smoke.cjs:45. Elegir siempre por fareBrand.
+- La exclusi√≥n de ConfirmDateChange por changeOfferId es solo en memoria del proceso; entre instancias depende de markChangeOfferUsed en Pricing. Confirmar que ese marcado sea at√≥mico en base de datos.
 - El reembolso positivo (FLEX) solo se prueba de forma unitaria; agregar escenario real cuando Pricing ordene pricingOptions.
 
 ## Observaciones de docs/audit/audits/F9/audit-3.md
-- ancillaries: maxWait + timeout de transacciÛn por defecto (4 s + 4 s) pueden superar el deadline gRPC de 5 s de reservation. Ajustar los valores por defecto (p. ej. 1,5 s + 3 s) o subir el deadline, y documentarlo.
-- Los errores internos que no son de Prisma ya no registran el nombre de la excepciÛn; recuperarlo sin exponer mensajes ni valores.
-- Confirmar con los logs de Cloud Run el cÛdigo real del fallo de producciÛn (P2028 fue la reproducciÛn local).
+- ancillaries: maxWait + timeout de transacci√≥n por defecto (4 s + 4 s) pueden superar el deadline gRPC de 5 s de reservation. Ajustar los valores por defecto (p. ej. 1,5 s + 3 s) o subir el deadline, y documentarlo.
+- Los errores internos que no son de Prisma ya no registran el nombre de la excepci√≥n; recuperarlo sin exponer mensajes ni valores.
+- Confirmar con los logs de Cloud Run el c√≥digo real del fallo de producci√≥n (P2028 fue la reproducci√≥n local).
 
 ## Observaciones de docs/audit/audits/F9/audit-5.md
-- La prueba opt-in del smoke de postventa usa un puerto fijo (29661); usar un puerto libre asignado din·micamente.
-- En los clones del auditor aparecen archivos generados de packages/contracts como modificados tras la instalaciÛn; revisar que la regla LF de .gitattributes y el paso de generaciÛn no ensucien el ·rbol.
+- La prueba opt-in del smoke de postventa usa un puerto fijo (29661); usar un puerto libre asignado din√°micamente.
+- En los clones del auditor aparecen archivos generados de packages/contracts como modificados tras la instalaci√≥n; revisar que la regla LF de .gitattributes y el paso de generaci√≥n no ensucien el √°rbol.
 
-- El seed de inventory en Supabase cubre 60 dÌas desde el 7 de octubre de 2026; regenerarlo (o hacerlo rodante) antes de inicios de diciembre, o los smokes de compra, postventa y check-in dejar·n de encontrar vuelos.
+- El seed de inventory en Supabase cubre 60 d√≠as desde el 7 de octubre de 2026; regenerarlo (o hacerlo rodante) antes de inicios de diciembre, o los smokes de compra, postventa y check-in dejar√°n de encontrar vuelos.
 
 ## Observaciones de docs/audit/audits/F10/audit-1.md
-- PRIORIDAD F11: si operations muere con un check-in en IN_PROGRESS, toda llamada posterior responde CHECK_IN_NOT_AVAILABLE sin recuperaciÛn (ADR-F10-02/05). Resolver con el scheduler de F11: reanudar o revertir check-ins IN_PROGRESS vencidos.
+- PRIORIDAD F11: si operations muere con un check-in en IN_PROGRESS, toda llamada posterior responde CHECK_IN_NOT_AVAILABLE sin recuperaci√≥n (ADR-F10-02/05). Resolver con el scheduler de F11: reanudar o revertir check-ins IN_PROGRESS vencidos.
 - Si operations muere entre complete y publish, booking.checked_in no se publica nunca. Considerar publicar desde el estado persistido (reintento en el scheduler de F11).
-- Faltan pruebas de check-in con vuelo salido o cancelado, y con cupÛn distinto de ISSUED (el cÛdigo lo implementa).
-- Faltan pruebas de ConfirmSeats, ReleaseSeats y del Ìndice ˙nico sobre un asiento CHECKED_IN; ANC-SEC-02 de AssignSeatAtCheckIn no ejercita markCheckedIn con una asignaciÛn existente de otro owner.
+- Faltan pruebas de check-in con vuelo salido o cancelado, y con cup√≥n distinto de ISSUED (el c√≥digo lo implementa).
+- Faltan pruebas de ConfirmSeats, ReleaseSeats y del √≠ndice √∫nico sobre un asiento CHECKED_IN; ANC-SEC-02 de AssignSeatAtCheckIn no ejercita markCheckedIn con una asignaci√≥n existente de otro owner.
 - Un asiento RELEASED aborta todo el check-in en lugar de marcar solo a ese pasajero como FAILED.
 
 ## Observaciones de docs/audit/audits/F10/audit-2.md
-- El smoke de check-in no muestra el vuelo ni la ventana usados: imprimir n˙mero de vuelo, fecha y minutos hasta la salida (sin datos personales).
-- La evidencia de despliegue deberÌa incluir el describe de todos los servicios redesplegados o afectados, no solo de los modificados.
+- El smoke de check-in no muestra el vuelo ni la ventana usados: imprimir n√∫mero de vuelo, fecha y minutos hasta la salida (sin datos personales).
+- La evidencia de despliegue deber√≠a incluir el describe de todos los servicios redesplegados o afectados, no solo de los modificados.
 
-- Seed rodante: Inventory y Pricing generan 60 dÌas desde la fecha de ejecuciÛn con createMany + skipDuplicates (no tocan held/sold). Para extenderlo en Supabase, ejecutar primero el seed de inventory y luego el de pricing, cargando .env.supabase en la sesiÛn sin imprimirlo. Repetir antes de que el ˙ltimo vuelo quede a menos de 3 dÌas.
+- Seed rodante: Inventory y Pricing generan 60 d√≠as desde la fecha de ejecuci√≥n con createMany + skipDuplicates (no tocan held/sold). Para extenderlo en Supabase, ejecutar primero el seed de inventory y luego el de pricing, cargando .env.supabase en la sesi√≥n sin imprimirlo. Repetir antes de que el √∫ltimo vuelo quede a menos de 3 d√≠as.
 
 ## Observaciones de docs/audit/audits/F11/audit-1.md (tarea 0 de F11b)
 - CI del gateway: el workflow solo ejecuta platform/api-gateway/src/gateway.spec.ts; ampliarlo a todas las pruebas unitarias del gateway (excluyendo integration y e2e), incluidas partner-issuer.spec.ts y openapi-path.spec.ts.
 - Faltan pruebas: OP-05 (liberar hold), reserva con un hold de otro sub (404) y que el listado de reservas no muestre reservas ajenas.
-- OP-02 (ADR-F11-03): el alcance real es mayor que el segmento compartido. Ancillaries no usa offerId, asÌ que un offerId inexistente o expirado con un segmento presente en alguna oferta activa devuelve 200. Actualizar el ADR; la soluciÛn sigue siendo que ResolveSegment devuelva el offerId (cambio aditivo en pricing.proto).
+- OP-02 (ADR-F11-03): el alcance real es mayor que el segmento compartido. Ancillaries no usa offerId, as√≠ que un offerId inexistente o expirado con un segmento presente en alguna oferta activa devuelve 200. Actualizar el ADR; la soluci√≥n sigue siendo que ResolveSegment devuelva el offerId (cambio aditivo en pricing.proto).
 - Sin prueba con token partner contra rutas REST; los webhooks llegan en F11c.
 - El smoke de Supabase (supabase-auth-smoke.cjs) espera 403 en una ruta admin que llega en F11c; la prueba S completa de PLT-SEC-01 se cierra en F11c.
 
-## Tarea 0 de F11b: latencia y errores en frÌo (despliegue de F11a)
-- createReservation tarda de 6 a 7 s en Cloud Run con dependencias reciÈn arrancadas; el gateway agota su espera y responde 503 aunque la reserva pueda haberse creado. Ajustar el deadline del gateway para OP-07 (y documentarlo), y confirmar que el reintento con la misma Idempotency-Key devuelve la reserva creada.
-- Se observÛ createReservation con INTERNAL_ERROR tras 6953 ms (ver bit·cora de despliegue de F11a): identificar la dependencia o el cÛdigo Prisma con los logs.
-- El limitador de b˙squeda responde 503 RATE_LIMIT_EXCEEDED cuando no puede consultar su almacÈn: documentar la decisiÛn (fallar cerrado), usar un cÛdigo coherente (503 SERVICE_UNAVAILABLE con Retry-After, no RATE_LIMIT_EXCEEDED) y probarlo.
-- Evaluar min-instances=1 en reservation (y sus dependencias crÌticas) en Cloud Run frente a su costo.
+## Tarea 0 de F11b: latencia y errores en fr√≠o (despliegue de F11a)
+- createReservation tarda de 6 a 7 s en Cloud Run con dependencias reci√©n arrancadas; el gateway agota su espera y responde 503 aunque la reserva pueda haberse creado. Ajustar el deadline del gateway para OP-07 (y documentarlo), y confirmar que el reintento con la misma Idempotency-Key devuelve la reserva creada.
+- Se observ√≥ createReservation con INTERNAL_ERROR tras 6953 ms (ver bit√°cora de despliegue de F11a): identificar la dependencia o el c√≥digo Prisma con los logs.
+- El limitador de b√∫squeda responde 503 RATE_LIMIT_EXCEEDED cuando no puede consultar su almac√©n: documentar la decisi√≥n (fallar cerrado), usar un c√≥digo coherente (503 SERVICE_UNAVAILABLE con Retry-After, no RATE_LIMIT_EXCEEDED) y probarlo.
+- Evaluar min-instances=1 en reservation (y sus dependencias cr√≠ticas) en Cloud Run frente a su costo.
 
 ## Observaciones de docs/audit/audits/F11/audit-3.md y audit-4.md
-- Las pruebas reales opt-in (RUN_*_REAL) usan el plazo por defecto de Jest (5 s); PST-03/04 lo superÛ una vez con 6,2 s bajo carga. Darles un plazo propio y holgado (p. ej. 30 s) por archivo o por it.
-- Los nombres de los tres it nuevos de F11b (OP-05 / S y PLT-I5 / E) muestran ? en lugar de ?, ˙ y Û: corregir la codificaciÛn del archivo (UTF-8).
+- Las pruebas reales opt-in (RUN_*_REAL) usan el plazo por defecto de Jest (5 s); PST-03/04 lo super√≥ una vez con 6,2 s bajo carga. Darles un plazo propio y holgado (p. ej. 30 s) por archivo o por it.
+- Los nombres de los tres it nuevos de F11b (OP-05 / S y PLT-I5 / E) muestran ? en lugar de ?, √∫ y √≥: corregir la codificaci√≥n del archivo (UTF-8).
 - El gateway tolera estados no declarados en app.ts:83; revisar.
 - Sigue sin prueba con token partner contra rutas REST (F11c).
 
-- Arranques en frÌo de Cloud Run: la primera llamada de cada flujo (createReservation en F11a, checkIn en F11b) puede responder 503 por plazo agotado. Antes de PLT-J3, decidir entre min-instances=1 en los servicios crÌticos (con su costo) o un precalentamiento de los servicios antes de ejecutar los recorridos.
+- Arranques en fr√≠o de Cloud Run: la primera llamada de cada flujo (createReservation en F11a, checkIn en F11b) puede responder 503 por plazo agotado. Antes de PLT-J3, decidir entre min-instances=1 en los servicios cr√≠ticos (con su costo) o un precalentamiento de los servicios antes de ejecutar los recorridos.
+
+## Observaciones de docs/audit/audits/F11/audit-6.md
+- FECHA LÕMITE 2026-11-23: vence la excepciÛn de zod en scripts/audit-policy.cjs; desde ese dÌa el CI falla y no se puede desplegar. Migrar a zod 4 en todos los servicios antes de esa fecha.
+- FECHA LÕMITE inicios de diciembre de 2026: el seed de vuelos en Supabase deja de tener vuelos futuros; regenerarlo antes.
+- webhooks: payloadData pasÛ de .strict() a .passthrough() para aceptar holdId; restringirlo a los campos conocidos del contrato m·s holdId.
+- PLAN ß1.3 (GAP-025) describe hold.expired como { status: "EXPIRED" }; actualizarlo con holdId (ADR-F11-13).
+- Faltan pruebas: PrismaSchedulerStore contra Postgres, y la rama de reversiÛn de RecoverCheckIns (markBlocked) con almacÈn real.
+- SCHEDULER_BATCH_SIZE solo acota resumePending y recoverCheckIns; expireHolds y dispatchPending usan lotes fijos de 500 y 100.

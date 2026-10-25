@@ -1,4 +1,5 @@
 import { afterAll, beforeAll } from '@jest/globals';
+import { randomUUID } from 'node:crypto';
 import { seed } from '../../prisma/seed';
 import { ADMIN, cleanup, createFlight, Harness, startHarness } from '../helpers';
 
@@ -32,18 +33,24 @@ describe('INV-02/03/05/06 vuelos: migraci?n, seed, consultas y administraci?n', 
   });
 
   it('INV-03: el seed crea 60 d?as de rutas consultables y es idempotente', async () => {
-    const created = await seed(h.prisma);
-    expect(created).toBeGreaterThan(14 * 55);
-    const res = await h.call<{ flights: { segment: { departure: { iataCode: string }; arrival: { iataCode: string } }; cabinClass: string; availableSeats: number }[] }>(
-      'QueryAvailability', { origin: 'UIO', destination: 'GYE', departureDate: tomorrow(), passengers: mix(2, 1) }
-    );
-    expect(res.flights.length).toBeGreaterThanOrEqual(4); // 2 salidas ? (ECONOMY, BUSINESS)
-    expect(res.flights.every((f) => f.segment.departure.iataCode === 'UIO' && f.segment.arrival.iataCode === 'GYE')).toBe(true);
-    expect(res.flights.find((f) => f.cabinClass === 'ECONOMY')?.availableSeats).toBe(96);
-    const seeded = () => h.prisma.flightInstance.count({ where: { flightNumber: { startsWith: 'FP' } } });
-    const before = await seeded();
-    await seed(h.prisma);
-    expect(await seeded()).toBe(before);
+    const airline = `T${randomUUID().replaceAll('-', '').slice(0, 2).toUpperCase()}`;
+    const removeSeed = () => h.prisma.flightInstance.deleteMany({ where: { flightNumber: { startsWith: airline } } });
+    await removeSeed();
+    try {
+      const created = await seed(h.prisma, airline);
+      expect(created).toBeGreaterThan(14 * 55);
+      const res = await h.call<{ flights: { segment: { flightNumber: string; departure: { iataCode: string }; arrival: { iataCode: string } }; cabinClass: string; availableSeats: number }[] }>(
+        'QueryAvailability', { origin: 'UIO', destination: 'GYE', departureDate: tomorrow(), passengers: mix(2, 1) }
+      );
+      const seededFlights = res.flights.filter((flight) => flight.segment.flightNumber.startsWith(airline));
+      expect(seededFlights.length).toBeGreaterThanOrEqual(4); // 2 salidas ? (ECONOMY, BUSINESS)
+      expect(seededFlights.every((f) => f.segment.departure.iataCode === 'UIO' && f.segment.arrival.iataCode === 'GYE')).toBe(true);
+      expect(seededFlights.find((f) => f.cabinClass === 'ECONOMY')?.availableSeats).toBe(96);
+      const seeded = () => h.prisma.flightInstance.count({ where: { flightNumber: { startsWith: airline } } });
+      const before = await seeded();
+      await seed(h.prisma, airline);
+      expect(await seeded()).toBe(before);
+    } finally { await removeSeed(); }
   });
 
   it('INV-05: filtra por cabina, exige asientos suficientes y rechaza mezclas inv?lidas', async () => {

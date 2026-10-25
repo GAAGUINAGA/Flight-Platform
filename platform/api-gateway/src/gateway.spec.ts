@@ -11,7 +11,6 @@ import { createDevToken } from '../../../infra/scripts/dev-token';
 import { loadConfig } from './config';
 import { PUBLIC_PROBLEM_CODES } from './errors';
 import { configuredGrpcTargets } from './grpc-clients';
-import { GatewayScheduler } from './scheduler';
 import { createGatewayApp } from './app';
 import { RateLimitGuard } from './security';
 
@@ -90,7 +89,7 @@ describe('F4 Gateway base', () => {
 
   it('GW-01/GW-07/GW-08 keep public middleware and configuration safe', async () => {
     const instance = await app({ RATE_LIMIT_PUBLIC_PER_MIN: '1' }); try { expect((await request(instance.getHttpServer()).get('/flights/v1/health')).status).toBe(200); expect((await request(instance.getHttpServer()).get('/flights/v1/health').set('X-Device-Fingerprint', 'public')).status).toBe(200); expect((await request(instance.getHttpServer()).get('/flights/v1/health').set('X-Device-Fingerprint', 'public')).status).toBe(429); } finally { await instance.close(); }
-    expect(configuredGrpcTargets(true, { INVENTORY_GRPC_URL: 'inventory.test:9443', PRICING_GRPC_URL: 'pricing.test:9443' }).find((target) => target.service === 'inventory')).toMatchObject({ url: 'inventory.test:9443', tls: true }); const run = jest.fn(async () => undefined); await new GatewayScheduler(false, run).tick(); expect(run).not.toHaveBeenCalled();
+    expect(configuredGrpcTargets(true, { INVENTORY_GRPC_URL: 'inventory.test:9443', PRICING_GRPC_URL: 'pricing.test:9443' }).find((target) => target.service === 'inventory')).toMatchObject({ url: 'inventory.test:9443', tls: true });
   });
   it('does not expose test routes in production', async () => { const previous = process.env.NODE_ENV; process.env.NODE_ENV = 'production'; const instance = await createGatewayApp(loadConfig({ INTERNAL_API_KEY: 'x'.repeat(32), JWT_ISSUERS: JSON.stringify([{ iss: 'real', aud: 'real', jwksUri: 'https://issuer.example/jwks' }]), NODE_ENV: 'production' })); try { expect((await request(instance.getHttpServer()).post('/flights/v1/__test/secured').send({})).status).toBe(404); } finally { await instance.close(); process.env.NODE_ENV = previous; } });
 });

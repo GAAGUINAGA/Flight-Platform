@@ -40,6 +40,7 @@ jobs:
       runtime_service_account: inventory-service-runtime@project-a1d2e3ba-f6ff-469e-854.iam.gserviceaccount.com
       secret_name: internal-api-key
       extra_secrets: DATABASE_URL=inventory-database-url:latest
+      extra_env_vars: WEBHOOKS_GRPC_URL=webhooks-service-gtl24uc77a-ue.a.run.app:443,GRPC_TLS=true
       test_command: npx jest microservices/inventory-service/test/unit --runInBand
     secrets:
       workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}

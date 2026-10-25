@@ -7,6 +7,7 @@ service OperationsService {
   rpc RecordOperationalUpdate(RecordOperationalUpdateRequest) returns (flightplatform.common.v1.FlightStatus);
   rpc CheckIn(CheckInRequest) returns (flightplatform.common.v1.CheckInResponse);
   rpc ListBoardingPasses(BookingOwnerRequest) returns (BoardingPassListResponse);
+  rpc RecoverCheckIns(RecoverCheckInsRequest) returns (RecoverCheckInsResponse);
 }
 
 message GetFlightStatusRequest { string flight_number = 1; string date = 2; }
@@ -26,3 +27,5 @@ message BoardingPassListResponse {
   string booking_id = 1;
   repeated flightplatform.common.v1.BoardingPass boarding_passes = 2;
 }
+message RecoverCheckInsRequest { int32 limit = 1; }
+message RecoverCheckInsResponse { int32 recovered_check_ins = 1; int32 published_events = 2; }

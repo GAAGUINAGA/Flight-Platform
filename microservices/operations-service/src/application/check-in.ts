@@ -28,7 +28,14 @@ export class CheckInUseCase {
     if (snapshot.status !== 'CONFIRMED') throw new DomainError('BOOKING_NOT_CONFIRMED');
     const prior = await this.store.find(request.ownerId, request.bookingId);
     if (prior && !prior.result) throw new DomainError('CHECK_IN_NOT_AVAILABLE');
-    if (prior?.result && !prior.result.checkedInPassengers.some((passenger) => passenger.segments.some((segment) => segment.status === 'NOT_CHECKED_IN'))) return prior.result;
+    const hasCheckedIn = (result: CheckInResult) => result.checkedInPassengers.some((passenger) => passenger.segments.some((segment) => segment.status === 'CHECKED_IN'));
+    if (prior?.result && !prior.result.checkedInPassengers.some((passenger) => passenger.segments.some((segment) => segment.status === 'NOT_CHECKED_IN'))) {
+      if (hasCheckedIn(prior.result) && !prior.eventPublished) {
+        await this.events.publish({ ownerId: request.ownerId, bookingId: request.bookingId, pnr: snapshot.pnr, eventType: 'booking.checked_in', occurredAt: this.now().toISOString() });
+        await this.store.markEventPublished(request.ownerId, request.bookingId);
+      }
+      return prior.result;
+    }
     const segments = snapshot.itineraries.flatMap((itinerary) => itinerary.segments.map((segment) => ({ segment, pricingOptions: itinerary.pricingOptions })));
     if (!segments.length || !snapshot.passengers.length) throw new DomainError('CHECK_IN_NOT_AVAILABLE');
     const eligible = new Set<string>();
@@ -47,6 +54,7 @@ export class CheckInUseCase {
     const coupons = await this.tickets.getCoupons(request.ownerId, request.bookingId);
     const acquired = prior?.result ? await this.store.resume(request.ownerId, request.bookingId) : await this.store.begin(request.ownerId, request.bookingId);
     if (!acquired) throw new DomainError('CHECK_IN_NOT_AVAILABLE');
+    let completed = false;
     try {
     const passengers: CheckInResult['checkedInPassengers'] = [];
     let newSuccess = false;
@@ -85,11 +93,15 @@ export class CheckInUseCase {
     }
     const result: CheckInResult = { bookingId: request.bookingId, status: completedStatus(passengers.flatMap((passenger) => passenger.segments.filter((segment) => segment.status !== 'NOT_CHECKED_IN').map((segment) => segment.status))), checkedInPassengers: passengers };
     await this.store.complete(request.ownerId, result);
-    if (newSuccess) await this.events.publish({ ownerId: request.ownerId, bookingId: request.bookingId, pnr: snapshot.pnr, eventType: 'booking.checked_in', occurredAt: this.now().toISOString() });
+    completed = true;
+    if (newSuccess) {
+      await this.events.publish({ ownerId: request.ownerId, bookingId: request.bookingId, pnr: snapshot.pnr, eventType: 'booking.checked_in', occurredAt: this.now().toISOString() });
+      await this.store.markEventPublished(request.ownerId, request.bookingId);
+    }
     return result;
     } catch (error) {
-      if (prior?.result) await this.store.restore(request.ownerId, prior.result);
-      else await this.store.abort(request.ownerId, request.bookingId);
+      if (!completed && prior?.result) await this.store.restore(request.ownerId, prior.result);
+      else if (!completed) await this.store.abort(request.ownerId, request.bookingId);
       throw error;
     }
   }

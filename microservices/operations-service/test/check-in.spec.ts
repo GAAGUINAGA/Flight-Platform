@@ -13,15 +13,21 @@ const ownerId = 'owner';
 class MemoryStore implements CheckInStore {
   result: CheckInResult | null = null;
   begun = false;
+  eventPublished = false;
   passes: CheckInPass[] = [];
-  async find(owner: string, booking: string) { return this.begun && owner === ownerId && booking === bookingId ? { status: this.result?.status ?? 'IN_PROGRESS', result: this.result } : null; }
+  async find(owner: string, booking: string) { return this.begun && owner === ownerId && booking === bookingId ? { status: this.result?.status ?? 'IN_PROGRESS', result: this.result, eventPublished: this.eventPublished } : null; }
   async begin() { if (this.begun) return false; this.begun = true; return true; }
   async resume() { return this.begun; }
   async savePass(owner: string, booking: string, pass: CheckInPass) { void owner; void booking; this.passes.push(pass); }
   async complete(owner: string, result: CheckInResult) { void owner; this.result = result; }
-  async abort() { this.begun = false; this.result = null; this.passes = []; }
+  async abort() { this.begun = false; this.result = null; this.eventPublished = false; this.passes = []; }
   async restore(owner: string, result: CheckInResult) { void owner; this.result = result; this.passes = this.passes.filter((pass) => result.checkedInPassengers.some((passenger) => passenger.passengerId === pass.passengerId && passenger.segments.some((segment) => segment.segmentId === pass.segmentId && segment.status === 'CHECKED_IN'))); }
   async listPasses(owner: string, booking: string) { return owner === ownerId && booking === bookingId ? this.passes : []; }
+  async claimStale() { return []; }
+  async releaseRecoveryClaim() { return undefined; }
+  async markBlocked() { return undefined; }
+  async listUnpublished() { return []; }
+  async markEventPublished() { this.eventPublished = true; }
 }
 
 describe('DCS-03 / DCS-05: check-in', () => {
@@ -85,7 +91,7 @@ describe('DCS-03 / DCS-05: check-in', () => {
     const publish = jest.fn().mockRejectedValueOnce(new Error('temporary')).mockResolvedValue(undefined);
     const useCase = new CheckInUseCase({ getSnapshot: async () => snapshot }, { getCoupons: async () => [{ passengerId, segmentId, status: 'ISSUED' }] }, { assign: async () => ({ seatNumber: '12A', status: 'CHECKED_IN' }) }, { find: async () => null, findByInstance: async () => null, save: async () => undefined, update: async () => undefined }, store, { publish }, () => new Date('2026-10-19T12:00:00.000Z'), 48, 60);
     await expect(useCase.execute({ ownerId, bookingId })).rejects.toThrow('temporary');
-    expect(store.begun).toBe(false);
+    expect(store.begun).toBe(true);
     await expect(useCase.execute({ ownerId, bookingId })).resolves.toMatchObject({ status: 'COMPLETED' });
     expect(publish).toHaveBeenCalledTimes(2);
     expect(store.passes).toHaveLength(1);

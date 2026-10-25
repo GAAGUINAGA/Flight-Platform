@@ -19,6 +19,10 @@ export interface GatewayConfig {
   idempotencyTtlHours: number;
   validateResponses: boolean;
   schedulerEnabled: boolean;
+  schedulerEveryMs: number;
+  schedulerPurgeEveryMs: number;
+  schedulerBatchSize: number;
+  schedulerLockLeaseMs: number;
   grpcTls: boolean;
 }
 
@@ -41,7 +45,7 @@ export function loadConfig(env: Environment = process.env): GatewayConfig {
     publicLimit: Number(env.RATE_LIMIT_PUBLIC_PER_MIN ?? 60), authLimit: Number(env.RATE_LIMIT_AUTH_PER_MIN ?? 120),
     idempotencyTtlHours: Number(env.IDEMPOTENCY_TTL_HOURS ?? 24),
     validateResponses: env.VALIDATE_RESPONSES === undefined ? (env.NODE_ENV === 'development' || env.NODE_ENV === 'test') : env.VALIDATE_RESPONSES === 'true',
-    schedulerEnabled: env.SCHEDULER_ENABLED === 'true', grpcTls: env.GRPC_TLS === 'true'
+    schedulerEnabled: env.SCHEDULER_ENABLED === 'true', schedulerEveryMs: Number(env.SCHEDULER_EVERY_MS ?? 60_000), schedulerPurgeEveryMs: Number(env.SCHEDULER_PURGE_EVERY_MS ?? 3_600_000), schedulerBatchSize: Number(env.SCHEDULER_BATCH_SIZE ?? 50), schedulerLockLeaseMs: Number(env.SCHEDULER_LOCK_LEASE_MS ?? 55_000), grpcTls: env.GRPC_TLS === 'true'
   };
 }
 

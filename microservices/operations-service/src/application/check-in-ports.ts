@@ -32,7 +32,7 @@ export interface CheckInResult {
 }
 export interface CheckInPass { passengerId: string; segmentId: string; seat: string; barcode: string; barcodeType: 'QR' }
 export interface CheckInStore {
-  find(ownerId: string, bookingId: string): Promise<{ status: string; result: CheckInResult | null } | null>;
+  find(ownerId: string, bookingId: string): Promise<{ status: string; result: CheckInResult | null; eventPublished: boolean } | null>;
   begin(ownerId: string, bookingId: string): Promise<boolean>;
   resume(ownerId: string, bookingId: string): Promise<boolean>;
   savePass(ownerId: string, bookingId: string, pass: CheckInPass): Promise<void>;
@@ -40,4 +40,9 @@ export interface CheckInStore {
   abort(ownerId: string, bookingId: string): Promise<void>;
   restore(ownerId: string, result: CheckInResult): Promise<void>;
   listPasses(ownerId: string, bookingId: string): Promise<CheckInPass[]>;
+  claimStale(now: Date, staleBefore: Date, limit: number): Promise<Array<{ ownerId: string; bookingId: string }>>;
+  releaseRecoveryClaim(ownerId: string, bookingId: string): Promise<void>;
+  markBlocked(ownerId: string, bookingId: string): Promise<void>;
+  listUnpublished(limit: number): Promise<Array<{ ownerId: string; bookingId: string }>>;
+  markEventPublished(ownerId: string, bookingId: string): Promise<void>;
 }

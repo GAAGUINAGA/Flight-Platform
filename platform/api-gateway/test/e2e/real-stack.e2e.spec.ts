@@ -8,6 +8,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { setTimeout as delay } from 'node:timers/promises';
 import Ajv from 'ajv';
+import addFormats from 'ajv-formats';
 import { parse } from 'yaml';
 import request from 'supertest';
 import type { INestApplication } from '@nestjs/common';
@@ -27,6 +28,7 @@ import { PrismaClient as OperationsPrisma } from '../../../../microservices/oper
 import { createOperationsRuntime } from '../../../../microservices/operations-service/src/main';
 import { createOperationsServer } from '../../../../microservices/operations-service/src/infrastructure/grpc/server';
 import { createInventoryServer } from '../../../../microservices/inventory-service/src/infrastructure/grpc/server';
+import { GrpcEventPublisher as InventoryEventPublisher } from '../../../../microservices/inventory-service/src/infrastructure/events/grpc-event-publisher';
 import { createPricingServer, findProtoRoot } from '../../../../microservices/pricing-service/src/infrastructure/grpc/server';
 import { createAncillariesServer } from '../../../../microservices/ancillaries-service/src/infrastructure/grpc/server';
 import { createTicketingServer } from '../../../../microservices/ticketing-service/src/infrastructure/grpc/server';
@@ -45,6 +47,8 @@ import { callGatewayGrpc } from '../../src/grpc-clients';
 import type { GatewayConfig } from '../../src/config';
 import { loadConfig } from '../../src/config';
 import { createGatewayApp } from '../../src/app';
+import { GatewayScheduler } from '../../src/scheduler';
+import { PrismaSchedulerStore } from '../../src/scheduler-store';
 import { createDevToken } from '../../../../infra/scripts/dev-token';
 import { openApiSpecPath } from '../../src/openapi-path';
 
@@ -82,10 +86,12 @@ describeReal('Gateway: composición gRPC real en proceso', () => {
   let operationsRuntime: ReturnType<typeof createOperationsRuntime> | undefined;
   let reservationPricing: GrpcPricingGateway;
   let reservationTicketing: GrpcTicketingGateway;
+  const authorizedPendingPayments = new Set<string>();
+  let scheduler: GatewayScheduler;
   let gatewayLogs = '';
   let restoreGatewayOutput: (() => void) | undefined;
   const spec = parse(readFileSync(openApiSpecPath(), 'utf8')) as { components: { schemas: Record<string, object> } };
-  const ajv = new Ajv({ strict: false });
+  const ajv = new Ajv({ strict: false }); addFormats(ajv);
   const validate = (schema: string, body: unknown) => {
     const check = ajv.compile({ ...spec.components.schemas[schema], components: spec.components });
     expect({ valid: check(body), errors: check.errors }).toEqual({ valid: true, errors: null });
@@ -124,14 +130,17 @@ describeReal('Gateway: composición gRPC real en proceso', () => {
     const reservation = new ReservationPrisma({ datasources: { db: { url: database('reservation') } } }); databases.push(reservation);
     const operations = new OperationsPrisma({ datasources: { db: { url: database('operations') } } }); databases.push(operations); operationsDb = operations;
     reservationDb = reservation; ticketingDb = ticketing;
-    await start(await createInventoryServer({ url: `127.0.0.1:${ports.inventory}`, internalApiKey: key, runtime: { prisma: inventory } }));
+    await start(await createWebhooksServer({ url: `127.0.0.1:${ports.webhooks}`, internalApiKey: key, encryptionKey: 'BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=', prisma: webhooks }));
+    await start(await createInventoryServer({ url: `127.0.0.1:${ports.inventory}`, internalApiKey: key, runtime: { prisma: inventory, events: new InventoryEventPublisher(service('webhooks') as never) } }));
     await start(await createPricingServer({ url: `127.0.0.1:${ports.pricing}`, internalApiKey: key, runtime: { prisma: pricing, inventory: new PricingInventory(service('inventory') as never) } }));
     await start(await createAncillariesServer({ url: `127.0.0.1:${ports.ancillaries}`, internalApiKey: key, runtime: { prisma: ancillaries, pricing: new AncillariesPricing(service('pricing') as never) } }));
     await start(await createTicketingServer({ url: `127.0.0.1:${ports.ticketing}`, internalApiKey: key, prisma: ticketing }));
-    await start(await createWebhooksServer({ url: `127.0.0.1:${ports.webhooks}`, internalApiKey: key, encryptionKey: 'BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=', prisma: webhooks }));
     reservationPricing = new GrpcPricingGateway(factory('pricing'));
     reservationTicketing = new GrpcTicketingGateway(factory('ticketing'));
-    const deps = composeReservation({ store: new PrismaReservationStore(reservation), pricing: reservationPricing, payment: new FakePaymentVerifier(), ancillaries: new GrpcAncillariesGateway(factory('ancillaries')), inventory: new GrpcInventoryGateway(factory('inventory')), ticketing: reservationTicketing, events: new GrpcEventPublisher(factory('webhooks')), operations: new PrismaBaggageOperations(reservation), quotes: new PrismaCancellationQuotes(reservation), clock: new SystemClock(), cutoffHours: 4, holdTtlMinutes: 20, validateResponse: createResponseValidator() });
+    const payment = new FakePaymentVerifier();
+    const verifyPayment = payment.verify.bind(payment);
+    jest.spyOn(payment, 'verify').mockImplementation(async (input) => input.paymentReference.startsWith('pay_pending_') && authorizedPendingPayments.has(input.paymentReference) ? 'AUTHORIZED' : verifyPayment(input));
+    const deps = composeReservation({ store: new PrismaReservationStore(reservation), pricing: reservationPricing, payment, ancillaries: new GrpcAncillariesGateway(factory('ancillaries')), inventory: new GrpcInventoryGateway(factory('inventory')), ticketing: reservationTicketing, events: new GrpcEventPublisher(factory('webhooks')), operations: new PrismaBaggageOperations(reservation), quotes: new PrismaCancellationQuotes(reservation), clock: new SystemClock(), cutoffHours: 4, holdTtlMinutes: 20, validateResponse: createResponseValidator() });
     await start(await createReservationServer({ url: `127.0.0.1:${ports.reservation}`, internalApiKey: key, deps }));
     prior.set('GRPC_TLS', process.env.GRPC_TLS); process.env.GRPC_TLS = 'false';
     operationsRuntime = createOperationsRuntime(key, operations);
@@ -143,7 +152,12 @@ describeReal('Gateway: composición gRPC real en proceso', () => {
     token = (scope, owner = 'gateway-real-owner') => `Bearer ${createDevToken(keys.privateKey, { sub: owner, app_role: 'customer', scope })}`;
     const output = jest.spyOn(process.stdout, 'write').mockImplementation(((chunk: string | Uint8Array) => { gatewayLogs += chunk.toString(); return true; }) as typeof process.stdout.write);
     restoreGatewayOutput = () => output.mockRestore();
-    gateway = await createGatewayApp(loadConfig({ NODE_ENV: 'test', INTERNAL_API_KEY: key, JWT_ISSUERS: JSON.stringify([{ iss: 'flight-platform-dev', aud: 'flight-platform', publicKeyFile: publicKey }]), RATE_LIMIT_PUBLIC_PER_MIN: '1', VALIDATE_RESPONSES: 'true' }));
+    // La composicion usa las bases reales de los servicios; el schema gateway no pertenece a esos roles.
+    // El lease durable se verifica en scheduler.spec.ts y aqui se sustituye solo para invocar la tarea real.
+    jest.spyOn(PrismaSchedulerStore.prototype, 'acquire').mockResolvedValue(true);
+    jest.spyOn(PrismaSchedulerStore.prototype, 'release').mockResolvedValue(undefined);
+    gateway = await createGatewayApp(loadConfig({ NODE_ENV: 'test', INTERNAL_API_KEY: key, JWT_ISSUERS: JSON.stringify([{ iss: 'flight-platform-dev', aud: 'flight-platform', publicKeyFile: publicKey }]), RATE_LIMIT_PUBLIC_PER_MIN: '1', VALIDATE_RESPONSES: 'true', SCHEDULER_ENABLED: 'false' }));
+    scheduler = gateway.get(GatewayScheduler);
     await gateway.listen(0, '127.0.0.1');
   }, 120_000);
 
@@ -272,6 +286,123 @@ describeReal('Gateway: composición gRPC real en proceso', () => {
     }
   }, 60_000);
 
+  it('PLT-I3 / E: pago pendiente devuelve 202 y resume-pending confirma, emite y publica', async () => {
+    const owner = `pending-${randomUUID()}`; const flightId = randomUUID(); const holdIds: string[] = []; const offerIds: string[] = [];
+    const { origin, destination } = randomRoute(); const flightNumber = `FP${randomInt(1000, 10000)}`;
+    const aircraft = `T${randomUUID().replace(/-/g, '').slice(0, 20)}`; const departure = new Date(Date.now() + 5 * 86_400_000);
+    const departureDate = departure.toISOString().slice(0, 10); const server = gateway!.getHttpServer(); const paymentReference = `pay_pending_${randomUUID()}`;
+    try {
+      await webhooksDb.subscription.create({ data: { id: randomUUID(), ownerId: owner, url: 'https://example.test/pending', events: ['booking.confirmed'], encryptedSecret: 'test', active: true } });
+      await inventoryDb.flightInstance.create({ data: { id: flightId, flightNumber, departureIata: origin, arrivalIata: destination, departureAt: departure, arrivalAt: new Date(departure.getTime() + 3_600_000), aircraft, cabins: { create: { cabinClass: 'ECONOMY', sellable: 2 } } } });
+      await pricingDb.fare.create({ data: { flightInstanceId: flightId, cabinClass: 'ECONOMY', brand: 'CLASSIC', baseFareMinor: 10000, taxesMinor: 2000, rules: { changeable: true, refundable: true }, baggage: { checkedBags: 0 }, extraBagMinor: 5000 } });
+      const search = await request(server).post('/flights/v1/search').set('X-Device-Fingerprint', randomUUID()).send({ itineraries: [{ origin, destination, departureDate }], passengers: { adults: 1 } });
+      expect(search.status).toBe(200); validate('SearchResponse', search.body); offerIds.push(...search.body.offers.map((offer: { offerId: string }) => offer.offerId));
+      const offer = search.body.offers.find((item: { itineraries: Array<{ segments: Array<{ flightNumber: string }> }> }) => item.itineraries.some((itinerary) => itinerary.segments.some((segment) => segment.flightNumber === flightNumber)));
+      expect(offer).toBeTruthy(); const itinerary = offer.itineraries[0]; const option = itinerary.pricingOptions.find((item: { cabinClass: string; fareBrand: string }) => item.cabinClass === 'ECONOMY' && item.fareBrand === 'CLASSIC');
+      const hold = await request(server).post('/flights/v1/offers/hold').set('Authorization', token('flights:hold', owner)).set('Idempotency-Key', randomUUID()).send({ offerId: offer.offerId, itinerarySelections: [{ itineraryId: itinerary.itineraryId, cabinClass: option.cabinClass, fareBrand: option.fareBrand }], passengersBreakdown: { adults: 1 } });
+      expect(hold.status).toBe(201); validate('HoldResponse', hold.body); holdIds.push(hold.body.holdId);
+      const booking = await request(server).post('/flights/v1/bookings').set('Authorization', token('flights:book', owner)).set('Idempotency-Key', randomUUID()).send({ holdId: hold.body.holdId, passengers: [{ passengerId: randomUUID(), passengerType: 'ADULT', firstName: 'Test', lastName: 'Pending', documentType: 'PASSPORT', documentNumber: 'PENDING123', nationality: 'EC', documentExpiryDate: '2035-01-01', birthDate: '1990-01-01', gender: 'X', contact: { email: 'pending@example.invalid', phone: '+593999999999' }, assignedSeats: [], extraBaggage: [] }], payment: { paymentReference } });
+      expect(booking.status).toBe(202); validate('BookingDetail', booking.body); expect(booking.body.status).toBe('PENDING_PAYMENT');
+      authorizedPendingPayments.add(paymentReference);
+      await scheduler.run('resume-pending');
+      await expect(reservationDb.reservation.findUnique({ where: { id: booking.body.bookingId } })).resolves.toMatchObject({ status: 'CONFIRMED' });
+      expect(await ticketingDb.ticket.count({ where: { bookingId: booking.body.bookingId, ownerId: owner, status: 'ISSUED' } })).toBeGreaterThan(0);
+      const deliveries = await webhooksDb.delivery.findMany({ where: { subscription: { ownerId: owner } } });
+      const confirmedDelivery = deliveries.find((delivery) => { const payload = delivery.payload as { eventType?: string; data?: { bookingId?: string } }; return payload.eventType === 'booking.confirmed' && payload.data?.bookingId === booking.body.bookingId; });
+      expect(confirmedDelivery).toBeTruthy(); validate('WebhookPayload', confirmedDelivery!.payload);
+    } finally {
+      authorizedPendingPayments.delete(paymentReference);
+      const bookingIds = (await reservationDb.reservation.findMany({ where: { ownerId: owner }, select: { id: true } })).map((row) => row.id);
+      const ownerHolds = await inventoryDb.hold.findMany({ where: { ownerId: owner }, select: { id: true } }); holdIds.push(...ownerHolds.map((row) => row.id));
+      await webhooksDb.subscription.deleteMany({ where: { ownerId: owner } });
+      await ticketingDb.ticket.deleteMany({ where: { bookingId: { in: bookingIds } } });
+      await ticketingDb.issuanceRequest.deleteMany({ where: { bookingId: { in: bookingIds } } });
+      await reservationDb.reservation.deleteMany({ where: { ownerId: owner } });
+      await pricingDb.priceLock.deleteMany({ where: { holdId: { in: holdIds } } });
+      await inventoryDb.reservedInventory.deleteMany({ where: { holdId: { in: holdIds } } });
+      await inventoryDb.hold.deleteMany({ where: { id: { in: holdIds } } });
+      await pricingDb.offer.deleteMany({ where: { id: { in: offerIds } } });
+      await pricingDb.fare.deleteMany({ where: { flightInstanceId: flightId } });
+      await inventoryDb.flightInstance.deleteMany({ where: { id: flightId } });
+    }
+  }, 90_000);
+
+  it('PLT-I4 / E: tres fallos de emisi\u00f3n dejan FAILED, revierten capacidad/asiento y publican booking.failed', async () => {
+    const owner = `issuance-${randomUUID()}`; const flightId = randomUUID(); const holdIds: string[] = []; const offerIds: string[] = [];
+    const { origin, destination } = randomRoute(); const flightNumber = `FP${randomInt(1000, 10000)}`;
+    const aircraft = `T${randomUUID().replace(/-/g, '').slice(0, 20)}`; const departure = new Date(Date.now() + 5 * 86_400_000);
+    const departureDate = departure.toISOString().slice(0, 10); const server = gateway!.getHttpServer();
+    try {
+      await webhooksDb.subscription.create({ data: { id: randomUUID(), ownerId: owner, url: 'https://example.test/issuance', events: ['booking.failed'], encryptedSecret: 'test', active: true } });
+      await inventoryDb.flightInstance.create({ data: { id: flightId, flightNumber, departureIata: origin, arrivalIata: destination, departureAt: departure, arrivalAt: new Date(departure.getTime() + 3_600_000), aircraft, cabins: { create: { cabinClass: 'ECONOMY', sellable: 2 } } } });
+      await pricingDb.fare.create({ data: { flightInstanceId: flightId, cabinClass: 'ECONOMY', brand: 'CLASSIC', baseFareMinor: 10000, taxesMinor: 2000, rules: { changeable: true, refundable: true }, baggage: { checkedBags: 0 }, extraBagMinor: 5000 } });
+      await ancillariesDb.seatLayout.create({ data: { aircraft, cabinClass: 'ECONOMY', seatNumber: '1A', rowNumber: 1, characteristics: ['WINDOW'] } });
+      const capacityBefore = await inventoryDb.cabinInventory.findUniqueOrThrow({ where: { flightInstanceId_cabinClass: { flightInstanceId: flightId, cabinClass: 'ECONOMY' } } });
+      const search = await request(server).post('/flights/v1/search').set('X-Device-Fingerprint', randomUUID()).send({ itineraries: [{ origin, destination, departureDate }], passengers: { adults: 1 } });
+      expect(search.status).toBe(200); validate('SearchResponse', search.body); offerIds.push(...search.body.offers.map((offer: { offerId: string }) => offer.offerId));
+      const offer = search.body.offers.find((item: { itineraries: Array<{ segments: Array<{ flightNumber: string }> }> }) => item.itineraries.some((itinerary) => itinerary.segments.some((segment) => segment.flightNumber === flightNumber)));
+      expect(offer).toBeTruthy(); const itinerary = offer.itineraries[0]; const option = itinerary.pricingOptions.find((item: { cabinClass: string; fareBrand: string }) => item.cabinClass === 'ECONOMY' && item.fareBrand === 'CLASSIC');
+      const hold = await request(server).post('/flights/v1/offers/hold').set('Authorization', token('flights:hold', owner)).set('Idempotency-Key', randomUUID()).send({ offerId: offer.offerId, itinerarySelections: [{ itineraryId: itinerary.itineraryId, cabinClass: option.cabinClass, fareBrand: option.fareBrand }], passengersBreakdown: { adults: 1 } });
+      expect(hold.status).toBe(201); validate('HoldResponse', hold.body); holdIds.push(hold.body.holdId);
+      const issue = reservationTicketing.issueTickets.bind(reservationTicketing);
+      const failingIssuance = jest.spyOn(reservationTicketing, 'issueTickets').mockImplementation(async (input) => (await issue(input)).map((ticket) => ({ ...(ticket as object), status: 'FAILED' })));
+      let bookingId: string | undefined;
+      try {
+        const booking = await request(server).post('/flights/v1/bookings').set('Authorization', token('flights:book', owner)).set('Idempotency-Key', randomUUID()).send({ holdId: hold.body.holdId, passengers: [{ passengerId: randomUUID(), passengerType: 'ADULT', firstName: 'Test', lastName: 'Issuance', documentType: 'PASSPORT', documentNumber: 'ISSUANCE123', nationality: 'EC', documentExpiryDate: '2035-01-01', birthDate: '1990-01-01', gender: 'X', contact: { email: 'issuance@example.invalid', phone: '+593999999999' }, assignedSeats: [{ segmentId: itinerary.segments[0].segmentId, seatNumber: '1A' }], extraBaggage: [] }], payment: { paymentReference: `pay_ok_${randomUUID()}` } });
+        expect(booking.status).toBe(500); validate('ProblemDetails', booking.body);
+        bookingId = (await reservationDb.reservation.findFirstOrThrow({ where: { ownerId: owner }, select: { id: true } })).id;
+        await scheduler.run('resume-pending'); await scheduler.run('resume-pending'); await scheduler.run('resume-pending');
+      } finally { failingIssuance.mockRestore(); }
+      expect(bookingId).toBeDefined();
+      await expect(reservationDb.reservation.findUnique({ where: { id: bookingId! } })).resolves.toMatchObject({ status: 'FAILED' });
+      await expect(ticketingDb.ticket.findMany({ where: { bookingId: bookingId! } })).resolves.toEqual(expect.arrayContaining([expect.objectContaining({ status: 'VOIDED' })]));
+      await expect(ancillariesDb.seatAssignment.findFirst({ where: { bookingId: bookingId! } })).resolves.toMatchObject({ status: 'RELEASED' });
+      await expect(inventoryDb.reservedInventory.findFirst({ where: { reservationId: bookingId!, ownerId: owner } })).resolves.toMatchObject({ releasedAt: expect.any(Date) });
+      await expect(inventoryDb.cabinInventory.findUnique({ where: { flightInstanceId_cabinClass: { flightInstanceId: flightId, cabinClass: 'ECONOMY' } } })).resolves.toMatchObject({ held: capacityBefore.held, sold: capacityBefore.sold });
+      const failedDelivery = (await webhooksDb.delivery.findMany({ where: { subscription: { ownerId: owner } } })).find((delivery) => { const payload = delivery.payload as { eventType?: string; data?: { bookingId?: string; status?: string } }; return payload.eventType === 'booking.failed' && payload.data?.bookingId === bookingId && payload.data?.status === 'FAILED'; });
+      expect(failedDelivery).toBeTruthy(); validate('WebhookPayload', failedDelivery!.payload);
+    } finally {
+      const bookingIds = (await reservationDb.reservation.findMany({ where: { ownerId: owner }, select: { id: true } })).map((row) => row.id);
+      const ownerHolds = await inventoryDb.hold.findMany({ where: { ownerId: owner }, select: { id: true } }); holdIds.push(...ownerHolds.map((row) => row.id));
+      await webhooksDb.subscription.deleteMany({ where: { ownerId: owner } }); await ancillariesDb.baggageAllowance.deleteMany({ where: { ownerId: owner } }); await ancillariesDb.seatAssignment.deleteMany({ where: { ownerId: owner } }); await ancillariesDb.bookingOwner.deleteMany({ where: { ownerId: owner } });
+      await ticketingDb.ticket.deleteMany({ where: { bookingId: { in: bookingIds } } }); await ticketingDb.issuanceRequest.deleteMany({ where: { bookingId: { in: bookingIds } } }); await reservationDb.reservation.deleteMany({ where: { ownerId: owner } });
+      await pricingDb.priceLock.deleteMany({ where: { holdId: { in: holdIds } } }); await inventoryDb.reservedInventory.deleteMany({ where: { holdId: { in: holdIds } } }); await inventoryDb.hold.deleteMany({ where: { id: { in: holdIds } } }); await pricingDb.offer.deleteMany({ where: { id: { in: offerIds } } }); await pricingDb.fare.deleteMany({ where: { flightInstanceId: flightId } }); await ancillariesDb.seatLayout.deleteMany({ where: { aircraft } }); await inventoryDb.flightInstance.deleteMany({ where: { id: flightId } });
+    }
+  }, 90_000);
+
+  it('PLT-I2 / E: hold idempotente se consulta y libera; vencido publica hold.expired y compra devuelve 410', async () => {
+    const owner = `hold-${randomUUID()}`; const flightId = randomUUID(); const holdIds: string[] = []; const offerIds: string[] = [];
+    const { origin, destination } = randomRoute(); const flightNumber = `FP${randomInt(1000, 10000)}`; const departure = new Date(Date.now() + 5 * 86_400_000);
+    const server = gateway!.getHttpServer(); const departureDate = departure.toISOString().slice(0, 10);
+    try {
+      await webhooksDb.subscription.create({ data: { id: randomUUID(), ownerId: owner, url: 'https://example.test/hold', events: ['hold.expired'], encryptedSecret: 'test', active: true } });
+      await inventoryDb.flightInstance.create({ data: { id: flightId, flightNumber, departureIata: origin, arrivalIata: destination, departureAt: departure, arrivalAt: new Date(departure.getTime() + 3_600_000), aircraft: 'HOLD', cabins: { create: { cabinClass: 'ECONOMY', sellable: 3 } } } });
+      await pricingDb.fare.create({ data: { flightInstanceId: flightId, cabinClass: 'ECONOMY', brand: 'CLASSIC', baseFareMinor: 10000, taxesMinor: 2000, rules: { changeable: true, refundable: true }, baggage: { checkedBags: 0 }, extraBagMinor: 5000 } });
+      const search = await request(server).post('/flights/v1/search').set('X-Device-Fingerprint', randomUUID()).send({ itineraries: [{ origin, destination, departureDate }], passengers: { adults: 1 } });
+      expect(search.status).toBe(200); validate('SearchResponse', search.body); offerIds.push(...search.body.offers.map((offer: { offerId: string }) => offer.offerId));
+      const offer = search.body.offers.find((item: { itineraries: Array<{ segments: Array<{ flightNumber: string }> }> }) => item.itineraries.some((itinerary) => itinerary.segments.some((segment) => segment.flightNumber === flightNumber)));
+      expect(offer).toBeTruthy(); const itinerary = offer.itineraries[0]; const option = itinerary.pricingOptions.find((item: { cabinClass: string; fareBrand: string }) => item.cabinClass === 'ECONOMY' && item.fareBrand === 'CLASSIC');
+      const body = { offerId: offer.offerId, itinerarySelections: [{ itineraryId: itinerary.itineraryId, cabinClass: option.cabinClass, fareBrand: option.fareBrand }], passengersBreakdown: { adults: 1 } }; const keyIdempotent = randomUUID();
+      const first = await request(server).post('/flights/v1/offers/hold').set('Authorization', token('flights:hold', owner)).set('Idempotency-Key', keyIdempotent).send(body);
+      const repeated = await request(server).post('/flights/v1/offers/hold').set('Authorization', token('flights:hold', owner)).set('Idempotency-Key', keyIdempotent).send(body);
+      expect(first.status).toBe(201); expect(repeated.status).toBe(201); validate('HoldResponse', first.body); expect(repeated.body.holdId).toBe(first.body.holdId); holdIds.push(first.body.holdId);
+      const queried = await request(server).get(`/flights/v1/offers/hold/${first.body.holdId}`).set('Authorization', token('flights:read', owner));
+      expect(queried.status).toBe(200); validate('HoldStatusResponse', queried.body); expect(queried.body.status).toBe('HELD');
+      const released = await request(server).delete(`/flights/v1/offers/hold/${first.body.holdId}`).set('Authorization', token('flights:hold', owner)); expect(released.status).toBe(204);
+      const expired = await request(server).post('/flights/v1/offers/hold').set('Authorization', token('flights:hold', owner)).set('Idempotency-Key', randomUUID()).send(body);
+      expect(expired.status).toBe(201); holdIds.push(expired.body.holdId); await inventoryDb.hold.update({ where: { id: expired.body.holdId }, data: { expiresAt: new Date(0) } });
+      await scheduler.run('expire-holds');
+      const booking = await request(server).post('/flights/v1/bookings').set('Authorization', token('flights:book', owner)).set('Idempotency-Key', randomUUID()).send({ holdId: expired.body.holdId, passengers: [{ passengerId: randomUUID(), passengerType: 'ADULT', firstName: 'Test', lastName: 'Expired', documentType: 'PASSPORT', documentNumber: 'EXPIRED123', nationality: 'EC', documentExpiryDate: '2035-01-01', birthDate: '1990-01-01', gender: 'X', contact: { email: 'expired@example.invalid', phone: '+593999999999' }, assignedSeats: [], extraBaggage: [] }], payment: { paymentReference: `pay_ok_${randomUUID()}` } });
+      expect(booking.status).toBe(410); expect(booking.body.code).toBe('OFFER_NO_LONGER_AVAILABLE'); validate('ProblemDetails', booking.body);
+      const deliveries = await webhooksDb.delivery.findMany({ where: { subscription: { ownerId: owner } } });
+      const expiredDelivery = deliveries.find((delivery) => (delivery.payload as { eventType?: string }).eventType === 'hold.expired');
+      expect(expiredDelivery).toBeTruthy(); const payload = expiredDelivery!.payload as { data?: unknown }; validate('WebhookPayload', expiredDelivery!.payload); expect(payload.data).toEqual({ holdId: expired.body.holdId, status: 'EXPIRED' });
+    } finally {
+      const ownerHolds = await inventoryDb.hold.findMany({ where: { ownerId: owner }, select: { id: true } }); holdIds.push(...ownerHolds.map((row) => row.id));
+      await webhooksDb.subscription.deleteMany({ where: { ownerId: owner } }); await pricingDb.priceLock.deleteMany({ where: { holdId: { in: holdIds } } }); await inventoryDb.reservedInventory.deleteMany({ where: { holdId: { in: holdIds } } }); await inventoryDb.hold.deleteMany({ where: { id: { in: holdIds } } }); await pricingDb.offer.deleteMany({ where: { id: { in: offerIds } } }); await pricingDb.fare.deleteMany({ where: { flightInstanceId: flightId } }); await inventoryDb.flightInstance.deleteMany({ where: { id: flightId } });
+    }
+  }, 90_000);
+
   const purchaseScenario = async (scenario: 'original' | 'foreign-hold' | 'changed-tickets' | 'cancelled-tickets') => {
     const flightId = randomUUID(); const changedFlightId = randomUUID(); const checkInFlightId = randomUUID(); const owner = `gateway-${randomUUID()}`;
     const startedAt = new Date();
@@ -283,7 +414,7 @@ describeReal('Gateway: composición gRPC real en proceso', () => {
     const offerIds: string[] = []; const holdIds: string[] = [];
     const server = gateway!.getHttpServer();
     try {
-      await webhooksDb.subscription.create({ data: { id: randomUUID(), ownerId: owner, url: 'https://example.test/post-sale', events: ['booking.baggage_added', 'booking.changed', 'booking.cancelled'], encryptedSecret: 'test', active: true } });
+      await webhooksDb.subscription.create({ data: { id: randomUUID(), ownerId: owner, url: 'https://example.test/post-sale', events: ['booking.confirmed', 'booking.baggage_added', 'booking.changed', 'booking.cancelled'], encryptedSecret: 'test', active: true } });
       await inventoryDb.flightInstance.create({ data: { id: flightId, flightNumber: numberA, departureIata: origin, arrivalIata: destination, departureAt: departure, arrivalAt: new Date(departure.getTime() + 3_600_000), aircraft, cabins: { create: { cabinClass: 'ECONOMY', sellable: 9 } } } });
       const changedDeparture = new Date(departure.getTime() + 86_400_000);
       await inventoryDb.flightInstance.create({ data: { id: changedFlightId, flightNumber: numberB, departureIata: origin, arrivalIata: destination, departureAt: changedDeparture, arrivalAt: new Date(changedDeparture.getTime() + 3_600_000), aircraft, cabins: { create: { cabinClass: 'ECONOMY', sellable: 9 } } } });
@@ -374,6 +505,14 @@ describeReal('Gateway: composición gRPC real en proceso', () => {
         expect(booking.status).toBe(paymentKind === 'ok' ? 201 : 202);
         validate('BookingDetail', booking.body);
         expect(booking.body.status).toBe(paymentKind === 'ok' ? 'CONFIRMED' : 'PENDING_PAYMENT');
+        if (paymentKind === 'pending') {
+          authorizedPendingPayments.add(bookingPayload.payment.paymentReference);
+          await scheduler.run('resume-pending');
+          await expect(reservationDb.reservation.findUnique({ where: { id: booking.body.bookingId } })).resolves.toMatchObject({ status: 'CONFIRMED' });
+          expect(await ticketingDb.ticket.count({ where: { bookingId: booking.body.bookingId, ownerId: owner, status: 'ISSUED' } })).toBeGreaterThan(0);
+          const delivered = await webhooksDb.delivery.findMany({ where: { subscription: { ownerId: owner } } });
+          expect(delivered.some((item) => { const payload = item.payload as { eventType?: string; data?: { bookingId?: string } }; return payload.eventType === 'booking.confirmed' && payload.data?.bookingId === booking.body.bookingId; })).toBe(true);
+        }
         if (paymentKind === 'ok') {
           await expect(inventoryDb.hold.findUnique({ where: { id: nextHold.body.holdId } })).resolves.toMatchObject({ status: 'CONSUMED', ownerId: owner });
           await expect(reservationDb.reservation.findUnique({ where: { id: booking.body.bookingId } })).resolves.toMatchObject({ status: 'CONFIRMED', ownerId: owner, holdId: nextHold.body.holdId });
@@ -386,7 +525,8 @@ describeReal('Gateway: composición gRPC real en proceso', () => {
         expect(detail.status).toBe(200); validate('BookingDetail', detail.body);
         const bookings = await request(server).get('/flights/v1/bookings').set('Authorization', token('flights:read', owner));
         expect(bookings.status).toBe(200); validate('BookingListResponse', bookings.body);
-        expect(bookings.body.items).toEqual(expect.arrayContaining([expect.objectContaining({ bookingId: booking.body.bookingId, status: booking.body.status })]));
+        const currentStatus = paymentKind === 'pending' ? 'CONFIRMED' : booking.body.status;
+        expect(bookings.body.items).toEqual(expect.arrayContaining([expect.objectContaining({ bookingId: booking.body.bookingId, status: currentStatus })]));
         const foreignBookings = await request(server).get('/flights/v1/bookings').set('Authorization', token('flights:read', `other-${randomUUID()}`));
         expect(foreignBookings.status).toBe(200); validate('BookingListResponse', foreignBookings.body);
         expect(foreignBookings.body.items).not.toEqual(expect.arrayContaining([expect.objectContaining({ bookingId: booking.body.bookingId })]));

@@ -192,6 +192,7 @@ message WebhookEventData {
   optional string pnr = 2;
   optional string status = 3;
   optional string refund_amount = 4;
+  optional string hold_id = 5;
 }
 message WebhookPayload {
   string event_id = 1;

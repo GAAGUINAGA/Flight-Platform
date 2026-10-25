@@ -149,6 +149,17 @@ describeReal('DCS-REAL: servicios y bases reales en el proceso de prueba', () =>
       expect(await call(operationsRpc, 'checkIn', { bookingId: booking.bookingId }, owner)).toEqual(first);
       expect(await operations.boardingPass.count({ where: { bookingId: booking.bookingId, ownerId: owner } })).toBe(1);
       expect(await webhooks.delivery.count({ where: { subscriptionId: subscription.id } })).toBe(1);
+      await operations.boardingPass.deleteMany({ where: { bookingId: booking.bookingId, ownerId: owner } });
+      await webhooks.delivery.deleteMany({ where: { subscriptionId: subscription.id } });
+      await operations.checkIn.updateMany({ where: { bookingId: booking.bookingId, ownerId: owner }, data: { status: 'IN_PROGRESS', result: null, eventPublished: false, updatedAt: new Date(Date.now() - 11 * 60_000) } });
+      await expect(call(operationsRpc, 'recoverCheckIns', { limit: 10 }, owner, 'customer')).rejects.toMatchObject({ code: status.PERMISSION_DENIED });
+      expect(await call(operationsRpc, 'recoverCheckIns', { limit: 10 }, owner, 'system')).toMatchObject({ recoveredCheckIns: 1, publishedEvents: 0 });
+      expect(await operations.boardingPass.count({ where: { bookingId: booking.bookingId, ownerId: owner } })).toBe(1);
+      expect(await webhooks.delivery.count({ where: { subscriptionId: subscription.id } })).toBe(1);
+      await webhooks.delivery.deleteMany({ where: { subscriptionId: subscription.id } });
+      await operations.checkIn.updateMany({ where: { bookingId: booking.bookingId, ownerId: owner }, data: { eventPublished: false } });
+      expect(await call(operationsRpc, 'recoverCheckIns', { limit: 10 }, owner, 'system')).toMatchObject({ recoveredCheckIns: 0, publishedEvents: 1 });
+      expect(await webhooks.delivery.count({ where: { subscriptionId: subscription.id } })).toBe(1);
       await expect(call(operationsRpc, 'checkIn', { bookingId: booking.bookingId }, `other-${randomUUID()}`)).rejects.toMatchObject({ code: status.NOT_FOUND, details: 'NOT_FOUND' });
       await expect(call(operationsRpc, 'listBoardingPasses', { bookingId: booking.bookingId }, `other-${randomUUID()}`)).rejects.toMatchObject({ code: status.NOT_FOUND, details: 'NOT_FOUND' });
     } finally { await cleanup(owner, searchedOfferIds); }

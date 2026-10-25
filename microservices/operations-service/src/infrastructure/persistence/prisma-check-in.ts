@@ -6,9 +6,9 @@ import { Prisma, PrismaClient } from './prisma-client/client';
 export class PrismaCheckInStore implements CheckInStore {
   constructor(private readonly prisma: PrismaClient) {}
 
-  async find(ownerId: string, bookingId: string): Promise<{ status: string; result: CheckInResult | null } | null> {
+  async find(ownerId: string, bookingId: string): Promise<{ status: string; result: CheckInResult | null; eventPublished: boolean } | null> {
     const row = await this.prisma.checkIn.findFirst({ where: { ownerId, bookingId } });
-    return row ? { status: row.status, result: row.result as unknown as CheckInResult | null } : null;
+    return row ? { status: row.status, result: row.result as unknown as CheckInResult | null, eventPublished: row.eventPublished } : null;
   }
 
   async begin(ownerId: string, bookingId: string): Promise<boolean> {
@@ -50,4 +50,39 @@ export class PrismaCheckInStore implements CheckInStore {
       return { ...row, barcodeType: 'QR' };
     });
   }
+  async claimStale(_now: Date, staleBefore: Date, limit: number): Promise<Array<{ ownerId: string; bookingId: string }>> {
+    const candidates = await this.prisma.checkIn.findMany({ where: { status: 'IN_PROGRESS', updatedAt: { lte: staleBefore } }, orderBy: { updatedAt: 'asc' }, take: limit, select: { ownerId: true, bookingId: true, updatedAt: true } });
+    const claimed: Array<{ ownerId: string; bookingId: string }> = [];
+    for (const candidate of candidates) {
+      const update = await this.prisma.checkIn.updateMany({ where: { ownerId: candidate.ownerId, bookingId: candidate.bookingId, status: 'IN_PROGRESS', updatedAt: { lte: staleBefore } }, data: { status: 'RECOVERING' } });
+      if (update.count === 1) claimed.push({ ownerId: candidate.ownerId, bookingId: candidate.bookingId });
+    }
+    return claimed;
+  }
+  async releaseRecoveryClaim(ownerId: string, bookingId: string): Promise<void> {
+    await this.prisma.$transaction(async (tx) => {
+      const checkIn = await tx.checkIn.findFirst({ where: { ownerId, bookingId, status: 'RECOVERING' }, select: { id: true } });
+      if (!checkIn) return;
+      await tx.boardingPass.deleteMany({ where: { checkInId: checkIn.id } });
+      await tx.checkIn.delete({ where: { id: checkIn.id } });
+    }, transactionOptions());
+  }
+  async markBlocked(ownerId: string, bookingId: string): Promise<void> {
+    await this.prisma.checkIn.upsert({ where: { bookingId }, create: { ownerId, bookingId, status: 'IN_PROGRESS' }, update: { ownerId, status: 'IN_PROGRESS', result: Prisma.DbNull, eventPublished: false } });
+  }
+  async listUnpublished(limit: number): Promise<Array<{ ownerId: string; bookingId: string }>> {
+    const rows = await this.prisma.checkIn.findMany({ where: { result: { not: Prisma.DbNull }, eventPublished: false, status: { in: ['COMPLETED', 'FAILED'] } }, orderBy: { updatedAt: 'asc' }, take: limit, select: { ownerId: true, bookingId: true, result: true } });
+    return rows.filter((row) => {
+      const result = row.result as unknown as CheckInResult;
+      return result.checkedInPassengers?.some((passenger) => passenger.segments.some((segment) => segment.status === 'CHECKED_IN'));
+    }).map(({ ownerId, bookingId }) => ({ ownerId, bookingId }));
+  }
+  async markEventPublished(ownerId: string, bookingId: string): Promise<void> { await this.prisma.checkIn.updateMany({ where: { ownerId, bookingId }, data: { eventPublished: true } }); }
+}
+
+function transactionOptions() {
+  const maxWait = Number(process.env.OPERATIONS_TX_MAX_WAIT_MS ?? '4000');
+  const timeout = Number(process.env.OPERATIONS_TX_TIMEOUT_MS ?? '4000');
+  if (![maxWait, timeout].every((value) => Number.isSafeInteger(value) && value > 0)) throw new Error('Invalid Operations transaction timeout');
+  return { maxWait, timeout };
 }

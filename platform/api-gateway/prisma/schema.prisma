@@ -27,3 +27,11 @@ model IdempotencyKey {
   @@map("idempotency_keys")
   @@schema("gateway")
 }
+
+model SchedulerLock {
+  task        String   @id
+  lockedUntil DateTime @map("locked_until")
+
+  @@map("scheduler_locks")
+  @@schema("gateway")
+}

@@ -65,7 +65,7 @@ jobs:
         env:
           SERVICE: ${{ inputs.service }}
       - run: ${{ inputs.test_command }}
-      - run: npm audit --audit-level=high
+      - run: npm run audit:policy
       - uses: google-github-actions/auth@v2
         if: github.ref == 'refs/heads/main'
         with:
