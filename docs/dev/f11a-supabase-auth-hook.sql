@@ -9,9 +9,11 @@ declare
   app_role text := claims->'app_metadata'->>'app_role';
   scopes text := 'flights:read flights:hold flights:book flights:cancel';
 begin
-  -- Solo app_metadata, controlada por el administrador, puede conceder admin.
+  -- Solo app_metadata, controlada por el administrador, puede conceder admin o partner.
   if app_role = 'admin' then
     scopes := scopes || ' flights:webhooks flights:admin';
+  elsif app_role = 'partner' then
+    scopes := scopes || ' flights:webhooks';
   else
     app_role := 'customer';
   end if;

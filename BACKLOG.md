@@ -104,3 +104,7 @@
 - render-journeys.cjs solo comprueba CORS con origen permitido si existe SMOKE_CORS_ALLOWED_ORIGIN; hacerlo obligatorio o tomarlo de la configuración.
 - Matriz PLT-SEC-03: las celdas de éxito de OP-05, OP-10, OP-12, OP-14 y OP-17 no releen el estado guardado, y las celdas 401 y 403 no comprueban ausencia de efectos (la prueba de recurso ajeno sí).
 - La negativa de ticketing a arrancar con TICKETING_FAIL_MODE depende de que NODE_ENV sea exactamente "production" (lo fija el Dockerfile).
+
+## Observaciones de docs/audit/audits/F11/audit-15.md
+- render-journeys.cjs acepta hold.expired comprobando eventType, data.holdId y la firma, pero no valida el cuerpo completo contra WebhookPayload (eventId, occurredAt, apiVersion).
+- La firma real del despachador de webhooks solo se verifica contra Render; en local la calcula la propia prueba.

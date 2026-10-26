@@ -24,7 +24,7 @@ puede cambiar.
 |---|---|---|---|
 | `anonymous` | Sin token | — | Buscar, ver el mapa de asientos y consultar el estado de un vuelo |
 | `customer` | Supabase Auth (Authorization Code + PKCE) | `flights:read`, `flights:hold`, `flights:book`, `flights:cancel` | Holds, reservas, postventa, tickets y check-in **propios** |
-| `partner` | Token client credentials de un emisor B2B registrado en `JWT_ISSUERS` | los de `customer` + `flights:webhooks` | Lo mismo sobre recursos de su `sub`; gestionar sus webhooks |
+| `partner` | Cuenta de Supabase con `app_metadata.app_role = partner` (**la cuenta con la que se integra Booking**) | los de `customer` + `flights:webhooks` | Lo mismo sobre recursos de su `sub`; gestionar sus webhooks. Sin acceso a `/admin/*` (403) |
 | `admin` | `app_metadata.app_role = admin` en Supabase | los de `customer` + `flights:webhooks` + `flights:admin` | Lo anterior + rutas `/admin/*`. **No** ve reservas ajenas |
 
 Reglas que conviene conocer:
@@ -32,11 +32,11 @@ Reglas que conviene conocer:
 - El rol sale del claim `app_role` y los scopes del claim `scope` (separados por espacio). Si el token no trae `app_role`, se usa
   el rol por defecto del emisor (`role` en su entrada de `JWT_ISSUERS`; `customer` si no hay).
 - El rol decide además del scope: un `customer` con el scope `flights:webhooks` o `flights:admin` forjado sigue recibiendo 403.
-- **Estado actual del despliegue:** en Render solo está registrado el emisor de Supabase. Los emisores de desarrollo
-  (`publicKeyFile`) se rechazan al arrancar con `NODE_ENV=production`. Por tanto, hoy los webhooks y las rutas `/admin/*` las
-  usa un `admin` de Supabase. Para integrar a Booking como `partner`, el operador debe añadir una entrada a `JWT_ISSUERS`
-  con el `iss`, `aud` y `jwksUri` de su Authorization Server y `role: "partner"`; sus tokens deben traer `scope` con los
-  valores de la tabla.
+- **Booking se integra con una cuenta `partner` de Supabase.** En Render solo está registrado el emisor de Supabase (los
+  emisores de desarrollo, `publicKeyFile`, se rechazan al arrancar con `NODE_ENV=production`) y su hook de tokens
+  (`docs/dev/f11a-supabase-auth-hook.sql`) emite el rol `partner` cuando `app_metadata.app_role = partner`. Un `customer` de
+  Supabase **no puede** suscribirse a webhooks (403) y un `admin` solo recibe los eventos de sus propios recursos. Cómo crear
+  la cuenta: `docs/dev/f11a-supabase-auth.md`, «Cuenta partner».
 - Sin token, token inválido o expirado: **401**. Rol o scope insuficiente: **403**. Ambos con `code: VALIDATION_FAILED`.
 
 ## 3. Cabeceras y convenciones
@@ -135,6 +135,9 @@ con lo autorizado (precio bloqueado + equipaje extra × precio por maleta). Las 
 - La URL debe ser `https` y resolver a una dirección pública: se rechazan `localhost`, redes privadas, loopback y link-local, también
   tras resolver el DNS.
 - Guarda tu `secret`: la API solo lo devuelve enmascarado. Las suscripciones son por `sub`; cada uno ve solo las suyas.
+- **Solo recibes eventos de los recursos creados con la misma cuenta** que la suscripción (mismo `sub`). Crea los holds y las
+  reservas y registra el webhook con la cuenta `partner` de Booking; los eventos de recursos de otra cuenta (por ejemplo, de un
+  `customer` de Supabase) no se te entregan. Un `customer` no puede registrar webhooks.
 - Eventos: `booking.confirmed`, `booking.failed`, `booking.changed`, `booking.cancelled`, `booking.baggage_added`, `hold.expired`,
   `flight.schedule_changed`, `flight.cancelled`, `booking.ticket_issuing`, `booking.ticket_issued`, `booking.ticket_failed`,
   `booking.checked_in`.

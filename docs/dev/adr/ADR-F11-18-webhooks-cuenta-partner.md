@@ -1,0 +1,13 @@
+# ADR-F11-18 — Booking se integra con una cuenta partner de Supabase
+- Estado: Aceptado · Fecha: 2026-10-25 · Fase/Tarea: F11d-2 (ajuste final) / PLT-J1, PLT-J3
+## Contexto
+Al ejecutar `render-journeys.cjs` contra Render, J2 registraba el webhook con el token de `admin` y creaba el hold con el de `customer`. Webhooks entrega cada evento solo a suscripciones del mismo dueño (`sub`), así que `hold.expired` nunca se entregó (hold `EXPIRED`, cero entregas). En producción nadie podía recibir eventos de compras: el `customer` no puede suscribirse, el `admin` solo recibe los de sus propios recursos y el hook de Supabase solo conocía `customer` y `admin`.
+## Decisión
+- Booking se integra con una cuenta **partner** de Supabase. El hook `public.flight_platform_access_token_hook` concede, con `app_metadata.app_role = 'partner'`, los scopes `flights:read flights:hold flights:book flights:cancel flights:webhooks` (sin `flights:admin`). La definición versionada está en `docs/dev/f11a-supabase-auth-hook.sql`; crear la cuenta se documenta en `docs/dev/f11a-supabase-auth.md`.
+- El Gateway no cambia: ya toma el rol del claim `app_role` de cualquier emisor JWKS. Se demuestra con un emisor JWKS local de forma Supabase (`PLT-SEC-03 / S`): el partner gestiona webhooks, crea holds y reservas propios (su `sub` es el dueño), no ve los ajenos (404) y recibe 403 en `/admin/*` incluso con el scope `flights:admin` forjado.
+- Los webhooks solo llevan los eventos de los recursos creados con la misma cuenta; un `customer` de Supabase no recibe webhooks. Queda dicho en `docs/booking-integration.md`.
+- `render-journeys.cjs`: J2 crea el hold y registra el webhook con el mismo token (`SUPABASE_PARTNER_TOKEN`). Cada token se exige solo si algún recorrido pedido lo usa (`SMOKE_JOURNEYS`).
+## Consecuencias
+La cuenta partner es la identidad de Booking en producción. Los tokens ya emitidos conservan sus claims hasta renovarse. Sustituye lo que ADR-F11-17 decía de que J2 corre como `admin` y de que el script no puede comprobar la entrega.
+## Verificación de la entrega en J2
+La API pública (OpenAPI y proto de Webhooks) no expone entregas. Por decisión del humano, J2 consulta un receptor externo con API (p. ej. webhook.site): `SMOKE_WEBHOOK_URL` es donde se registra el webhook y `SMOKE_RECEIVER_API_URL` lista lo recibido. J2 espera un `hold.expired` con el `holdId` del hold vencido y la firma `X-Flight-Signature` válida para el secreto que el propio script fija; sin secretos de Booking ni acceso a la base. En la prueba local un receptor simulado lista las entregas que Webhooks creó para la suscripción del partner.

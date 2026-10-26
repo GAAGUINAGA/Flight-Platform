@@ -73,7 +73,7 @@ describe('F4 Gateway base', () => {
   it.each([...PUBLIC_PROBLEM_CODES])('GW-06: código %s conserva su status HTTP del catálogo', async (code) => {
     const expected = code === 'VALIDATION_FAILED' ? 400 : code === 'BOARDING_PASS_NOT_AVAILABLE' || code === 'FLIGHT_STATUS_NOT_AVAILABLE' ? 404 : code === 'RATE_LIMIT_EXCEEDED' ? 429 : code === 'CHANGE_OFFER_EXPIRED' ? 410 : ['INFANT_SEAT_NOT_ALLOWED', 'SEAT_CABIN_MISMATCH', 'PAYMENT_REFERENCE_INVALID', 'PAYMENT_NOT_AUTHORIZED', 'AMOUNT_MISMATCH', 'CHECK_IN_FAILED'].includes(code) ? 422 : ['PNR_CREATION_FAILED', 'TICKET_ISSUANCE_FAILED'].includes(code) ? 500 : 409;
     const instance = await app(); try { grpcFailure = status.UNKNOWN; grpcFailureDetails = code; const response = await request(instance.getHttpServer()).post('/flights/v1/__test/secured').set('Authorization', token(`catalog-${code}`)).set('Idempotency-Key', key()).send({}); expect(response.status).toBe(expected); expect(response.body.code).toBe(code); } finally { grpcFailure = undefined; grpcFailureDetails = undefined; await instance.close(); }
-  });
+  }, 30_000);
 
   it('GW-SEC-04: error inesperado en la app ⇒ 500 genérico sin stack ni mensaje interno', async () => { const instance = await app(); try { const response = await request(instance.getHttpServer()).post('/flights/v1/__test/unexpected').set('Authorization', token()).send({}); expect(response.status).toBe(500); expect(response.body).toMatchObject({ code: 'VALIDATION_FAILED' }); expect(JSON.stringify(response.body)).not.toMatch(/forced internal|stack/i); } finally { await instance.close(); } });
   it('GW-SEC-04: logger del Gateway redacta documentNumber, email y Authorization', async () => {

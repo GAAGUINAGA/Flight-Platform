@@ -3,7 +3,7 @@ import { createServer as createHttpServer, type Server as HttpServer } from 'nod
 import { exportJWK, generateKeyPair, SignJWT } from 'jose';
 import process from 'node:process';
 import { join } from 'node:path';
-import { generateKeyPairSync, randomInt, randomUUID } from 'node:crypto';
+import { createHmac, generateKeyPairSync, randomInt, randomUUID } from 'node:crypto';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { execFile } from 'node:child_process';
@@ -415,7 +415,7 @@ describeReal('Gateway: composición gRPC real en proceso', () => {
     const aircraft = `T${randomUUID().replace(/-/g, '').slice(0, 20)}`;
     const departure = new Date(Date.now() + 5 * 86_400_000); departure.setUTCHours(14, randomInt(0, 60), randomInt(0, 60), 0);
     const departureDate = departure.toISOString().slice(0, 10);
-    const offerIds: string[] = []; const holdIds: string[] = []; const journeyOwners: string[] = [];
+    const offerIds: string[] = []; const holdIds: string[] = []; const journeyOwners: string[] = []; let receiver: HttpServer | undefined;
     const server = gateway!.getHttpServer();
     try {
       await webhooksDb.subscription.create({ data: { id: randomUUID(), ownerId: owner, url: 'https://example.test/post-sale', events: ['booking.confirmed', 'booking.baggage_added', 'booking.changed', 'booking.cancelled'], encryptedSecret: 'test', active: true } });
@@ -667,23 +667,33 @@ describeReal('Gateway: composición gRPC real en proceso', () => {
       const postSaleSmoke = await promisify(execFile)(process.execPath, [join(process.cwd(), 'platform/api-gateway/scripts/render-f11b-smoke.cjs')], { env: { BASE_URL: `http://127.0.0.1:${address.port}`, SUPABASE_CUSTOMER_TOKEN: token('flights:read flights:hold flights:book flights:cancel', owner).slice(7), SMOKE_ORIGIN: origin, SMOKE_DESTINATION: destination, SMOKE_POSTSALE_FLIGHT_NUMBER: numberA, SMOKE_CHECKIN_FLIGHT_NUMBER: numberC }, timeout: 60000 });
       expect(postSaleSmoke.stdout.trim().split(/\r?\n/)).toEqual(['OK   J5 búsqueda', 'OK   J5 hold', 'OK   J5 reserva', 'OK   J5 equipaje opciones', 'OK   J5 equipaje', 'OK   J5 buscar cambio', 'OK   J5 cambio', 'OK   J5 cotización', 'OK   J5 cancelación', 'OK   J6 búsqueda', 'OK   J6 mapa', 'OK   J6 hold', 'OK   J6 reserva', 'OK   J6 check-in', 'OK   J6 pases']);
       // PLT-J3: el script de recorridos de Render (J1, J2, J5, J6, J7) contra el Gateway local. Un sub propio para cada identidad.
-      journeyOwners.push(`journey-${randomUUID()}`, `journey-admin-${randomUUID()}`);
-      const journeys = promisify(execFile)(process.execPath, [join(process.cwd(), 'platform/api-gateway/scripts/render-journeys.cjs')], {
-        env: { BASE_URL: `http://127.0.0.1:${address.port}`, SUPABASE_CUSTOMER_TOKEN: token('flights:read flights:hold flights:book flights:cancel', journeyOwners[0]).slice(7), SUPABASE_ADMIN_TOKEN: token('flights:read flights:hold flights:book flights:cancel flights:webhooks flights:admin', journeyOwners[1], 'admin').slice(7), SMOKE_ORIGIN: origin, SMOKE_DESTINATION: destination, SMOKE_POSTSALE_FLIGHT_NUMBER: numberA, SMOKE_CHECKIN_FLIGHT_NUMBER: numberC, SMOKE_WEBHOOK_URL: 'https://93.184.216.34/journeys', SMOKE_POLL_SECONDS: '1', SMOKE_J2_EVENT_GRACE_SECONDS: '6', SMOKE_RETRY_SECONDS: '1' }, timeout: 240_000
+      journeyOwners.push(`journey-${randomUUID()}`, `journey-admin-${randomUUID()}`, `journey-partner-${randomUUID()}`);
+      // Receptor simulado: el endpoint HTTPS público de un receptor real no existe en local, así que lista (con la forma de webhook.site) las entregas que Webhooks creó para la suscripción del partner, firmadas con el secreto que fija esta prueba.
+      const journeySecret = `journey-${randomUUID()}`;
+      receiver = createHttpServer((_req, res) => {
+        webhooksDb.delivery.findMany({ where: { subscription: { ownerId: journeyOwners[2] } } }).then((rows) => {
+          const data = rows.map((row) => { const content = JSON.stringify(row.payload); const t = Math.floor(Date.now() / 1000); return { content, headers: { 'x-flight-signature': [`t=${t},v1=${createHmac('sha256', journeySecret).update(`${t}.${content}`).digest('hex')}`] } }; });
+          res.setHeader('content-type', 'application/json'); res.end(JSON.stringify({ data }));
+        }, () => { res.statusCode = 500; res.end(); });
       });
-      // El hold TTL real es de 20 min: el hold a vencer del admin se adelanta en la base y el vencimiento por lectura publica hold.expired.
+      await new Promise<void>((resolve) => receiver!.listen(0, '127.0.0.1', resolve));
+      const receiverPort = (receiver.address() as { port: number }).port;
+      const journeys = promisify(execFile)(process.execPath, [join(process.cwd(), 'platform/api-gateway/scripts/render-journeys.cjs')], {
+        env: { BASE_URL: `http://127.0.0.1:${address.port}`, SUPABASE_CUSTOMER_TOKEN: token('flights:read flights:hold flights:book flights:cancel', journeyOwners[0]).slice(7), SUPABASE_ADMIN_TOKEN: token('flights:read flights:hold flights:book flights:cancel flights:webhooks flights:admin', journeyOwners[1], 'admin').slice(7), SUPABASE_PARTNER_TOKEN: token('flights:read flights:hold flights:book flights:cancel flights:webhooks', journeyOwners[2], 'partner').slice(7), SMOKE_ORIGIN: origin, SMOKE_DESTINATION: destination, SMOKE_POSTSALE_FLIGHT_NUMBER: numberA, SMOKE_CHECKIN_FLIGHT_NUMBER: numberC, SMOKE_WEBHOOK_URL: 'https://93.184.216.34/journeys', SMOKE_RECEIVER_API_URL: `http://127.0.0.1:${receiverPort}/requests`, SMOKE_WEBHOOK_SECRET: journeySecret, SMOKE_POLL_SECONDS: '1', SMOKE_J2_EVENT_GRACE_SECONDS: '20', SMOKE_RETRY_SECONDS: '1' }, timeout: 240_000
+      });
+      // El hold TTL real es de 20 min: el hold a vencer del partner se adelanta en la base y el vencimiento por lectura publica hold.expired.
       let expiring: string | undefined; let finished = false;
       const outcome = journeys.then((value) => ({ value }), (error: { stdout?: string; stderr?: string }) => ({ error })).finally(() => { finished = true; });
       for (let attempt = 0; attempt < 600 && !expiring && !finished; attempt++) {
         // El primer hold del recorrido se libera; el que vence es el segundo.
-        const adminHolds = await inventoryDb.hold.findMany({ where: { ownerId: journeyOwners[1] } }); const target = adminHolds.length >= 2 ? adminHolds.find((item) => item.status === 'HELD') : undefined;
+        const partnerHolds = await inventoryDb.hold.findMany({ where: { ownerId: journeyOwners[2] } }); const target = partnerHolds.length >= 2 ? partnerHolds.find((item) => item.status === 'HELD') : undefined;
         if (target) { expiring = target.id; await inventoryDb.hold.update({ where: { id: target.id }, data: { expiresAt: new Date(0) } }); await scheduler.run('expire-holds'); } else await delay(300);
       }
       const failed = (error: { stdout?: string; stderr?: string }) => new Error(`render-journeys.cjs falló\n${error.stdout ?? ''}\n${error.stderr ?? ''}`);
       if (!expiring) { const settled = await outcome; throw 'error' in settled ? failed(settled.error) : new Error('El script terminó sin crear el hold a vencer de J2'); }
       let expiredEvent = false;
       for (let attempt = 0; attempt < 40 && !expiredEvent; attempt++) {
-        const rows = await webhooksDb.delivery.findMany({ where: { subscription: { ownerId: journeyOwners[1] } } });
+        const rows = await webhooksDb.delivery.findMany({ where: { subscription: { ownerId: journeyOwners[2] } } });
         expiredEvent = rows.some((row) => { const payload = row.payload as { eventType?: string; data?: { holdId?: string } }; return payload.eventType === 'hold.expired' && payload.data?.holdId === expiring; });
         if (!expiredEvent) await delay(250);
       }
@@ -692,9 +702,10 @@ describeReal('Gateway: composición gRPC real en proceso', () => {
       const journeyRun = settled.value;
       const lines = journeyRun.stdout.trim().split(/\r?\n/);
       expect(lines.filter((line) => line.startsWith('==== '))).toEqual(['==== J1 OK', '==== J2 OK', '==== J5 OK', '==== J6 OK', '==== J7 OK']);
-      expect(lines).toEqual(expect.arrayContaining(['OK   precalentamiento Gateway', 'OK   precalentamiento servicios', 'OK   J2 hold idempotente', 'OK   J2 hold vencido', 'OK   J2 reserva con hold vencido', 'OK   J7 429 en /search con Retry-After', 'OK   J7 CORS origen no permitido', 'RESUMEN J1=OK J2=OK J5=OK J6=OK J7=OK']));
+      expect(lines).toEqual(expect.arrayContaining(['OK   precalentamiento Gateway', 'OK   precalentamiento servicios', 'OK   J2 hold idempotente', 'OK   J2 hold vencido', 'OK   J2 reserva con hold vencido', 'OK   J2 hold.expired entregado con firma válida y data.holdId', 'OK   J7 429 en /search con Retry-After', 'OK   J7 CORS origen no permitido', 'RESUMEN J1=OK J2=OK J5=OK J6=OK J7=OK']));
       expect(journeyRun.stdout).not.toContain(journeyOwners[0]);
     } finally {
+      await new Promise<void>((resolve) => (receiver ? receiver.close(() => resolve()) : resolve()));
       await cleanupOwnerData({ inventory: inventoryDb, pricing: pricingDb, ancillaries: ancillariesDb, ticketing: ticketingDb, webhooks: webhooksDb, reservation: reservationDb, operations: operationsDb }, journeyOwners);
       const ownerHolds = await inventoryDb.hold.findMany({ where: { ownerId: owner }, select: { id: true } });
       await webhooksDb.subscription.deleteMany({ where: { ownerId: owner } });
@@ -1041,6 +1052,8 @@ describeReal('Gateway: composición gRPC real en proceso', () => {
     const aircraft = `T${randomUUID().replace(/-/g, '').slice(0, 20)}`; const flightId = randomUUID();
     const offerIds: string[] = [];
     let issuerServer: HttpServer | undefined; let secured: INestApplication | undefined; let bookingId = '';
+    let heldOffer: object = {};
+    const partnerOwners: string[] = [];
     let sign: (claims: { sub: string; app_role: string; scope: string }, options?: { key?: SigningKey; iss?: string }) => Promise<string>;
     let wrongKey: SigningKey;
 
@@ -1064,6 +1077,7 @@ describeReal('Gateway: composición gRPC real en proceso', () => {
       const search = await request(server).post('/flights/v1/search').set('X-Device-Fingerprint', randomUUID()).send({ itineraries: [{ origin, destination, departureDate: date }], passengers: { adults: 1 } });
       offerIds.push(...search.body.offers.map((item: { offerId: string }) => item.offerId));
       const offer = search.body.offers[0]; const itinerary = offer.itineraries[0]; const segment = itinerary.segments[0]; const option = itinerary.pricingOptions[0];
+      heldOffer = { offerId: offer.offerId, itinerarySelections: [{ itineraryId: itinerary.itineraryId, cabinClass: option.cabinClass, fareBrand: option.fareBrand }], passengersBreakdown: { adults: 1 } };
       const hold = await request(server).post('/flights/v1/offers/hold').set('Authorization', token('flights:hold', owner)).set('Idempotency-Key', randomUUID()).send({ offerId: offer.offerId, itinerarySelections: [{ itineraryId: itinerary.itineraryId, cabinClass: option.cabinClass, fareBrand: option.fareBrand }], passengersBreakdown: { adults: 1 } });
       const booking = await request(server).post('/flights/v1/bookings').set('Authorization', token('flights:book', owner)).set('Idempotency-Key', randomUUID()).send({ holdId: hold.body.holdId, passengers: [{ passengerId: randomUUID(), passengerType: 'ADULT', firstName: 'Test', lastName: 'Passenger', documentType: 'PASSPORT', documentNumber: 'TEST123', nationality: 'EC', documentExpiryDate: '2035-01-01', birthDate: '1990-01-01', gender: 'X', contact: { email: 'test@example.invalid', phone: '+593999999999' }, assignedSeats: [{ segmentId: segment.segmentId, seatNumber: '1A' }], extraBaggage: [] }], payment: { paymentReference: `pay_ok_${randomUUID()}` } });
       if (booking.status !== 201) throw new Error(JSON.stringify(booking.body));
@@ -1073,6 +1087,7 @@ describeReal('Gateway: composición gRPC real en proceso', () => {
     let partnerToken: (sub: string, scope?: string) => string; let cleanupKeys: () => void = () => undefined;
     afterAll(async () => {
       await secured?.close(); await new Promise<void>((resolve) => issuerServer ? issuerServer.close(() => resolve()) : resolve()); cleanupKeys();
+      await cleanupOwnerData({ inventory: inventoryDb, pricing: pricingDb, ancillaries: ancillariesDb, ticketing: ticketingDb, webhooks: webhooksDb, reservation: reservationDb, operations: operationsDb }, partnerOwners);
       const rows = await reservationDb.reservation.findMany({ where: { ownerId: owner }, select: { id: true } }); const ids = rows.map((row) => row.id);
       const holds = await inventoryDb.hold.findMany({ where: { ownerId: owner }, select: { id: true } });
       await webhooksDb.subscription.deleteMany({ where: { ownerId: { startsWith: 'sec-' } } });
@@ -1106,6 +1121,38 @@ describeReal('Gateway: composición gRPC real en proceso', () => {
       expect((await request(secured!.getHttpServer()).get('/flights/v1/webhooks').set('Authorization', authorization)).status).toBe(200);
       const foreign = await request(secured!.getHttpServer()).get(`/flights/v1/bookings/${bookingId}`).set('Authorization', authorization);
       expect(foreign.status).toBe(404); validate('ProblemDetails', foreign.body);
+    });
+
+    const partnerScopes = 'flights:read flights:hold flights:book flights:cancel flights:webhooks';
+    it('PLT-SEC-03 / S: el partner de un emisor JWKS (forma Supabase) gestiona sus webhooks', async () => {
+      const authorization = await bearer({ sub: `sec-partner-${randomUUID()}`, app_role: 'partner', scope: partnerScopes });
+      const created = await request(secured!.getHttpServer()).post('/flights/v1/webhooks').set('Authorization', authorization).send({ url: 'https://93.184.216.34/partner', events: ['hold.expired'], secret: `sec-${randomUUID()}` });
+      expect(created.status).toBe(201); validate('WebhookSubscription', created.body);
+      const listed = await request(secured!.getHttpServer()).get('/flights/v1/webhooks').set('Authorization', authorization);
+      expect(listed.status).toBe(200); expect(listed.body.map((item: { id: string }) => item.id)).toEqual([created.body.id]);
+      expect((await request(secured!.getHttpServer()).delete(`/flights/v1/webhooks/${created.body.id}`).set('Authorization', authorization)).status).toBe(204);
+    });
+
+    it('PLT-SEC-03 / S: el partner crea holds y reservas propios (su sub es el dueño) y no ve los ajenos (404)', async () => {
+      const sub = `sec-partner-${randomUUID()}`; partnerOwners.push(sub); const authorization = await bearer({ sub, app_role: 'partner', scope: partnerScopes }); const server = secured!.getHttpServer();
+      const hold = await request(server).post('/flights/v1/offers/hold').set('Authorization', authorization).set('Idempotency-Key', randomUUID()).send(heldOffer);
+      expect(hold.status).toBe(201); validate('HoldResponse', hold.body);
+      await expect(inventoryDb.hold.findUnique({ where: { id: hold.body.holdId } })).resolves.toMatchObject({ ownerId: sub });
+      const booking = await request(server).post('/flights/v1/bookings').set('Authorization', authorization).set('Idempotency-Key', randomUUID()).send({ holdId: hold.body.holdId, passengers: [{ passengerId: randomUUID(), passengerType: 'ADULT', firstName: 'Test', lastName: 'Partner', documentType: 'PASSPORT', documentNumber: 'TEST123', nationality: 'EC', documentExpiryDate: '2035-01-01', birthDate: '1990-01-01', gender: 'X', contact: { email: 'test@example.invalid', phone: '+593999999999' }, assignedSeats: [], extraBaggage: [] }], payment: { paymentReference: `pay_ok_${randomUUID()}` } });
+      expect(booking.status).toBe(201); validate('BookingDetail', booking.body);
+      await expect(reservationDb.reservation.findUnique({ where: { id: booking.body.bookingId } })).resolves.toMatchObject({ ownerId: sub });
+      expect((await request(server).get(`/flights/v1/bookings/${booking.body.bookingId}`).set('Authorization', authorization)).status).toBe(200);
+      const foreign = await request(server).get(`/flights/v1/bookings/${bookingId}`).set('Authorization', authorization);
+      expect(foreign.status).toBe(404); validate('ProblemDetails', foreign.body);
+      const own = await request(server).get('/flights/v1/bookings').set('Authorization', authorization);
+      expect(own.status).toBe(200); expect(JSON.stringify(own.body)).not.toContain(bookingId);
+    }, 30_000);
+
+    it.each(adminRoutes)('PLT-SEC-03 / S: el partner NO accede a %s %s (403), ni con el scope flights:admin', async (method, path, body) => {
+      for (const scope of [partnerScopes, `${partnerScopes} flights:admin`]) {
+        const response = await request(secured!.getHttpServer())[method](path).set('Authorization', await bearer({ sub: `sec-partner-${randomUUID()}`, app_role: 'partner', scope })).send(body());
+        expect(response.status).toBe(403); validate('ProblemDetails', response.body);
+      }
     });
 
     it('PLT-SEC-01 / S: el customer no gestiona webhooks (403)', async () => {

@@ -37,15 +37,19 @@ Variables de entorno (en tu máquina; el script nunca las imprime):
 | Variable | Obligatoria | Uso |
 |---|---|---|
 | `BASE_URL` | sí | Origen del Gateway, sin `/flights/v1` (por ejemplo `https://flight-gateway-o37n.onrender.com`) |
-| `SUPABASE_CUSTOMER_TOKEN` | sí | Access token de un `customer` con `flights:read flights:hold flights:book flights:cancel` |
-| `SUPABASE_ADMIN_TOKEN` | sí | Access token de un `admin` (también vale `SMOKE_ADMIN_TOKEN`) |
+| `SUPABASE_CUSTOMER_TOKEN` | J1, J5, J6, J7 | Access token de un `customer` con `flights:read flights:hold flights:book flights:cancel` |
+| `SUPABASE_PARTNER_TOKEN` | J2 | Access token de la cuenta `partner` (la de Booking): crea el hold y registra el webhook, porque Webhooks entrega los eventos solo a suscripciones del mismo dueño |
+| `SUPABASE_ADMIN_TOKEN` | J7 | Access token de un `admin` (también vale `SMOKE_ADMIN_TOKEN`) |
 | `SMOKE_ORIGIN`, `SMOKE_DESTINATION` | no | Ruta de la búsqueda; por defecto `UIO` y `GYE` |
 | `SMOKE_POSTSALE_FLIGHT_NUMBER`, `SMOKE_CHECKIN_FLIGHT_NUMBER` | no | Fija el vuelo de J5 y de J6 |
-| `SMOKE_WEBHOOK_URL` | no | URL HTTPS pública de un receptor (p. ej. webhook.site) para ver `hold.expired` en J2 |
+| `SMOKE_WEBHOOK_URL` | J2 | URL HTTPS pública de un receptor (p. ej. un token de webhook.site) donde se registra el webhook `hold.expired` |
+| `SMOKE_RECEIVER_API_URL` | J2 | URL de la API de ese receptor que lista lo recibido como `{ "data": [{ "content", "headers" }] }` (webhook.site: `https://webhook.site/token/<uuid>/requests?sorting=newest&per_page=50`) |
+| `SMOKE_RECEIVER_API_KEY` | no | Clave de la API del receptor, si la exige (cabecera `Api-Key`); no se imprime |
+| `SMOKE_WEBHOOK_SECRET` | no | Secreto de la suscripción; por defecto el script genera uno aleatorio |
 | `SMOKE_CORS_ALLOWED_ORIGIN` | no | Un origen de `CORS_ORIGINS` para comprobar también el caso permitido |
-| `SMOKE_JOURNEYS` | no | Subconjunto, por ejemplo `J1,J7`. Por defecto `J1,J2,J5,J6,J7` |
+| `SMOKE_JOURNEYS` | no | Subconjunto, por ejemplo `J2` o `J1,J7`; solo se exigen los tokens de los recorridos pedidos. Por defecto `J1,J2,J5,J6,J7` |
 | `SMOKE_J2_MAX_WAIT_MINUTES` | no | Espera máxima del vencimiento en J2 (30 por defecto: TTL real de 20 min más 10 de margen) |
-| `SMOKE_J2_EVENT_GRACE_SECONDS` | no | Espera tras el vencimiento para dar tiempo al scheduler a publicar el evento (90 por defecto) |
+| `SMOKE_J2_EVENT_GRACE_SECONDS` | no | Espera máxima, tras el vencimiento, a que el evento llegue al receptor (180 por defecto) |
 | `SMOKE_POLL_SECONDS`, `SMOKE_RETRY_SECONDS`, `SMOKE_WARMUP_SECONDS`, `SMOKE_RATE_LIMIT_MAX` | no | Sondeo (20), espera entre reintentos (5), tiempo máximo de precalentamiento (180) y peticiones máximas para alcanzar el 429 (150) |
 
 En PowerShell 7:
@@ -53,6 +57,7 @@ En PowerShell 7:
 ```powershell
 $env:BASE_URL = "https://flight-gateway-o37n.onrender.com"
 $env:SUPABASE_CUSTOMER_TOKEN = Read-Host -AsSecureString "customer" | ConvertFrom-SecureString -AsPlainText
+$env:SUPABASE_PARTNER_TOKEN  = Read-Host -AsSecureString "partner"  | ConvertFrom-SecureString -AsPlainText
 $env:SUPABASE_ADMIN_TOKEN    = Read-Host -AsSecureString "admin"    | ConvertFrom-SecureString -AsPlainText
 node platform/api-gateway/scripts/render-journeys.cjs
 ```
@@ -63,7 +68,7 @@ Qué comprueba cada recorrido:
 
 - **Precalentamiento:** `GET /health` hasta 200 y una búsqueda con reintentos ante 503 (despierta Pricing e Inventory).
 - **J1:** sin token ⇒ 401; búsqueda, mapa, hold, reserva 201 `CONFIRMED`, detalle y tickets emitidos.
-- **J2 (como `admin`):** hold idempotente (misma clave ⇒ mismo `holdId`), consulta, liberación y liberación repetida (204), hold nuevo, espera del vencimiento real, `POST /bookings` con el hold vencido ⇒ 410 `OFFER_NO_LONGER_AVAILABLE`. Con `SMOKE_WEBHOOK_URL` registra un webhook `hold.expired` (y lo borra al terminar) e imprime el `holdId` que debes ver en el receptor.
+- **J2 (como `partner`, el mismo token para hold y webhook):** hold idempotente (misma clave ⇒ mismo `holdId`), consulta, liberación y liberación repetida (204), hold nuevo, espera del vencimiento real, `POST /bookings` con el hold vencido ⇒ 410 `OFFER_NO_LONGER_AVAILABLE`. Registra un webhook `hold.expired` con ese mismo token (y lo borra al terminar) y comprueba por sí mismo la entrega: consulta `SMOKE_RECEIVER_API_URL` hasta ver un `hold.expired` con `data.holdId` igual al del hold vencido y una cabecera `X-Flight-Signature` válida para el secreto de la suscripción. Si no llega en el plazo, J2 falla (`EVENT_NOT_RECEIVED` o `BAD_SIGNATURE`).
 - **J5:** reserva, equipaje, cambio de fecha, cotización y cancelación; la reserva queda `CANCELLED`.
 - **J6:** reserva en un vuelo con salida entre 2 y 47 h, check-in y boarding pass con su asiento y código.
 - **J7:** sin token ⇒ 401; `customer` sin rol para webhooks y admin ⇒ 403; reserva ajena (con el token admin) ⇒ 404 indistinguible de una inexistente; 429 con `Retry-After` en `/search`; origen CORS no permitido sin cabeceras `access-control-*`.
