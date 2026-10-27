@@ -12,7 +12,7 @@ import { chmodSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import process from 'node:process';
 import { PrismaClient } from '../generated/prisma-client';
-import { CLIENT_ID_PATTERN, DEV_AUTH_SCOPES, generateClientSecret, hashClientSecret } from '../src/v2/dev-auth';
+import { DEV_AUTH_SCOPES, generateClientSecret, hashClientSecret, isValidClientId } from '../src/v2/dev-auth';
 import { PrismaDevAuthClientStore } from '../src/v2/prisma-dev-auth-store';
 
 const args = process.argv.slice(2);
@@ -25,7 +25,7 @@ async function main(): Promise<void> {
   const prisma = new PrismaClient(); const store = new PrismaDevAuthClientStore(prisma);
   try {
     if (command !== 'create') { await store.setActive(clientId, command === 'enable'); process.stdout.write(`cliente ${clientId}: ${command}\n`); return; }
-    if (!CLIENT_ID_PATTERN.test(clientId)) throw new Error('client-id debe cumplir ^[a-z0-9][a-z0-9-]{2,39}$ (sin "~")');
+    if (!isValidClientId(clientId)) throw new Error('client-id debe usar solo [A-Za-z0-9_-], de 3 a 40 caracteres, y no puede tener forma de UUID');
     const scopes = (option('scopes') ?? DEV_AUTH_SCOPES.join(',')).split(',').map((scope) => scope.trim()).filter(Boolean);
     const invalid = scopes.filter((scope) => !(DEV_AUTH_SCOPES as readonly string[]).includes(scope));
     if (invalid.length) throw new Error(`scopes desconocidos: ${invalid.join(', ')}`);

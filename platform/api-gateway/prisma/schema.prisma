@@ -40,6 +40,35 @@ model DevAuthClient {
   @@schema("gateway")
 }
 
+model V2Booking {
+  bookingId        String   @id @map("booking_id") @db.Uuid
+  clientId         String   @map("client_id")
+  ownerId          String   @map("owner_id")
+  holdId           String   @map("hold_id") @db.Uuid
+  paymentReference String   @map("payment_reference")
+  salesChannel     Json?    @map("sales_channel")
+  passengerMap     Json     @default("{}") @map("passenger_map")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  @@index([clientId])
+  @@index([paymentReference])
+  @@index([holdId])
+  @@map("v2_booking")
+  @@schema("gateway")
+}
+
+model V2ProcessedEvent {
+  clientId    String   @map("client_id")
+  eventId     String   @map("event_id")
+  eventType   String   @map("event_type")
+  outcome     String
+  processedAt DateTime @default(now()) @map("processed_at")
+
+  @@id([clientId, eventId])
+  @@map("v2_processed_event")
+  @@schema("gateway")
+}
+
 model SchedulerLock {
   task        String   @id
   lockedUntil DateTime @map("locked_until")

@@ -1,7 +1,8 @@
 /* global fetch, Response, RequestInit */
-import { describe, expect, it } from '@jest/globals';
+import { describe, expect, it, jest } from '@jest/globals';
+import { Logger } from '@nestjs/common';
 import { status } from '@grpc/grpc-js';
-import { BookingPaymentVerifier, BookingPaymentsConfig, PaymentProviderUnavailable, bookingPaymentsConfigFromEnv } from '../src/infrastructure/clients/booking-payments';
+import { BookingPaymentVerifier, BookingPaymentsConfig, PaymentProviderUnavailable, bookingPaymentsConfigFromEnv, warnIfVerificationOff } from '../src/infrastructure/clients/booking-payments';
 import { DEFAULT_FIELDS, DEFAULT_STATUS_MAP, classifyStatus, parseFields, parseStatusMap, pickField } from '../src/infrastructure/clients/payment-status-map';
 
 const SECRET = 'booking-credential-must-not-leak';
@@ -85,6 +86,25 @@ describe('F12a verificador de pagos de Booking (D4)', () => {
     expect(() => bookingPaymentsConfigFromEnv({ BOOKING_PAYMENTS_VERIFY: 'off' })).toThrow('requires INTEGRATION_LOCAL=true');
     expect(bookingPaymentsConfigFromEnv({ BOOKING_PAYMENTS_VERIFY: 'off', INTEGRATION_LOCAL: 'true' }).verify).toBe('off');
     expect(() => bookingPaymentsConfigFromEnv({ NODE_ENV: 'production', INTEGRATION_LOCAL: 'true' })).toThrow('INTEGRATION_LOCAL is forbidden in production');
+  });
+  it('PAY-28: verify=off con NODE_ENV=production se rechaza al arrancar', () => {
+    expect(() => bookingPaymentsConfigFromEnv({ NODE_ENV: 'production', BOOKING_PAYMENTS_VERIFY: 'off' })).toThrow();
+    expect(() => bookingPaymentsConfigFromEnv({ NODE_ENV: 'production', BOOKING_PAYMENTS_VERIFY: 'off', INTEGRATION_LOCAL: 'true' })).toThrow('INTEGRATION_LOCAL is forbidden in production');
+  });
+  it('PAY-29: con verify=off cada pago autorizado sin verificar deja un aviso sin datos sensibles', async () => {
+    const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    try {
+      const verifier = make(reply({}) as never, { verify: 'off' }); await verifier.verify({ ...input, paymentReference: 'PAY-SECRETO-777' }); await verifier.verify(input);
+      const messages = warn.mock.calls.map((call) => String(call[0]));
+      expect(messages.filter((m) => m.includes('SIN VERIFICAR'))).toHaveLength(2); expect(messages.join('|')).not.toMatch(/PAY-SECRETO-777|PAY-BKP-001|100\.00|Bearer/);
+    } finally { warn.mockRestore(); }
+  });
+  it('PAY-30: al arrancar con verify=off se avisa y con verify=on no', () => {
+    const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    try {
+      warnIfVerificationOff(bookingPaymentsConfigFromEnv({ BOOKING_PAYMENTS_VERIFY: 'off', INTEGRATION_LOCAL: 'true' })); expect(warn).toHaveBeenCalledTimes(1);
+      warnIfVerificationOff(bookingPaymentsConfigFromEnv({})); expect(warn).toHaveBeenCalledTimes(1);
+    } finally { warn.mockRestore(); }
   });
   it('PAY-26: los valores por defecto son seguros: verificación activa, sin URL, plazo de 2,5 s', () => {
     expect(bookingPaymentsConfigFromEnv({})).toMatchObject({ verify: 'on', baseUrl: undefined, timeoutMs: 2500, pathTemplate: '/pagos/{paymentReference}', authHeader: 'Authorization' });

@@ -47,6 +47,8 @@ message HoldOfferRequest {
   repeated ItinerarySelection itinerary_selections = 3;
   flightplatform.common.v1.PassengerMix passengers_breakdown = 4;
   string idempotency_key = 5;
+  // Aditivo F12a: vigencia del hold en minutos (5 a 30). Ausente = la configurada en el servicio.
+  optional uint32 ttl_minutes = 6;
 }
 message HoldOfferResponse {
   string hold_id = 1;

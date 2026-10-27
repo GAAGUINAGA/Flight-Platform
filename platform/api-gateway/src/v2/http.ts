@@ -6,6 +6,7 @@ import { parse } from 'yaml';
 import expressFactory from 'express';
 import type { Application, NextFunction, Request, Response } from 'express';
 import { middleware as openApiMiddleware } from 'express-openapi-validator';
+import { Logger } from '@nestjs/common';
 import type { GatewayConfig } from '../config';
 import { openApiV2SpecPath } from '../openapi-path';
 import { buildV2Problem, v2ProblemFromError } from './problem';
@@ -15,6 +16,7 @@ interface V2Spec { servers?: unknown; components: { schemas: { ProblemDetails: o
 /** Carga el contrato v2 tal cual y solo fija en memoria el prefijo de montaje; el archivo no se modifica. */
 export const loadV2Spec = (): V2Spec => ({ ...(parse(readFileSync(openApiV2SpecPath(), 'utf8')) as V2Spec), servers: [{ url: '/api/v2' }] });
 
+const logger = new Logger('V2Contract');
 const MAX_ID_LENGTH = 100;
 const requestInfo = (req: Request, res: Response) => ({ method: req.method, path: req.path, correlationId: String(res.getHeader('X-Correlation-Id') ?? '') || undefined });
 
@@ -40,6 +42,8 @@ export function mountV2Http(app: Application, config: GatewayConfig): void {
       onError: (error: Error, body: unknown) => {
         // Los errores transversales (401/403/429/5xx) no se repiten en cada operación del contrato: se aceptan si cumplen ProblemDetails.
         if (/no schema defined for status code/.test(error.message) && problemSchema?.(body)) return;
+        // La validación de respuestas solo se activa en desarrollo y pruebas; el mensaje describe rutas del esquema, no valores.
+        logger.error(`v2 response does not match the contract: ${error.message.slice(0, 600)}`);
         throw error;
       }
     } : false,

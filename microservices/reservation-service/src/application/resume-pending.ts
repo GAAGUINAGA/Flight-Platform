@@ -1,5 +1,5 @@
 import { DomainError } from '@flight-platform/shared';
-import { allocationOf, deterministicEventId, eventExtra, isV2Reservation, ticketSummary } from './allocation';
+import { allocationOf, deterministicEventId, eventExtra, isV2Reservation, ticketSummary, translateDependencyError } from './allocation';
 import { AncillariesPort, EventPublisher, InventoryPort, PaymentVerifier, PricingPort, TicketingPort } from './ports';
 import { ReservationStore, StoredReservation } from './reservation-store';
 
@@ -74,7 +74,7 @@ export class ResumePending {
       if (baggage.length) await this.ancillaries.reserveBaggage({ bookingId: reservation.id, ownerId: reservation.ownerId, baggage });
       await this.inventory.consumeHold({ holdId: reservation.holdId, ownerId: reservation.ownerId, reservationId: reservation.id });
       return true;
-    } catch (error) { await this.failBeforeIssuance(reservation, error instanceof DomainError ? error.code : 'OFFER_NO_LONGER_AVAILABLE'); return false; }
+    } catch (error) { const translated = translateDependencyError(error); await this.failBeforeIssuance(reservation, translated instanceof DomainError ? translated.code : 'OFFER_NO_LONGER_AVAILABLE'); return false; }
   }
 
   private async failBeforeIssuance(reservation: StoredReservation, errorCode: string): Promise<void> {

@@ -6,7 +6,7 @@ import process from 'node:process';
 import { reservationDependencyDeadline, reservationGrpcService } from './infrastructure/clients/deadline-service';
 import { createReservationServer, findProtoRoot } from './infrastructure/grpc/server';
 import { FakePaymentVerifier } from './infrastructure/clients/fakes';
-import { BookingPaymentVerifier, bookingPaymentsConfigFromEnv } from './infrastructure/clients/booking-payments';
+import { BookingPaymentVerifier, bookingPaymentsConfigFromEnv, warnIfVerificationOff } from './infrastructure/clients/booking-payments';
 import { RoutingPaymentVerifier } from './infrastructure/clients/routing-payment-verifier';
 import { GrpcAncillariesGateway, GrpcEventPublisher, GrpcInventoryGateway, GrpcPricingGateway, GrpcServiceForOwner, GrpcTicketingGateway } from './infrastructure/clients/grpc-gateways';
 import { PrismaClient } from './infrastructure/persistence/prisma-client/client';
@@ -30,7 +30,7 @@ async function bootstrap(): Promise<void> {
   const ticketing = new GrpcTicketingGateway(factory(process.env.TICKETING_GRPC_URL ?? 'localhost:50055', 'flightplatform.ticketing.v1', 'flightplatform/ticketing/v1/ticketing.proto', 'TicketingService'));
   const events = new GrpcEventPublisher(factory(process.env.WEBHOOKS_GRPC_URL ?? 'localhost:50057', 'flightplatform.webhooks.v1', 'flightplatform/webhooks/v1/webhooks.proto', 'WebhooksService'));
   // v1 conserva su verificador; los clientes client_credentials de v2 usan el canal BOOKING (API de pagos de Booking, configurable por entorno).
-  const prisma = new PrismaClient(); const store = new PrismaReservationStore(prisma); const payment = new RoutingPaymentVerifier(new FakePaymentVerifier(), { BOOKING: new BookingPaymentVerifier(bookingPaymentsConfigFromEnv()) });
+  const prisma = new PrismaClient(); const store = new PrismaReservationStore(prisma); const bookingPayments = bookingPaymentsConfigFromEnv(); warnIfVerificationOff(bookingPayments); const payment = new RoutingPaymentVerifier(new FakePaymentVerifier(), { BOOKING: new BookingPaymentVerifier(bookingPayments) });
   const deps = composeReservation({ store, pricing, payment, ancillaries, inventory, ticketing, events, operations: new PrismaBaggageOperations(prisma), quotes: new PrismaCancellationQuotes(prisma), clock: new SystemClock(), cutoffHours: Number(process.env.BAGGAGE_CUTOFF_HOURS ?? '4'), holdTtlMinutes: Number(process.env.HOLD_TTL_MINUTES ?? '20'), validateResponse: createResponseValidator() });
   // Perfil de integración local: solo escucha en loopback para no exponer el servicio a la red privada de la reunión.
   const local = process.env.INTEGRATION_LOCAL === 'true'; if (local && process.env.NODE_ENV === 'production') throw new Error('INTEGRATION_LOCAL is forbidden in production');

@@ -9,8 +9,11 @@ const scryptAsync = promisify(scrypt) as (password: string, salt: Buffer, keylen
 
 export const DEV_AUTH_SCOPES = ['flights:read', 'flights:hold', 'flights:book', 'flights:cancel', 'flights:webhooks', 'flights:ops', 'flights:admin'] as const;
 export const DEV_AUTH_AUDIENCE = 'flight-platform';
-/** El identificador del cliente nunca contiene `~`: es el separador del dueño compuesto `<clientId>~<X-User-Id>` (D1). */
-export const CLIENT_ID_PATTERN = /^[a-z0-9][a-z0-9-]{2,39}$/;
+/** El identificador del cliente solo usa [A-Za-z0-9_-] (3 a 40): nunca `~`, separador del dueño compuesto `<clientId>~<X-User-Id>` (D1). */
+export const CLIENT_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{2,39}$/;
+const UUID_SHAPE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/** Tampoco puede parecerse a un UUID: así no choca con el `sub` de un usuario de Supabase. */
+export const isValidClientId = (value: string): boolean => CLIENT_ID_PATTERN.test(value) && !UUID_SHAPE.test(value);
 const CLIENT_CACHE_MS = 5_000;
 
 export interface DevAuthClientRecord { clientId: string; secretHash: string; scopes: string[]; active: boolean; name?: string; }
@@ -85,7 +88,7 @@ export class DevAuthService {
     const { clientId, clientSecret } = input;
     if (!clientId || !clientSecret) throw new OAuthError(401, 'invalid_client', 'Credenciales de cliente ausentes', input.viaBasic);
     if (this.tooManyFailures(clientId)) throw new OAuthError(429, 'temporarily_unavailable', 'Demasiados intentos fallidos; reintente en un minuto');
-    const client = CLIENT_ID_PATTERN.test(clientId) ? await this.store.find(clientId) : null;
+    const client = isValidClientId(clientId) ? await this.store.find(clientId) : null;
     // Con cliente desconocido se verifica contra un hash señuelo para no revelar su existencia por tiempo de respuesta.
     const valid = await verifyClientSecret(clientSecret, client?.secretHash ?? this.dummyHash);
     if (!client || !client.active || !valid) { this.recordFailure(clientId); throw new OAuthError(401, 'invalid_client', 'Credenciales de cliente inválidas', input.viaBasic); }

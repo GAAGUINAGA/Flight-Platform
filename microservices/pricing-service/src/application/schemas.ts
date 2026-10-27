@@ -20,7 +20,7 @@ export const resolveSegmentRequest = z.object({ segmentId: rpcString(128) }).str
 export const holdOfferRequest = z.object({
   ownerId: rpcString(128), offerId: uuid,
   itinerarySelections: z.array(z.object({ itineraryId: uuid, cabinClass: cabin, fareBrand: rpcString(32) }).strict()).min(1).max(6),
-  passengersBreakdown: mix, idempotencyKey: rpcString(128)
+  passengersBreakdown: mix, idempotencyKey: rpcString(128), ttlMinutes: z.number().int().min(5).max(30).optional()
 }).strict();
 export const offerHoldRequest = z.object({ holdId: uuid, ownerId: rpcString(128) }).strict();
 export const quoteChangeRequest = z.object({ bookingId: rpcString(128), ownerId: rpcString(128), changes: z.array(z.object({ itineraryId: uuid, newDepartureDate: date }).strict()).min(1).max(6), currentItineraries: z.array(z.unknown()).min(1), passengers: mix }).strict();

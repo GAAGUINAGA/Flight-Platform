@@ -1,4 +1,18 @@
 import { loadConfig } from '../config';
+import { isValidClientId } from './dev-auth';
+
+describe('F12a client_id del dev-auth', () => {
+  it('V2-CID-01: acepta letras, dígitos, guion y guion bajo de 3 a 40 caracteres', () => {
+    for (const id of ['booking', 'Booking_Prod-1', 'abc', 'a'.repeat(40), '1abc']) expect({ id, ok: isValidClientId(id) }).toEqual({ id, ok: true });
+  });
+  it('V2-CID-02: rechaza ~, espacios, símbolos, vacío, muy corto y muy largo', () => {
+    for (const id of ['', 'ab', 'a'.repeat(41), 'a~b', 'a b', 'a/b', 'a.b', 'a@b', '-abc', '_abc', 'ñandú', 'a\nb']) expect({ id, ok: isValidClientId(id) }).toEqual({ id, ok: false });
+  });
+  it('V2-CID-03: rechaza cualquier forma de UUID para no chocar con el sub de Supabase', () => {
+    for (const id of ['5f1d2c3b-aaaa-4bbb-8ccc-0123456789ab', '5F1D2C3B-AAAA-4BBB-8CCC-0123456789AB', '00000000-0000-0000-0000-000000000000']) expect({ id, ok: isValidClientId(id) }).toEqual({ id, ok: false });
+    expect(isValidClientId('5f1d2c3b-aaaa-4bbb-8ccc-0123456789a')).toBe(true);
+  });
+});
 
 const base = { NODE_ENV: 'test', INTERNAL_API_KEY: 'k', JWT_ISSUERS: JSON.stringify([{ iss: 'https://auth.example/auth/v1', aud: 'authenticated', jwksUri: 'https://auth.example/jwks' }]) };
 

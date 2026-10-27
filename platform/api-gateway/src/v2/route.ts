@@ -1,11 +1,11 @@
 import { Body, Controller, Delete, Get, HttpCode, Inject, Param, Patch, Post, Put, Query, Req, Res } from '@nestjs/common';
 import { Public, Scopes } from '../security';
-import { AnyScope, V2Idempotent } from './v2-security';
+import { AnyScope, V2Idempotent, type V2IdempotencyOptions } from './v2-security';
 
 type Verb = 'get' | 'post' | 'put' | 'patch' | 'delete';
 /** `req`, `res` (passthrough), `body`, `query` o `param:<nombre>`, en el orden de los argumentos del método. */
-type ParamSpec = 'req' | 'res' | 'body' | 'query' | `param:${string}`;
-export interface RouteOptions { scopes?: string[]; anyScope?: string[]; public?: boolean; idempotent?: boolean; status?: number; }
+type ParamSpec = 'req' | 'res' | 'body' | 'query' | `query:${string}` | `param:${string}`;
+export interface RouteOptions { scopes?: string[]; anyScope?: string[]; public?: boolean; idempotent?: V2IdempotencyOptions; status?: number; }
 
 const verbs = { get: Get, post: Post, put: Put, patch: Patch, delete: Delete } as const;
 
@@ -24,11 +24,12 @@ export function v2Route(proto: object, name: string, verb: Verb, path: string, p
     else if (spec === 'res') Res({ passthrough: true })(proto, name, index);
     else if (spec === 'body') Body()(proto, name, index);
     else if (spec === 'query') Query()(proto, name, index);
+    else if (spec.startsWith('query:')) Query(spec.slice('query:'.length))(proto, name, index);
     else Param(spec.slice('param:'.length))(proto, name, index);
   });
   if (options.public) Public()(proto, name, descriptor);
   if (options.scopes) Scopes(...options.scopes)(proto, name, descriptor);
   if (options.anyScope) AnyScope(...options.anyScope)(proto, name, descriptor);
-  if (options.idempotent) V2Idempotent()(proto, name, descriptor);
+  if (options.idempotent) V2Idempotent(options.idempotent)(proto, name, descriptor);
   if (options.status) HttpCode(options.status)(proto, name, descriptor);
 }

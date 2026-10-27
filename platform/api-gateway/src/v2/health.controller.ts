@@ -1,3 +1,4 @@
+import { clearTimeout, setTimeout } from 'node:timers';
 import { credentials, loadPackageDefinition } from '@grpc/grpc-js';
 import { loadSync } from '@grpc/proto-loader';
 import type { Response } from 'express';
@@ -24,7 +25,10 @@ export interface HealthReport { status: 'HEALTHY' | 'DEGRADED' | 'DOWN'; depende
 
 const probe = (service: string, url: string, tls: boolean, timeoutMs: number): Promise<DependencyHealth> => new Promise((resolve) => {
   const started = Date.now(); let client: HealthClient | undefined;
-  const done = (up: boolean) => { try { client?.close(); } catch { /* canal ya cerrado */ } resolve({ nombre: `${service}-service`, status: up ? 'UP' : 'DOWN', latencia_ms: Date.now() - started }); };
+  let finished = false;
+  const done = (up: boolean) => { if (finished) return; finished = true; clearTimeout(guard); try { client?.close(); } catch { /* canal ya cerrado */ } resolve({ nombre: `${service}-service`, status: up ? 'UP' : 'DOWN', latencia_ms: Date.now() - started }); };
+  // Tope duro: en algunos sistemas conectar a un puerto cerrado tarda más que el deadline de la llamada.
+  const guard = setTimeout(() => done(false), timeoutMs + 50);
   try {
     const Ctor = loadHealthClient();
     client = new Ctor(url, tls ? credentials.createSsl() : credentials.createInsecure());

@@ -36,6 +36,11 @@ import { PrismaDevAuthClientStore } from './v2/prisma-dev-auth-store';
 import { V2AuthController } from './v2/auth.controller';
 import { V2HealthController, V2HealthService } from './v2/health.controller';
 import { mountV2Http } from './v2/http';
+import { V2ShoppingController } from './v2/shopping.controller';
+import { V2HoldController } from './v2/hold.controller';
+import { V2BookingController } from './v2/booking.controller';
+import { V2IdempotencyInterceptor } from './v2/idempotency';
+import { InMemoryV2StateStore, PrismaV2StateStore, type V2StateStore } from './v2/state';
 
 export const DEV_AUTH_STORE = 'DEV_AUTH_STORE';
 
@@ -74,6 +79,8 @@ export async function createGatewayApp(config: GatewayConfig) {
     { provide: DEV_AUTH_STORE, useFactory: (client: PrismaClient): DevAuthClientStore => config.v2!.devAuth.store === 'memory' ? new InMemoryDevAuthClientStore() : new PrismaDevAuthClientStore(client), inject: [PrismaClient] },
     { provide: DevAuthService, useFactory: (store: DevAuthClientStore) => DevAuthService.create(config.v2!, store), inject: [DEV_AUTH_STORE] },
     { provide: V2HealthService, useFactory: () => new V2HealthService(config) },
+    { provide: 'V2_STATE', useFactory: (client: PrismaClient): V2StateStore => config.v2!.stateStore === 'memory' ? new InMemoryV2StateStore() : new PrismaV2StateStore(client), inject: [PrismaClient] },
+    { provide: V2IdempotencyInterceptor, useFactory: (reflector: Reflector, store: PrismaIdempotencyStore) => new V2IdempotencyInterceptor(reflector, process.env.NODE_ENV === 'test' ? new InMemoryGatewayIdempotencyStore(config.idempotencyTtlHours) : store), inject: [Reflector, PrismaIdempotencyStore] }, { provide: APP_INTERCEPTOR, useExisting: V2IdempotencyInterceptor },
     { provide: JwtAuthGuard, useFactory: (reflector: Reflector, devAuth: DevAuthService) => new JwtAuthGuard(reflector, config, devAuth), inject: [Reflector, DevAuthService] },
     { provide: RolesGuard, useFactory: (reflector: Reflector) => new RolesGuard(reflector), inject: [Reflector] },
     { provide: ScopesGuard, useFactory: (reflector: Reflector) => new ScopesGuard(reflector), inject: [Reflector] },
@@ -84,7 +91,7 @@ export async function createGatewayApp(config: GatewayConfig) {
     GatewayExceptionFilter, { provide: APP_FILTER, useExisting: GatewayExceptionFilter }
   ];
   class GatewayModule {}
-  const v2Controllers = [V2AuthController, V2HealthController, ...(process.env.NODE_ENV === 'test' ? [(await import('./v2/test-controller')).V2TestController] : [])];
+  const v2Controllers = [V2AuthController, V2HealthController, V2ShoppingController, V2HoldController, V2BookingController, ...(process.env.NODE_ENV === 'test' ? [(await import('./v2/test-controller')).V2TestController] : [])];
   Module({ imports: [LoggerModule.forRoot({ pinoHttp: loggerOptions })], controllers: testComponents ? [HealthController, ShoppingController, HoldController, BookingController, PostSaleController, OperationsController, WebhooksController, AdminController, ...v2Controllers, testComponents.TestController] : [HealthController, ShoppingController, HoldController, BookingController, PostSaleController, OperationsController, WebhooksController, AdminController, ...v2Controllers], providers })(GatewayModule);
   const app = await NestFactory.create(GatewayModule);
   const express = app.getHttpAdapter().getInstance(); express.set('trust proxy', 1);

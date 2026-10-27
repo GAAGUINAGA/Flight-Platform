@@ -11,7 +11,10 @@ export const ANY_SCOPE = 'gateway:any-scope';
 export const V2_IDEMPOTENT = 'gateway:v2-idempotent';
 /** El token debe traer al menos uno de estos scopes (p. ej. `flights:ops` o `flights:admin`). */
 export const AnyScope = (...scopes: string[]): MethodDecorator => SetMetadata(ANY_SCOPE, scopes);
-export const V2Idempotent = (): MethodDecorator => SetMetadata(V2_IDEMPOTENT, true);
+/** `operation` aísla la clave por endpoint; con `recompute` un reintento vuelve a ejecutar el manejador (que es idempotente aguas abajo) en lugar de devolver el cuerpo guardado. */
+export interface V2IdempotencyOptions { operation: string; recompute?: boolean }
+export const V2Idempotent = (options: V2IdempotencyOptions): MethodDecorator => SetMetadata(V2_IDEMPOTENT, options);
+declare module 'express-serve-static-core' { interface Request { v2Replay?: boolean; } }
 
 export { isV2Path } from './problem';
 
@@ -42,7 +45,10 @@ export async function authenticateV2(request: Request, config: GatewayConfig, de
   if (clientId) {
     const userId = request.header('x-user-id');
     if (userId !== undefined && !USER_ID_PATTERN.test(userId)) throw new GatewayProblemError(400, 'VALIDATION_FAILED', 'X-User-Id inválido');
-    context = { ...context, ownerId: partnerOwner(clientId, userId), clientId };
+    // Respaldo de propiedad del contrato: sin X-User-Id, la huella del dispositivo identifica al usuario anónimo.
+    const fingerprint = request.header('x-device-fingerprint');
+    const effective = userId ?? (fingerprint ? `fp-${createHash('sha256').update(fingerprint).digest('hex').slice(0, 24)}` : undefined);
+    context = { ...context, ownerId: partnerOwner(clientId, effective), clientId };
   }
   return context;
 }

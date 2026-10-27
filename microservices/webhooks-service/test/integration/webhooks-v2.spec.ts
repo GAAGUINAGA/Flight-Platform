@@ -60,8 +60,10 @@ describe('WHK-V2 integración (Postgres): enrutado por cliente y almacén de eve
   it('WHK-V2-IT-06: la entrega del evento a una suscripción v2 sale como CloudEvent con id evt-vue-<seq>', async () => {
     deliveries.length = 0; const owner = `${run}-d`; await useCases.create(system, { ownerId: owner, url: 'https://hooks.example.test/d', events: ['booking.ticket_issued'], secret: 'integration-secret-6', apiVersion: '2' });
     const { eventId } = await useCases.publish(system, { ownerId: `${owner}~u`, payload: { eventType: 'booking.ticket_issued', data: { bookingId: randomUUID(), status: 'CONFIRMED' } } });
-    expect(await useCases.dispatch(system, {})).toBeGreaterThanOrEqual(1);
-    const seq = (await prisma.event.findUniqueOrThrow({ where: { eventId } })).seq; const sent = deliveries.map((d) => JSON.parse(d.body) as { id: string }).find((e) => e.id === `evt-vue-${String(seq).padStart(6, '0')}`);
+    const seq = (await prisma.event.findUniqueOrThrow({ where: { eventId } })).seq; const expectedId = `evt-vue-${String(seq).padStart(6, '0')}`;
+    // dispatch toma las 100 entregas más antiguas de toda la base: se repite hasta que sale la de este escenario.
+    for (let round = 0; round < 10 && !deliveries.some((d) => (JSON.parse(d.body) as { id?: string }).id === expectedId); round += 1) if (await useCases.dispatch(system, {}) === 0) break;
+    const sent = deliveries.map((d) => JSON.parse(d.body) as { id: string }).find((e) => e.id === expectedId);
     expect(sent).toBeDefined();
   });
 });

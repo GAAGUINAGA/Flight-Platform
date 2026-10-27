@@ -29,6 +29,9 @@ export interface BookingPaymentsConfig {
 
 const logger = new Logger('BookingPayments');
 
+/** Aviso de arranque cuando la verificación está apagada. */
+export function warnIfVerificationOff(config: BookingPaymentsConfig): void { if (config.verify === 'off') logger.warn('BOOKING_PAYMENTS_VERIFY=off: los pagos de Booking NO se verifican. Usar solo si su API de pagos no está disponible.'); }
+
 export function bookingPaymentsConfigFromEnv(env: Record<string, string | undefined> = process.env): BookingPaymentsConfig {
   const production = env.NODE_ENV === 'production'; const local = env.INTEGRATION_LOCAL === 'true';
   if (local && production) throw new Error('INTEGRATION_LOCAL is forbidden in production');
@@ -60,7 +63,7 @@ export class BookingPaymentVerifier implements PaymentVerifier {
   constructor(private readonly config: BookingPaymentsConfig = { pathTemplate: '/pagos/{paymentReference}', authHeader: 'Authorization', timeoutMs: 2500, statusMap: DEFAULT_STATUS_MAP, fields: DEFAULT_FIELDS, verify: 'on' }) {}
 
   async verify(input: { paymentReference: string; currency: string; total: string }): Promise<PaymentResult> {
-    if (this.config.verify === 'off') return 'AUTHORIZED';
+    if (this.config.verify === 'off') { logger.warn('PAGO AUTORIZADO SIN VERIFICAR: BOOKING_PAYMENTS_VERIFY=off (solo perfil de integración local)'); return 'AUTHORIZED'; }
     if (!this.config.baseUrl) { logger.error('BOOKING_PAYMENTS_BASE_URL is not configured; payment verification is unavailable'); throw new PaymentProviderUnavailable(); }
     const url = `${this.config.baseUrl}${this.config.pathTemplate.replace('{paymentReference}', encodeURIComponent(input.paymentReference))}`;
     let response: Response;

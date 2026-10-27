@@ -38,6 +38,8 @@ export interface V2Config {
   devAuth: { enabled: boolean; privateKeyPem?: string; privateKeyFile?: string; ttlSeconds: number; store: 'prisma' | 'memory'; failureLimit: number };
   healthTimeoutMs: number;
   healthCacheMs: number;
+  /** Dónde vive el estado propio de v2 (reservas, eventos procesados). En pruebas es memoria salvo V2_STATE_STORE=prisma. */
+  stateStore: 'prisma' | 'memory';
 }
 
 const required = (value: string | undefined, name: string): string => {
@@ -70,7 +72,8 @@ export function loadConfig(env: Environment = process.env): GatewayConfig {
       ttlSeconds: Number(env.DEV_AUTH_TOKEN_TTL_SECONDS ?? 3600), store: env.DEV_AUTH_STORE === 'memory' || (env.NODE_ENV === 'test' && env.DEV_AUTH_STORE !== 'prisma') ? 'memory' : 'prisma',
       failureLimit: Number(env.DEV_AUTH_FAILURE_LIMIT_PER_MIN ?? 10)
     },
-    healthTimeoutMs: Number(env.HEALTH_TIMEOUT_MS ?? 800), healthCacheMs: Number(env.HEALTH_CACHE_MS ?? 5000)
+    healthTimeoutMs: Number(env.HEALTH_TIMEOUT_MS ?? 800), healthCacheMs: Number(env.HEALTH_CACHE_MS ?? 5000),
+    stateStore: env.V2_STATE_STORE === 'memory' || (env.NODE_ENV === 'test' && env.V2_STATE_STORE !== 'prisma') ? 'memory' : 'prisma'
   };
   return {
     v2, port, internalApiKey: required(env.INTERNAL_API_KEY, 'INTERNAL_API_KEY'), jwtIssuers,
