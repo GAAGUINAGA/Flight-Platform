@@ -3,7 +3,7 @@ import { URL } from 'node:url';
 import { createRemoteJWKSet, importSPKI, jwtVerify } from 'jose';
 import type { JwtIssuer } from './config';
 
-export interface AuthContext { ownerId: string; role: string; scopes: Set<string>; }
+export interface AuthContext { ownerId: string; role: string; scopes: Set<string>; /** Solo v2 con token de partner: cliente OAuth al que pertenece el dueño compuesto. */ clientId?: string; }
 export async function verifyBearer(header: string | undefined, issuers: JwtIssuer[]): Promise<AuthContext> {
   if (!header?.startsWith('Bearer ')) throw new Error('UNAUTHENTICATED');
   const token = header.slice(7);

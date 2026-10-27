@@ -30,6 +30,14 @@ import { PostSaleController } from './post-sale.controller';
 import { OperationsController } from './operations.controller';
 import { WebhooksController } from './webhooks.controller';
 import { AdminController } from './admin.controller';
+import { AnyScopeGuard } from './v2/v2-security';
+import { DevAuthService, InMemoryDevAuthClientStore, type DevAuthClientStore } from './v2/dev-auth';
+import { PrismaDevAuthClientStore } from './v2/prisma-dev-auth-store';
+import { V2AuthController } from './v2/auth.controller';
+import { V2HealthController, V2HealthService } from './v2/health.controller';
+import { mountV2Http } from './v2/http';
+
+export const DEV_AUTH_STORE = 'DEV_AUTH_STORE';
 
 class HealthController { health() { return { status: 'ok' }; } }
 Controller('flights/v1/health')(HealthController); Get()(HealthController.prototype, 'health', Object.getOwnPropertyDescriptor(HealthController.prototype, 'health')!); Public()(HealthController.prototype, 'health', Object.getOwnPropertyDescriptor(HealthController.prototype, 'health')!);
@@ -63,16 +71,21 @@ export async function createGatewayApp(config: GatewayConfig) {
     { provide: PrismaSchedulerStore, useFactory: (client: PrismaClient) => new PrismaSchedulerStore(client), inject: [PrismaClient] },
     { provide: GatewayScheduler, useFactory: (store: PrismaSchedulerStore) => new GatewayScheduler(config, store), inject: [PrismaSchedulerStore] },
     ...(testComponents ? [{ provide: testComponents.GatewayTestGrpcClient, useFactory: () => new testComponents.GatewayTestGrpcClient(config) }] : []),
-    { provide: JwtAuthGuard, useFactory: (reflector: Reflector) => new JwtAuthGuard(reflector, config), inject: [Reflector] },
+    { provide: DEV_AUTH_STORE, useFactory: (client: PrismaClient): DevAuthClientStore => config.v2!.devAuth.store === 'memory' ? new InMemoryDevAuthClientStore() : new PrismaDevAuthClientStore(client), inject: [PrismaClient] },
+    { provide: DevAuthService, useFactory: (store: DevAuthClientStore) => DevAuthService.create(config.v2!, store), inject: [DEV_AUTH_STORE] },
+    { provide: V2HealthService, useFactory: () => new V2HealthService(config) },
+    { provide: JwtAuthGuard, useFactory: (reflector: Reflector, devAuth: DevAuthService) => new JwtAuthGuard(reflector, config, devAuth), inject: [Reflector, DevAuthService] },
     { provide: RolesGuard, useFactory: (reflector: Reflector) => new RolesGuard(reflector), inject: [Reflector] },
     { provide: ScopesGuard, useFactory: (reflector: Reflector) => new ScopesGuard(reflector), inject: [Reflector] },
+    { provide: AnyScopeGuard, useFactory: (reflector: Reflector) => new AnyScopeGuard(reflector), inject: [Reflector] },
     { provide: RateLimitGuard, useFactory: () => new RateLimitGuard(config) },
-    { provide: APP_GUARD, useExisting: JwtAuthGuard }, { provide: APP_GUARD, useExisting: RolesGuard }, { provide: APP_GUARD, useExisting: ScopesGuard }, { provide: APP_GUARD, useExisting: RateLimitGuard },
+    { provide: APP_GUARD, useExisting: JwtAuthGuard }, { provide: APP_GUARD, useExisting: RolesGuard }, { provide: APP_GUARD, useExisting: ScopesGuard }, { provide: APP_GUARD, useExisting: AnyScopeGuard }, { provide: APP_GUARD, useExisting: RateLimitGuard },
     { provide: IdempotencyInterceptor, useFactory: (reflector: Reflector, store: PrismaIdempotencyStore) => new IdempotencyInterceptor(reflector, process.env.NODE_ENV === 'test' ? new InMemoryGatewayIdempotencyStore(config.idempotencyTtlHours) : store), inject: [Reflector, PrismaIdempotencyStore] }, { provide: APP_INTERCEPTOR, useExisting: IdempotencyInterceptor },
     GatewayExceptionFilter, { provide: APP_FILTER, useExisting: GatewayExceptionFilter }
   ];
   class GatewayModule {}
-  Module({ imports: [LoggerModule.forRoot({ pinoHttp: loggerOptions })], controllers: testComponents ? [HealthController, ShoppingController, HoldController, BookingController, PostSaleController, OperationsController, WebhooksController, AdminController, testComponents.TestController] : [HealthController, ShoppingController, HoldController, BookingController, PostSaleController, OperationsController, WebhooksController, AdminController], providers })(GatewayModule);
+  const v2Controllers = [V2AuthController, V2HealthController, ...(process.env.NODE_ENV === 'test' ? [(await import('./v2/test-controller')).V2TestController] : [])];
+  Module({ imports: [LoggerModule.forRoot({ pinoHttp: loggerOptions })], controllers: testComponents ? [HealthController, ShoppingController, HoldController, BookingController, PostSaleController, OperationsController, WebhooksController, AdminController, ...v2Controllers, testComponents.TestController] : [HealthController, ShoppingController, HoldController, BookingController, PostSaleController, OperationsController, WebhooksController, AdminController, ...v2Controllers], providers })(GatewayModule);
   const app = await NestFactory.create(GatewayModule);
   const express = app.getHttpAdapter().getInstance(); express.set('trust proxy', 1);
   express.use(helmet({ hsts: { maxAge: 15552000, includeSubDomains: true } }));
@@ -83,6 +96,7 @@ export async function createGatewayApp(config: GatewayConfig) {
     if (req.method === 'OPTIONS') return res.sendStatus(204); next();
   });
   express.use(expressFactory.json({ limit: '100kb' }));
+  mountV2Http(express, config);
   const problemAjv = new Ajv({ strict: false }); addFormats(problemAjv);
   const problemSchema = config.validateResponses ? problemAjv.compile((parse(readFileSync(openApiSpecPath(), 'utf8')) as { components: { schemas: { ProblemDetails: object } } }).components.schemas.ProblemDetails) : undefined;
   express.use('/flights/v1', openApiMiddleware({ apiSpec: openApiSpecPath(), validateRequests: true, validateSecurity: false, validateFormats: true, ajvFormats: { mode: 'full' }, validateResponses: config.validateResponses ? {

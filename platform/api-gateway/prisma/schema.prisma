@@ -28,6 +28,18 @@ model IdempotencyKey {
   @@schema("gateway")
 }
 
+model DevAuthClient {
+  clientId   String   @id @map("client_id")
+  secretHash String   @map("secret_hash")
+  scopes     String[]
+  active     Boolean  @default(true)
+  name       String?
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@map("dev_auth_client")
+  @@schema("gateway")
+}
+
 model SchedulerLock {
   task        String   @id
   lockedUntil DateTime @map("locked_until")
