@@ -22,6 +22,7 @@ Reglas: confirmado con monto y moneda iguales al total ⇒ continúa; monto dist
 
 ## 2. Pendiente que se informa a Booking al inicio
 - Pago pendiente en equipaje (`POST …/baggage`) y cambio de fecha (`POST …/date-change`): hoy responden 422 `PAYMENT_NOT_AUTHORIZED`. El contrato admite 202; llega con F12b. **Nunca se agrega una maleta ni se cambia una fecha sin pago confirmado.**
+- **Búsqueda: una oferta por consulta con el primer vuelo disponible de cada tramo** (el de salida más temprana con cupo), no todas las alternativas del día. Comportamiento heredado de v1 (`search-offers.ts`: «conserva la primera alternativa disponible por tramo»); ofrecer varias alternativas queda para F12b. Si Booking espera una lista de vuelos del día, hay que avisarles al inicio.
 - Mapa de asientos: solo `AVAILABLE` y `BOOKED`; `HELD` por asiento y `BOARDED` llegan con F12b.
 - Los eventos que publican los servicios llevan como `correlationid` el id del evento hasta que F12b propague el real.
 - Un usuario solo ve sus propios recursos: los recursos pertenecen a `<clientId>~<X-User-Id>`. Un hold creado con `X-User-Id: u1` no puede convertirse en reserva con otro `X-User-Id` ni sin él.

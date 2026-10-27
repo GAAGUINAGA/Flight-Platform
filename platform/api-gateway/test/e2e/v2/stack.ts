@@ -41,6 +41,7 @@ import { createResponseValidator } from '../../../../../microservices/reservatio
 import { loadConfig } from '../../../src/config';
 import { createGatewayApp, DEV_AUTH_STORE } from '../../../src/app';
 import { GatewayScheduler } from '../../../src/scheduler';
+import { DEFAULT_DOMESTIC_AIRPORTS } from '../../../src/v2/rules';
 import { PrismaSchedulerStore } from '../../../src/scheduler-store';
 import { DevAuthService, type DevAuthClientStore } from '../../../src/v2/dev-auth';
 import { registerClient, type TestClient } from './support';
@@ -102,6 +103,8 @@ export async function startStack(env: Record<string, string | undefined> = {}): 
   const allocated = new Set<number>();
   for (const name of NAMES) { let port: number; do { port = await freePort(); } while (allocated.has(port)); allocated.add(port); ports[name] = port; set(`${name.toUpperCase()}_GRPC_URL`, `127.0.0.1:${port}`); }
   set('GRPC_TLS', 'false');
+  // ZQD y ZQE son aeropuertos nacionales solo de las pruebas: ningún seed los usa.
+  set('DOMESTIC_AIRPORTS', [...DEFAULT_DOMESTIC_AIRPORTS, 'ZQD', 'ZQE'].join(','));
   const payments = new PaymentSimulator(); await payments.start();
   const inventory = new InventoryPrisma({ datasources: { db: { url: database('inventory') } } }); const pricing = new PricingPrisma({ datasources: { db: { url: database('pricing') } } }); const ancillaries = new AncillariesPrisma({ datasources: { db: { url: database('ancillaries') } } });
   const ticketing = new TicketingPrisma({ datasources: { db: { url: database('ticketing') } } }); const webhooks = new WebhooksPrisma({ datasources: { db: { url: database('webhooks') } } }); const reservation = new ReservationPrisma({ datasources: { db: { url: database('reservation') } } }); const operations = new OperationsPrisma({ datasources: { db: { url: database('operations') } } });
@@ -126,7 +129,7 @@ export async function startStack(env: Record<string, string | undefined> = {}): 
 
   const scenario: Stack['scenario'] = async (options = {}) => {
     const client = await registerClient(clients, ALL); const flightId = randomUUID(); const code = () => Array.from({ length: 3 }, () => String.fromCharCode(65 + randomInt(0, 26))).join('');
-    const origin = options.origin ?? (options.domestic ? 'UIO' : code()); let destination = options.destination ?? (options.domestic ? 'GYE' : code()); if (destination === origin) destination = 'QQQ';
+    const origin = options.origin ?? (options.domestic ? 'ZQD' : code()); let destination = options.destination ?? (options.domestic ? 'ZQE' : code()); if (destination === origin) destination = 'QQQ';
     // El número es FP + 4 dígitos (patrón del contrato); se descartan los que otro escenario o una corrida anterior dejó en Inventory u Operations.
     let flightNumber = ''; for (let attempt = 0; attempt < 50; attempt += 1) { flightNumber = `FP${randomInt(1000, 10000)}`; if (await inventory.flightInstance.count({ where: { flightNumber } }) === 0 && await operations.operationalFlight.count({ where: { flightNumber } }) === 0) break; }
     const aircraft = `T${randomUUID().replace(/-/g, '').slice(0, 20)}`;
