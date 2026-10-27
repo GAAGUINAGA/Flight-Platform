@@ -47,7 +47,7 @@ export function mountV2Http(app: Application, config: GatewayConfig): void {
         throw error;
       }
     } : false,
-    ignorePaths: /\/oauth2\/token|\.well-known|\/__test(\/|$)/
+    ignorePaths: /\/oauth2\/token|\.well-known|\/booking-events$|\/__test(\/|$)/
   }));
   app.use('/api/v2', (error: unknown, req: Request, res: Response, next: NextFunction) => {
     void next;

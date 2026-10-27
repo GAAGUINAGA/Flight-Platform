@@ -22,10 +22,24 @@ interface Spec { paths: Record<string, Record<string, Operation>>; components: {
 export const v2Spec = parse(readFileSync(openApiV2SpecPath(), 'utf8')) as Spec;
 
 const ajv = new Ajv({ strict: false, allErrors: true }); addFormats(ajv);
+/** Semántica OpenAPI de las respuestas: una propiedad `writeOnly` no viaja y por tanto tampoco es obligatoria. */
+const withoutWriteOnly = (node: unknown): unknown => {
+  if (Array.isArray(node)) return node.map(withoutWriteOnly);
+  if (!node || typeof node !== 'object') return node;
+  const record = node as Record<string, unknown>; const result: Record<string, unknown> = {};
+  const hidden = new Set(Object.entries((record.properties ?? {}) as Record<string, { writeOnly?: boolean }>).filter(([, value]) => value?.writeOnly === true).map(([name]) => name));
+  for (const [key, value] of Object.entries(record)) {
+    if (key === 'properties') result[key] = Object.fromEntries(Object.entries(value as Record<string, unknown>).filter(([name]) => !hidden.has(name)).map(([name, inner]) => [name, withoutWriteOnly(inner)]));
+    else if (key === 'required' && Array.isArray(value)) result[key] = value.filter((name) => !hidden.has(String(name)));
+    else result[key] = withoutWriteOnly(value);
+  }
+  return result;
+};
+const responseComponents = withoutWriteOnly(v2Spec.components) as Spec['components'];
 const compiled = new Map<string, ReturnType<typeof ajv.compile>>();
 const schemaValidator = (key: string, schema: object) => {
   let check = compiled.get(key);
-  if (!check) { check = ajv.compile({ ...schema, components: v2Spec.components }); compiled.set(key, check); }
+  if (!check) { check = ajv.compile({ ...(key.startsWith('schema:') ? schema : withoutWriteOnly(schema) as object), components: key.startsWith('schema:') ? v2Spec.components : responseComponents }); compiled.set(key, check); }
   return check;
 };
 

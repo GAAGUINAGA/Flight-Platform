@@ -17,7 +17,7 @@ class Memory implements WebhookStore, EventLog {
   async createDeliveries(eventId: string, payload: WebhookPayload, ids: string[], at: Date) { this.deliveries.push(...ids.map((subscriptionId) => ({ id: randomUUID(), eventId, subscriptionId, payload, status: 'PENDING' as const, attempts: 0, nextAttemptAt: at }))); }
   async claimPending(at: Date) { return this.deliveries.filter((d) => d.status === 'PENDING' && d.nextAttemptAt <= at); }
   async delivered(id: string) { this.deliveries.find((d) => d.id === id)!.status = 'DELIVERED'; }
-  async failed() { /* no aplica */ }
+  async failed(id: string, attempts: number, nextAttemptAt: Date, terminal: boolean) { const d = this.deliveries.find((item) => item.id === id)!; d.attempts = attempts; d.nextAttemptAt = nextAttemptAt; d.status = terminal ? 'FAILED' : 'PENDING'; }
   async recordEvent(input: { eventId: string; ownerId: string; eventType: string; occurredAt: Date; apiVersion: string; correlationId?: string; data: Record<string, unknown> }) { const found = this.events.find((e) => e.eventId === input.eventId); if (found) return found.seq; const seq = this.events.length + 42; this.events.push({ seq, eventId: input.eventId, ownerId: input.ownerId, eventType: input.eventType, occurredAt: input.occurredAt.toISOString(), apiVersion: input.apiVersion, ...(input.correlationId ? { correlationId: input.correlationId } : {}), data: input.data }); return seq; }
   async listEvents(input: { ownerPrefix: string; afterSeq?: number; limit: number; eventType?: string }) { const items = this.events.filter((e) => (e.ownerId === input.ownerPrefix || e.ownerId.startsWith(`${input.ownerPrefix}~`)) && (!input.afterSeq || e.seq > input.afterSeq) && (!input.eventType || e.eventType === input.eventType)); return { items: items.slice(0, input.limit), total: items.length }; }
 }
@@ -25,7 +25,7 @@ const allow: UrlPolicy = { assertSafe: async () => undefined }; const cipher = n
 
 describe('F12a Webhooks v2: CloudEvents, enrutado al cliente y almacén de eventos', () => {
   let store: Memory; let poster: HttpPoster & { post: jest.Mock }; let useCases: WebhookUseCases;
-  beforeEach(() => { store = new Memory(); poster = { post: jest.fn().mockResolvedValue(204) }; useCases = new WebhookUseCases(store, allow, cipher, poster, { timeoutMs: 5000, backoffMinutes: [1, 5, 15], production: false, sourceCode: 'gabatair' }, () => now, store); });
+  beforeEach(() => { store = new Memory(); poster = { post: jest.fn().mockResolvedValue(204) }; useCases = new WebhookUseCases(store, allow, cipher, poster, { timeoutMs: 5000, backoffMinutes: [1, 5, 15], backoffMinutesV2: [1, 5, 30, 120, 360], production: false, sourceCode: 'gabatair' }, () => now, store); });
   const subscribe = (owner: string, events: string[], apiVersion?: '1' | '2', secret = 'secret-de-prueba-123') => useCases.create(ctx, { ownerId: owner, url: 'https://hooks.example.test/h', events, secret, ...(apiVersion ? { apiVersion } : {}) });
   const publish = (owner: string, payload: Record<string, unknown>) => useCases.publish(ctx, { ownerId: owner, payload });
 
@@ -105,6 +105,16 @@ describe('F12a Webhooks v2: CloudEvents, enrutado al cliente y almacén de event
   });
   it('WHK-V2-15: ListEvents valida limit, tipo y campos desconocidos', async () => {
     for (const bad of [{ ownerPrefix: 'a', limit: 0 }, { ownerPrefix: 'a', limit: 201 }, { ownerPrefix: 'a', eventType: 'otro.evento' }, { ownerPrefix: 'a', extra: 1 }, { ownerPrefix: '' }]) await expect(useCases.listEvents(ctx, bad)).rejects.toMatchObject({ code: 'VALIDATION_FAILED' });
+  });
+  it('WHK-V2-23: una suscripción v2 reintenta a 1, 5, 30, 120 y 360 minutos y falla al sexto intento; una v1 conserva su propio calendario', async () => {
+    poster.post.mockResolvedValue(500); await subscribe('client-a', ['hold.expired'], '2'); await subscribe('owner-v1', ['hold.expired']);
+    await publish('client-a', { eventType: 'hold.expired', data: { holdId: randomUUID() } }); await publish('owner-v1', { eventType: 'hold.expired', data: { holdId: randomUUID() } });
+    const [v2, v1] = store.deliveries; const minutes = (d: Delivery) => (d.nextAttemptAt.getTime() - now.getTime()) / 60_000; const seen: Record<string, number[]> = { v2: [], v1: [] };
+    for (let round = 0; round < 6; round += 1) {
+      for (const d of store.deliveries) if (d.status === 'PENDING') d.nextAttemptAt = now; await useCases.dispatch(ctx, {});
+      if (v2.status === 'PENDING') seen.v2.push(minutes(v2)); if (v1.status === 'PENDING') seen.v1.push(minutes(v1));
+    }
+    expect(seen.v2).toEqual([1, 5, 30, 120, 360]); expect(v2.status).toBe('FAILED'); expect(seen.v1).toEqual([1, 5, 15]); expect(v1.status).toBe('FAILED');
   });
   it('WHK-V2-16: v1Body conserva el orden y omite los campos de v2', () => {
     const payload: WebhookPayload = { eventId: 'e', eventType: 'booking.confirmed', occurredAt: 't', apiVersion: '1.5.0.0', data: { bookingId: 'b' }, correlationId: 'c', seq: 1, ownerId: 'o', extra: { x: 1 } };

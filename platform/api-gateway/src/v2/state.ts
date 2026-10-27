@@ -7,6 +7,8 @@ export interface V2StateStore {
   saveBooking(record: V2BookingRecord): Promise<void>;
   findBooking(bookingId: string): Promise<V2BookingRecord | null>;
   findBookingByPayment(clientId: string, paymentReference: string): Promise<V2BookingRecord | null>;
+  /** Las referencias de pago son únicas en toda la plataforma: sirve para localizar la reserva de un evento sin bookingId. */
+  findBookingByPaymentReference(paymentReference: string): Promise<V2BookingRecord | null>;
   /** true si es la primera vez que se ve el evento de este cliente; false si ya estaba registrado. */
   claimEvent(clientId: string, eventId: string, eventType: string): Promise<boolean>;
   completeEvent(clientId: string, eventId: string, outcome: string): Promise<void>;
@@ -19,6 +21,7 @@ export class InMemoryV2StateStore implements V2StateStore {
   async saveBooking(record: V2BookingRecord): Promise<void> { this.bookings.set(record.bookingId, { ...record }); }
   async findBooking(bookingId: string): Promise<V2BookingRecord | null> { return this.bookings.get(bookingId) ?? null; }
   async findBookingByPayment(clientId: string, paymentReference: string): Promise<V2BookingRecord | null> { return [...this.bookings.values()].find((r) => r.clientId === clientId && r.paymentReference === paymentReference) ?? null; }
+  async findBookingByPaymentReference(paymentReference: string): Promise<V2BookingRecord | null> { return [...this.bookings.values()].find((r) => r.paymentReference === paymentReference) ?? null; }
   async claimEvent(clientId: string, eventId: string, eventType: string): Promise<boolean> { const key = `${clientId}:${eventId}`; if (this.events.has(key)) return false; this.events.set(key, { type: eventType, outcome: '' }); return true; }
   async completeEvent(clientId: string, eventId: string, outcome: string): Promise<void> { const found = this.events.get(`${clientId}:${eventId}`); if (found) found.outcome = outcome; }
   async eventOutcome(clientId: string, eventId: string): Promise<string | null> { const found = this.events.get(`${clientId}:${eventId}`); return found?.outcome ? found.outcome : null; }
@@ -36,6 +39,7 @@ export class PrismaV2StateStore implements V2StateStore {
   private toRecord(row: { bookingId: string; clientId: string; ownerId: string; holdId: string; paymentReference: string; salesChannel: unknown; passengerMap: unknown }): V2BookingRecord { return { bookingId: row.bookingId, clientId: row.clientId, ownerId: row.ownerId, holdId: row.holdId, paymentReference: row.paymentReference, ...(row.salesChannel ? { salesChannel: row.salesChannel as Record<string, unknown> } : {}), passengerMap: (row.passengerMap ?? {}) as Record<string, string> }; }
   async findBooking(bookingId: string): Promise<V2BookingRecord | null> { const row = await this.prisma.v2Booking.findUnique({ where: { bookingId } }); return row ? this.toRecord(row) : null; }
   async findBookingByPayment(clientId: string, paymentReference: string): Promise<V2BookingRecord | null> { const row = await this.prisma.v2Booking.findFirst({ where: { clientId, paymentReference }, orderBy: { createdAt: 'desc' } }); return row ? this.toRecord(row) : null; }
+  async findBookingByPaymentReference(paymentReference: string): Promise<V2BookingRecord | null> { const row = await this.prisma.v2Booking.findFirst({ where: { paymentReference }, orderBy: { createdAt: 'desc' } }); return row ? this.toRecord(row) : null; }
   async claimEvent(clientId: string, eventId: string, eventType: string): Promise<boolean> {
     try { await this.prisma.v2ProcessedEvent.create({ data: { clientId, eventId, eventType, outcome: '' } }); return true; }
     catch (error) { if (isUniqueViolation(error)) return false; throw error; }

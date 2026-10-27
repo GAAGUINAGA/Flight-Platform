@@ -22,7 +22,7 @@ function parseExtra(raw: string): Record<string, unknown> {
 const subscriptionView = (s: Subscription, secret: string) => ({ id: s.id, url: s.url, events: s.events, secret: maskSecret(secret), ...(s.apiVersion === '2' ? { active: s.active, ...(s.createdAt ? { createdAt: s.createdAt.toISOString() } : {}) } : {}) });
 
 export class WebhookUseCases {
-  constructor(private readonly store: WebhookStore, private readonly policy: UrlPolicy, private readonly cipher: SecretCipher, private readonly poster: HttpPoster, private readonly config: { timeoutMs: number; backoffMinutes: number[]; production: boolean; sourceCode?: string }, private readonly now = () => new Date(), private readonly eventLog?: EventLog) {}
+  constructor(private readonly store: WebhookStore, private readonly policy: UrlPolicy, private readonly cipher: SecretCipher, private readonly poster: HttpPoster, private readonly config: { timeoutMs: number; backoffMinutes: number[]; production: boolean; sourceCode?: string; /** Reintentos de las suscripciones v2 (el contrato fija 1, 5, 30, 120 y 360 min). */ backoffMinutesV2?: number[] }, private readonly now = () => new Date(), private readonly eventLog?: EventLog) {}
   async create(_ctx: RequestContext, input: unknown) { const r = validated(createSubscription, input); await this.policy.assertSafe(r.url); const secret = r.secret ?? randomUUID().replaceAll('-', ''); const row = await this.store.createSubscription({ id: randomUUID(), ownerId: r.ownerId, url: r.url, events: r.events, encryptedSecret: this.cipher.encrypt(secret), active: true, ...(r.apiVersion === '2' ? { apiVersion: '2' } : {}) }); return subscriptionView({ ...row, apiVersion: r.apiVersion }, secret); }
   async list(_ctx: RequestContext, input: unknown) { const r = validated(listSubscriptions, input); return (await this.store.listSubscriptions(r.ownerId)).map((s) => subscriptionView(s, this.cipher.decrypt(s.encryptedSecret))); }
   async delete(_ctx: RequestContext, input: unknown) { const r = validated(deleteSubscription, input); if (!(await this.store.deleteSubscription(r.id, r.ownerId))) throw new DomainError('NOT_FOUND'); }
@@ -58,6 +58,6 @@ export class WebhookUseCases {
       const result = await this.poster.post(subscription.url, body, headers, this.config.timeoutMs);
       if (result >= 200 && result < 300) return this.store.delivered(delivery.id, now);
       throw new Error('delivery rejected');
-    } catch { const attempts = delivery.attempts + 1; const terminal = attempts > this.config.backoffMinutes.length; await this.store.failed(delivery.id, attempts, terminal ? now : retryAt(now, attempts, this.config.backoffMinutes), terminal, now); }
+    } catch { const schedule = subscription.apiVersion === '2' ? (this.config.backoffMinutesV2 ?? this.config.backoffMinutes) : this.config.backoffMinutes; const attempts = delivery.attempts + 1; const terminal = attempts > schedule.length; await this.store.failed(delivery.id, attempts, terminal ? now : retryAt(now, attempts, schedule), terminal, now); }
   }
 }

@@ -88,7 +88,7 @@ export interface Scenario {
 export interface Stack {
   gateway: INestApplication; server: ReturnType<INestApplication['getHttpServer']>; payments: PaymentSimulator; devAuth: DevAuthService; clients: DevAuthClientStore;
   db: { inventory: InventoryPrisma; pricing: PricingPrisma; ancillaries: AncillariesPrisma; reservation: ReservationPrisma; ticketing: TicketingPrisma; webhooks: WebhooksPrisma; operations: OperationsPrisma };
-  scheduler: GatewayScheduler; newClient(scopes?: string[]): Promise<TestClient>; scenario(options?: { sellable?: number; domestic?: boolean; hoursAhead?: number }): Promise<Scenario>; dispatchWebhooks(): Promise<number>; subscribe(ownerId: string, events: string[], secret?: string): Promise<{ id: string; secret: string }>; close(): Promise<void>;
+  scheduler: GatewayScheduler; newClient(scopes?: string[]): Promise<TestClient>; scenario(options?: { sellable?: number; domestic?: boolean; hoursAhead?: number }): Promise<Scenario>; dispatchWebhooks(): Promise<number>; subscribe(ownerId: string, events: string[], secret?: string, apiVersion?: '1' | '2'): Promise<{ id: string; secret: string }>; close(): Promise<void>;
 }
 
 export async function startStack(env: Record<string, string | undefined> = {}): Promise<Stack> {
@@ -161,7 +161,7 @@ export async function startStack(env: Record<string, string | undefined> = {}): 
     gateway, server: gateway.getHttpServer(), payments, devAuth: gateway.get(DevAuthService), clients, db: { inventory, pricing, ancillaries, reservation, ticketing, webhooks, operations }, scheduler,
     newClient: (scopes = ALL) => registerClient(clients, scopes), scenario, dispatchWebhooks,
     // La suscripción se inserta directo: la política de URL de Webhooks (con razón) rechaza cualquier receptor local; las entregas se verifican en sus filas.
-    async subscribe(ownerId, events, secret = `secret-${randomUUID()}`) { const id = randomUUID(); await webhooks.subscription.create({ data: { id, ownerId, url: 'https://hooks.example.test/booking', events, encryptedSecret: new AesGcmCipher(WEBHOOK_KEY).encrypt(secret), active: true, apiVersion: '2' } }); return { id, secret }; },
+    async subscribe(ownerId, events, secret = `secret-${randomUUID()}`, apiVersion = '2') { const id = randomUUID(); await webhooks.subscription.create({ data: { id, ownerId, url: 'https://hooks.example.test/booking', events, encryptedSecret: new AesGcmCipher(WEBHOOK_KEY).encrypt(secret), active: true, apiVersion } }); return { id, secret }; },
     async close() {
       await gateway.close(); operationsRuntime.close(); acquire.mockRestore(); release.mockRestore();
       await Promise.allSettled(apps.reverse().map((app) => app.close())); await Promise.allSettled(channels.map(async (channel) => channel.close())); await Promise.allSettled(databases.map((db) => db.$disconnect()));
