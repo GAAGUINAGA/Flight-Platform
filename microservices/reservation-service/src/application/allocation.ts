@@ -30,8 +30,8 @@ export const ticketSummary = (tickets: unknown[]): TicketLike[] => (tickets as T
 
 const TRANSLATABLE = new Set<string>(['SEAT_TAKEN', 'SEAT_CABIN_MISMATCH', 'INFANT_SEAT_NOT_ALLOWED', 'BAGGAGE_LIMIT_EXCEEDED', 'OFFER_NO_LONGER_AVAILABLE']);
 /**
- * Un error de dominio de Ancillaries o Inventory llega aquí como error gRPC de cliente (`details` con el código) y, sin traducir,
- * saldría como INTERNAL_ERROR. Solo se traduce para reservas v2; las de v1 conservan su comportamiento.
+ * Código del catálogo de un error de dominio que una dependencia (Ancillaries, Inventory) devolvió por gRPC. Sirve para registrar
+ * la causa de un fallo (p. ej. `errorCode` de booking.failed); la respuesta al cliente la deja pasar el filtro gRPC de Reservation.
  */
 export function translateDependencyError(error: unknown): unknown {
   if (error instanceof DomainError || typeof error !== 'object' || error === null) return error;

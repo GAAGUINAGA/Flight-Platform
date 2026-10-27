@@ -1,5 +1,5 @@
 import { Catch, CallHandler, ExecutionContext, Injectable, Logger, NestInterceptor, RpcExceptionFilter } from '@nestjs/common';
-import { requestContextFromMetadata, safeGrpcError } from '@flight-platform/shared';
+import { ERROR_CODES, GRPC_STATUS_BY_CODE, requestContextFromMetadata, safeGrpcError, type ErrorCode } from '@flight-platform/shared';
 import { Logger as PinoLogger } from 'pino';
 import { Observable, tap, throwError } from 'rxjs';
 import { prismaDiagnostic } from './prisma-diagnostic';
@@ -11,6 +11,10 @@ export class ReservationExceptionFilter implements RpcExceptionFilter<unknown> {
   catch(error: unknown): Observable<never> {
     const code = typeof error === 'object' && error !== null ? (error as { code?: unknown }).code : undefined;
     if (code === status.UNAVAILABLE || code === status.DEADLINE_EXCEEDED) return throwError(() => ({ code, details: 'Service temporarily unavailable' }));
+    // Un error de negocio de una dependencia (p. ej. SEAT_TAKEN de Ancillaries) llega como error gRPC de cliente con el código del catálogo en `details`:
+    // se devuelve tal cual en lugar de convertirlo en INTERNAL_ERROR (un 500 por un caso previsible).
+    const details = typeof error === 'object' && error !== null ? (error as { details?: unknown }).details : undefined;
+    if (typeof code === 'number' && typeof details === 'string' && (ERROR_CODES as readonly string[]).includes(details) && GRPC_STATUS_BY_CODE[details as ErrorCode] === code) return throwError(() => ({ code, details }));
     const safe = safeGrpcError(error); if (safe.details === 'INTERNAL_ERROR') this.logger.error(prismaDiagnostic(error)); return throwError(() => safe);
   }
 }

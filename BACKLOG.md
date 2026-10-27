@@ -108,3 +108,7 @@
 ## Observaciones de docs/audit/audits/F11/audit-15.md
 - render-journeys.cjs acepta hold.expired comprobando eventType, data.holdId y la firma, pero no valida el cuerpo completo contra WebhookPayload (eventId, occurredAt, apiVersion).
 - La firma real del despachador de webhooks solo se verifica contra Render; en local la calcula la propia prueba.
+
+## Observaciones de F12a (para revisar en F12b)
+- pricing-service: en `pricePerPassengerType` aparecen `TOTAL` y `CHILDRE`. `TOTAL` no es un tipo de pasajero sino una fila de resumen que Pricing incluye en el desglose por tipo (el hold la usa para el precio bloqueado); `CHILDRE` es el niño escrito de forma abreviada. El contrato v2 solo admite ADULT, YOUTH, CHILD e INFANT. Hoy el Gateway v2 filtra `TOTAL` y normaliza `CHILDRE` a `CHILD` (platform/api-gateway/src/v2/shapes.ts); en F12b separar el total del desglose por tipo y corregir el nombre en Pricing.
+- F12b: aceptar con 202 el pago pendiente en equipaje (`addBaggage`) y cambio de fecha (`confirmDateChange`), que el contrato v2 admite; hoy responden 422 PAYMENT_NOT_AUTHORIZED (ADR-F12-04).
