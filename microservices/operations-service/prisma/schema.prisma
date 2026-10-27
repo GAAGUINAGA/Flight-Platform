@@ -31,6 +31,8 @@ model OperationalFlight {
   actualArrivalAt DateTime? @map("actual_arrival_at") @db.Timestamptz(3)
   departureTerminal String? @map("departure_terminal") @db.VarChar(16)
   arrivalTerminal String? @map("arrival_terminal") @db.VarChar(16)
+  departureGate String? @map("departure_gate") @db.VarChar(16)
+  statusReason String? @map("status_reason") @db.VarChar(200)
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
   updates OperationalUpdate[]

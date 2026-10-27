@@ -84,6 +84,21 @@ model StockOutbox {
   @@schema("gateway")
 }
 
+model PromotionAgreement {
+  clientId                  String   @id @map("client_id")
+  permitePromociones        Boolean  @map("permite_promociones")
+  porcentajeDescuentoMaximo Decimal  @map("porcentaje_descuento_maximo") @db.Decimal(5, 2)
+  destinosHabilitados       String[] @map("destinos_habilitados")
+  rutasHabilitadas          String[] @map("rutas_habilitadas")
+  cabinasHabilitadas        String[] @map("cabinas_habilitadas")
+  vigenciaHasta             String?  @map("vigencia_hasta") @db.VarChar(10)
+  condicionesCombo          String?  @map("condiciones_combo")
+  updatedAt                 DateTime @default(now()) @updatedAt @map("updated_at")
+
+  @@map("promotion_agreement")
+  @@schema("gateway")
+}
+
 model SchedulerLock {
   task        String   @id
   lockedUntil DateTime @map("locked_until")

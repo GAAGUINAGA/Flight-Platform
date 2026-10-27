@@ -20,6 +20,8 @@ message RecordOperationalUpdateRequest {
   optional string actual_arrival_at = 6;
   optional string departure_terminal = 7;
   optional string arrival_terminal = 8;
+  optional string departure_gate = 9;
+  optional string reason = 10;
 }
 message CheckInRequest { string booking_id = 1; string owner_id = 2; }
 message BookingOwnerRequest { string booking_id = 1; string owner_id = 2; }

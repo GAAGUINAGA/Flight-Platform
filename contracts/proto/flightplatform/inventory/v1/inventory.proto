@@ -15,6 +15,21 @@ service InventoryService {
   rpc ReleaseReservedInventory(ReleaseReservedInventoryRequest) returns (flightplatform.common.v1.Empty);
   rpc CloseFlightInstance(GetFlightInstanceRequest) returns (FlightInstanceResponse);
   rpc ExpireHolds(flightplatform.common.v1.Empty) returns (ExpireHoldsResponse);
+  rpc ListCabinOccupancy(ListFlightInstancesRequest) returns (ListCabinOccupancyResponse);
+}
+
+message CabinOccupancy { flightplatform.common.v1.CabinClass cabin_class = 1; uint32 sellable = 2; uint32 held = 3; uint32 sold = 4; }
+message FlightOccupancy {
+  string flight_instance_id = 1;
+  flightplatform.common.v1.SegmentSnapshot segment = 2;
+  bool closed = 3;
+  repeated CabinOccupancy cabins = 4;
+  uint32 active_holds = 5;
+  optional string next_hold_expiry_at = 6;
+}
+message ListCabinOccupancyResponse {
+  repeated FlightOccupancy items = 1;
+  flightplatform.common.v1.PageResponse page = 2;
 }
 
 message CabinCapacity { flightplatform.common.v1.CabinClass cabin_class = 1; uint32 capacity = 2; }

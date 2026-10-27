@@ -63,8 +63,10 @@ Respuesta al aceptar: `202 {"eventId","outcome"}`. Idempotente por `id` del Clou
 - Tras una compra Booking verá varios mensajes seguidos (hold y reserva): son estados sucesivos del mismo vuelo.
 - Pendiente para F12b: `StreamInventoryChanges`.
 
-## 7. Operaciones y promociones (pendiente — se informa a Booking al inicio)
-Estos endpoints del contrato v2 **no están implementados todavía** (prioridad P6, después de la plataforma local): `PATCH /vuelos/flights/{flightNumber}/status`, `GET /vuelos/operaciones/vuelos` y `GET`/`PUT /vuelos/promociones/contrato`. Responden 404 hoy. `GET /vuelos/flights/{flightNumber}/status` (consulta pública) **sí** funciona. Decisiones ya tomadas para cuando entren: `departureGate` y `reason` del PATCH se guardan; transición inválida ⇒ 409 `INVALID_STATUS_TRANSITION`; `PUT` de promociones exige `flights:admin`.
+## 7. Operaciones y promociones (P6, implementado)
+- `PATCH /vuelos/flights/{flightNumber}/status` (`flights:ops` o `flights:admin`): `departureGate` y `reason` se guardan y viajan en `flight.status_changed`; transición inválida ⇒ 409 `INVALID_STATUS_TRANSITION`; `CANCELLED` cierra la venta. Booking recibe el evento si tiene reservas vivas en ese vuelo (con solo los ids de las suyas).
+- `GET /vuelos/operaciones/vuelos` (`flights:ops` o `flights:admin`): panel por vuelo y cabina. `BOOKED`, `CHECKED_IN` y `BOARDED` salen en 0 (lo vendido cuenta como `TICKETED` porque la emisión v2 es inmediata).
+- `GET`/`PUT /vuelos/promociones/contrato`: `PUT` exige `flights:admin` e `Idempotency-Key`; descuento fuera de 0–100 ⇒ 422 `PROMOTION_DISCOUNT_OUT_OF_RANGE`. El acuerdo es **único de la aerolínea**: lo registra nuestro admin y Booking lo lee con `flights:read` (404 mientras no se registre; Booking no puede hacer `PUT`, 403).
 
 ## 8. Credenciales e intercambios (quién entrega qué)
 | De → a | Qué | Cómo se usa | Dónde vive |

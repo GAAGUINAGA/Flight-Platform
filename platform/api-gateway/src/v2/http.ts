@@ -36,6 +36,12 @@ export function mountV2Http(app: Application, config: GatewayConfig): void {
   const spec = loadV2Spec();
   const ajv = new Ajv({ strict: false }); addFormats(ajv);
   const problemSchema = config.validateResponses ? ajv.compile(spec.components.schemas.ProblemDetails) : undefined;
+  // El contrato lista el descuento fuera de 0–100 como 422 PROMOTION_DISCOUNT_OUT_OF_RANGE; el validador de esquema lo rechazaría con 400, así que se resuelve antes.
+  app.put('/api/v2/vuelos/promociones/contrato', (req: Request, res: Response, next: NextFunction) => {
+    const percent = (req.body as { porcentaje_descuento_maximo?: unknown } | undefined)?.porcentaje_descuento_maximo;
+    if (req.header('authorization') && typeof percent === 'number' && (percent < 0 || percent > 100)) return res.status(422).type('application/problem+json').json(buildV2Problem('PROMOTION_DISCOUNT_OUT_OF_RANGE', requestInfo(req, res), { detail: 'porcentaje_descuento_maximo debe estar entre 0 y 100' }));
+    next();
+  });
   app.use('/api/v2', openApiMiddleware({
     apiSpec: spec as never, validateRequests: true, validateSecurity: false, validateFormats: true, ajvFormats: { mode: 'full' },
     validateResponses: config.validateResponses ? {

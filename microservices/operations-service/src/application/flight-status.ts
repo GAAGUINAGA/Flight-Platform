@@ -8,7 +8,7 @@ export class FlightStatusUseCases {
  async update(input:unknown):Promise<OperationalFlight>{
    const q=validate(updateSchema,input); const f=await this.forInstance(q.flightInstanceId);
    f.transition(q.status);
-   const data={ ...(q.estimatedDepartureAt!==undefined?{estimatedDepartureAt:new Date(q.estimatedDepartureAt)}:{}),...(q.actualDepartureAt!==undefined?{actualDepartureAt:new Date(q.actualDepartureAt)}:{}),...(q.estimatedArrivalAt!==undefined?{estimatedArrivalAt:new Date(q.estimatedArrivalAt)}:{}),...(q.actualArrivalAt!==undefined?{actualArrivalAt:new Date(q.actualArrivalAt)}:{}),...(q.departureTerminal!==undefined?{departureTerminal:q.departureTerminal}:{}),...(q.arrivalTerminal!==undefined?{arrivalTerminal:q.arrivalTerminal}:{}) };
+   const data={ ...(q.estimatedDepartureAt!==undefined?{estimatedDepartureAt:new Date(q.estimatedDepartureAt)}:{}),...(q.actualDepartureAt!==undefined?{actualDepartureAt:new Date(q.actualDepartureAt)}:{}),...(q.estimatedArrivalAt!==undefined?{estimatedArrivalAt:new Date(q.estimatedArrivalAt)}:{}),...(q.actualArrivalAt!==undefined?{actualArrivalAt:new Date(q.actualArrivalAt)}:{}),...(q.departureTerminal!==undefined?{departureTerminal:q.departureTerminal}:{}),...(q.arrivalTerminal!==undefined?{arrivalTerminal:q.arrivalTerminal}:{}),...(q.departureGate!==undefined?{departureGate:q.departureGate}:{}),...(q.reason!==undefined?{statusReason:q.reason}:{}) };
    Object.assign(f.props,data); await this.store.update(f,data);
    const cancelled=f.props.status==='CANCELLED';
    if(cancelled&&!f.props.cancellationClosed){await this.inventory.closeFlightInstance(f.props.flightInstanceId);f.props.cancellationClosed=true;await this.store.update(f,{})}

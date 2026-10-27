@@ -25,6 +25,8 @@ export interface RecordOperationalUpdateRequest {
   actualArrivalAt?: string | undefined;
   departureTerminal?: string | undefined;
   arrivalTerminal?: string | undefined;
+  departureGate?: string | undefined;
+  reason?: string | undefined;
 }
 
 export interface CheckInRequest {

@@ -1469,6 +1469,185 @@
           ]
         }
       ]
+    },
+    {
+      "name": "6 · Operaciones y promociones (P6; token con flights:ops / flights:admin)",
+      "item": [
+        {
+          "name": "Cambiar estado de un vuelo (PATCH, flights:ops)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v2/vuelos/flights/{{flightNumber}}/status",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v2",
+                "vuelos",
+                "flights",
+                "{{flightNumber}}",
+                "status"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"date\": \"{{departureDate}}\",\n  \"status\": \"DELAYED\",\n  \"estimatedDepartureAt\": \"{{estimatedDepartureAt}}\",\n  \"departureGate\": \"A6\",\n  \"reason\": \"Condiciones meteorológicas\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('trae previousStatus, flight y eventId', function () { const b = pm.response.json(); pm.expect(b.previousStatus).to.be.a('string'); pm.expect(b.flight.status).to.eql('DELAYED'); pm.expect(b.eventId).to.be.a('string'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Panel de ocupación por vuelo (flights:ops)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v2/vuelos/operaciones/vuelos?date={{departureDate}}&limit=10",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v2",
+                "vuelos",
+                "operaciones",
+                "vuelos"
+              ],
+              "query": [
+                {
+                  "key": "date",
+                  "value": "{{departureDate}}"
+                },
+                {
+                  "key": "limit",
+                  "value": "10"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('items con cabinas y alertas', function () { const b = pm.response.json(); pm.expect(b.items).to.be.an('array'); pm.expect(b.totalFlights).to.be.a('number'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Registrar el acuerdo de promociones (PUT, flights:admin)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v2/vuelos/promociones/contrato",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v2",
+                "vuelos",
+                "promociones",
+                "contrato"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"permite_promociones\": true,\n  \"porcentaje_descuento_maximo\": 12,\n  \"destinos_habilitados\": [\"Quito\", \"Guayaquil\"],\n  \"rutas_habilitadas\": [\"UIO-GYE\", \"GYE-UIO\"],\n  \"cabinas_habilitadas\": [\"ECONOMY\"],\n  \"vigencia_hasta\": \"2026-12-31\",\n  \"condiciones_combo\": \"Hasta 12% en combos; no aplica en feriados.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('contrato con el nodo GabatAIR', function () { const b = pm.response.json(); pm.expect(b.success).to.eql(true); pm.expect(b.contrato.proveedor_codigo).to.eql('NODE_VUE_GABATAIR'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Consultar el acuerdo de promociones (flights:read)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v2/vuelos/promociones/contrato",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v2",
+                "vuelos",
+                "promociones",
+                "contrato"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200 (404 si aún no se registró el acuerdo de este cliente)', function () { pm.expect([200, 404]).to.include(pm.response.code); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
     }
   ]
 }
