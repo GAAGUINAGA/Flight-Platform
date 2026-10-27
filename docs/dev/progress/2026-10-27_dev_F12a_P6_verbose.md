@@ -1,0 +1,123 @@
+# Lista --verbose P6 (matriz V2-P6-MX y casos)
+
+Resultado: 119 passed, 0 failed, 119 total
+
+- OK operaciones y promociones v2 (contra servicios reales) PATCH /vuelos/flights/{flightNumber}/status V2-P6-01 K: DELAYED con puerta y motivo responde 200 y cumple FlightStatusUpdateResponse
+- OK operaciones y promociones v2 (contra servicios reales) PATCH /vuelos/flights/{flightNumber}/status V2-P6-02 la puerta y el motivo se guardan en Operations
+- OK operaciones y promociones v2 (contra servicios reales) PATCH /vuelos/flights/{flightNumber}/status V2-P6-03 flight.status_changed viaja con departureGate y reason y cumple EventFlightStatusChanged
+- OK operaciones y promociones v2 (contra servicios reales) PATCH /vuelos/flights/{flightNumber}/status V2-P6-04 el socio con reservas en el vuelo recibe el evento con solo los ids de sus reservas y affectedBookings las cuenta
+- OK operaciones y promociones v2 (contra servicios reales) PATCH /vuelos/flights/{flightNumber}/status V2-P6-05 una transición inválida responde 409 INVALID_STATUS_TRANSITION y no cambia nada ni emite el evento
+- OK operaciones y promociones v2 (contra servicios reales) PATCH /vuelos/flights/{flightNumber}/status V2-P6-06 desde un estado terminal ninguna transición es válida
+- OK operaciones y promociones v2 (contra servicios reales) PATCH /vuelos/flights/{flightNumber}/status V2-P6-07 CANCELLED cierra la venta del vuelo como en v1
+- OK operaciones y promociones v2 (contra servicios reales) PATCH /vuelos/flights/{flightNumber}/status V2-P6-08 la cadena SCHEDULED → BOARDING → DEPARTED → ARRIVED se acepta paso a paso y GET status lo refleja
+- OK operaciones y promociones v2 (contra servicios reales) PATCH /vuelos/flights/{flightNumber}/status V2-P6-09 un vuelo inexistente responde 404 y un vuelo en otra fecha también
+- OK operaciones y promociones v2 (contra servicios reales) PATCH /vuelos/flights/{flightNumber}/status V2-P6-10 con el mismo Idempotency-Key el reintento no emite un segundo evento y devuelve el mismo eventId
+- OK operaciones y promociones v2 (contra servicios reales) PATCH /vuelos/flights/{flightNumber}/status V2-P6-11 con flights:admin en lugar de flights:ops también se acepta
+- OK operaciones y promociones v2 (contra servicios reales) PATCH /vuelos/flights/{flightNumber}/status V2-P6-12 S: sin token responde 401
+- OK operaciones y promociones v2 (contra servicios reales) PATCH /vuelos/flights/{flightNumber}/status V2-P6-13 S: con flights:read, flights:book o flights:webhooks responde 403 y no cambia el vuelo
+- OK operaciones y promociones v2 (contra servicios reales) PATCH /vuelos/flights/{flightNumber}/status V2-P6-14 S: una entrada inválida responde 400 (fecha, estado, hora, número de vuelo, cuerpo vacío)
+- OK operaciones y promociones v2 (contra servicios reales) PATCH /vuelos/flights/{flightNumber}/status V2-P6-15 S: una puerta o un motivo demasiado largos responden 400 y no se guardan
+- OK operaciones y promociones v2 (contra servicios reales) GET /vuelos/operaciones/vuelos V2-P6-20 K: el panel del día cumple FlightOperationsResponse y trae el vuelo con su cabina
+- OK operaciones y promociones v2 (contra servicios reales) GET /vuelos/operaciones/vuelos V2-P6-21 un hold activo cuenta como HELD con su próximo vencimiento y un hold liberado vuelve a AVAILABLE
+- OK operaciones y promociones v2 (contra servicios reales) GET /vuelos/operaciones/vuelos V2-P6-22 una reserva emitida cuenta como TICKETED (la emisión v2 es inmediata) y sube el factor de ocupación
+- OK operaciones y promociones v2 (contra servicios reales) GET /vuelos/operaciones/vuelos V2-P6-23 el filtro status devuelve solo los vuelos en ese estado y el estado cambia tras el PATCH
+- OK operaciones y promociones v2 (contra servicios reales) GET /vuelos/operaciones/vuelos V2-P6-24 los filtros origin y destination excluyen los otros vuelos de la fecha
+- OK operaciones y promociones v2 (contra servicios reales) GET /vuelos/operaciones/vuelos V2-P6-25 la paginación con limit y cursor recorre los vuelos sin repetir ninguno
+- OK operaciones y promociones v2 (contra servicios reales) GET /vuelos/operaciones/vuelos V2-P6-26 las alertas reportan poca disponibilidad, demora y cancelación con el código y la severidad del contrato
+- OK operaciones y promociones v2 (contra servicios reales) GET /vuelos/operaciones/vuelos V2-P6-27 checkInOpen es verdadero dentro de la ventana de check-in y falso fuera de ella
+- OK operaciones y promociones v2 (contra servicios reales) GET /vuelos/operaciones/vuelos V2-P6-28 S: sin token responde 401
+- OK operaciones y promociones v2 (contra servicios reales) GET /vuelos/operaciones/vuelos V2-P6-29 S: con flights:read responde 403
+- OK operaciones y promociones v2 (contra servicios reales) GET /vuelos/operaciones/vuelos V2-P6-30 S: una entrada inválida responde 400 (sin fecha, fecha mala, IATA en minúsculas, estado, límite)
+- OK operaciones y promociones v2 (contra servicios reales) GET /vuelos/operaciones/vuelos V2-P6-31 con flights:admin también se acepta
+- OK operaciones y promociones v2 (contra servicios reales) GET y PUT /vuelos/promociones/contrato V2-P6-41 el GET sin acuerdo registrado responde 404
+- OK operaciones y promociones v2 (contra servicios reales) GET y PUT /vuelos/promociones/contrato V2-P6-40 K: el admin registra el acuerdo (200) y un socio con solo flights:read lo lee completo y cumple ContratoPromocionesResponse
+- OK operaciones y promociones v2 (contra servicios reales) GET y PUT /vuelos/promociones/contrato V2-P6-42 un PUT con solo los campos obligatorios se acepta y los listas quedan vacías
+- OK operaciones y promociones v2 (contra servicios reales) GET y PUT /vuelos/promociones/contrato V2-P6-43 el PUT reemplaza el acuerdo anterior
+- OK operaciones y promociones v2 (contra servicios reales) GET y PUT /vuelos/promociones/contrato V2-P6-44 el reintento con la misma Idempotency-Key responde 200 Idempotent-Replayed con el mismo cuerpo; con otro cuerpo, 409 IDEMPOTENCY_KEY_REUSED
+- OK operaciones y promociones v2 (contra servicios reales) GET y PUT /vuelos/promociones/contrato V2-P6-45 un descuento fuera de 0–100 responde 422 PROMOTION_DISCOUNT_OUT_OF_RANGE y no cambia el acuerdo
+- OK operaciones y promociones v2 (contra servicios reales) GET y PUT /vuelos/promociones/contrato V2-P6-46 el acuerdo es único: lo que registra un admin lo ven todos los socios y el último PUT gana
+- OK operaciones y promociones v2 (contra servicios reales) GET y PUT /vuelos/promociones/contrato V2-P6-46b un socio con solo flights:read (sin flights:admin) no puede hacer PUT: 403 y el acuerdo no cambia
+- OK operaciones y promociones v2 (contra servicios reales) GET y PUT /vuelos/promociones/contrato V2-P6-47 S: sin token, GET y PUT responden 401
+- OK operaciones y promociones v2 (contra servicios reales) GET y PUT /vuelos/promociones/contrato V2-P6-48 S: el PUT con flights:read o flights:ops responde 403 y no guarda nada; el GET sin flights:read también
+- OK operaciones y promociones v2 (contra servicios reales) GET y PUT /vuelos/promociones/contrato V2-P6-49 S: una entrada inválida responde 400 (sin cuerpo, tipos, rutas, cabinas, fecha, sin Idempotency-Key)
+- OK operaciones y promociones v2 (contra servicios reales) matriz rol × operación (P6) V2-P6-MX PATCH status · anonymous → NaN
+- OK operaciones y promociones v2 (contra servicios reales) matriz rol × operación (P6) V2-P6-MX PATCH status · lector → NaN
+- OK operaciones y promociones v2 (contra servicios reales) matriz rol × operación (P6) V2-P6-MX PATCH status · operador → NaN
+- OK operaciones y promociones v2 (contra servicios reales) matriz rol × operación (P6) V2-P6-MX PATCH status · admin → NaN
+- OK operaciones y promociones v2 (contra servicios reales) matriz rol × operación (P6) V2-P6-MX GET operaciones/vuelos · anonymous → NaN
+- OK operaciones y promociones v2 (contra servicios reales) matriz rol × operación (P6) V2-P6-MX GET operaciones/vuelos · lector → NaN
+- OK operaciones y promociones v2 (contra servicios reales) matriz rol × operación (P6) V2-P6-MX GET operaciones/vuelos · operador → NaN
+- OK operaciones y promociones v2 (contra servicios reales) matriz rol × operación (P6) V2-P6-MX GET operaciones/vuelos · admin → NaN
+- OK operaciones y promociones v2 (contra servicios reales) matriz rol × operación (P6) V2-P6-MX GET promociones/contrato · anonymous → NaN
+- OK operaciones y promociones v2 (contra servicios reales) matriz rol × operación (P6) V2-P6-MX GET promociones/contrato · lector → NaN
+- OK operaciones y promociones v2 (contra servicios reales) matriz rol × operación (P6) V2-P6-MX GET promociones/contrato · operador → NaN
+- OK operaciones y promociones v2 (contra servicios reales) matriz rol × operación (P6) V2-P6-MX GET promociones/contrato · admin → NaN
+- OK operaciones y promociones v2 (contra servicios reales) matriz rol × operación (P6) V2-P6-MX PUT promociones/contrato · anonymous → NaN
+- OK operaciones y promociones v2 (contra servicios reales) matriz rol × operación (P6) V2-P6-MX PUT promociones/contrato · lector → NaN
+- OK operaciones y promociones v2 (contra servicios reales) matriz rol × operación (P6) V2-P6-MX PUT promociones/contrato · operador → NaN
+- OK operaciones y promociones v2 (contra servicios reales) matriz rol × operación (P6) V2-P6-MX PUT promociones/contrato · admin → NaN
+- OK OPS-04/OPS-05 OPS-04: crea el estado perezosamente desde Inventory
+- OK OPS-04/OPS-05 OPS-05: publica cambios desde quince minutos
+- OK OPS-04/OPS-05: errores e idempotencia OPS-04: un vuelo inexistente devuelve FLIGHT_STATUS_NOT_AVAILABLE
+- OK OPS-04/OPS-05: errores e idempotencia OPS-04: Inventory no disponible conserva UNAVAILABLE
+- OK OPS-04/OPS-05: errores e idempotencia OPS-05: repetir cancelación no vuelve a cerrar ni publicar
+- OK OPS-04/OPS-05: errores e idempotencia OPS-05: repetir el mismo horario de retraso no vuelve a publicar
+- OK OPS-04/OPS-05: errores e idempotencia OPS-05: si falla el cierre de Inventory, el reintento vuelve a intentarlo
+- OK OPS-04/OPS-05: errores e idempotencia OPS-05: si falla la publicación, el reintento no vuelve a cerrar el vuelo
+- OK OPS-P6: puerta y motivo del cambio de estado OPS-P6-01: departureGate y reason se guardan en el vuelo y en el registro de la actualización
+- OK OPS-P6: puerta y motivo del cambio de estado OPS-P6-02: sin puerta ni motivo el vuelo conserva los que ya tenía
+- OK OPS-P6: puerta y motivo del cambio de estado OPS-P6-03: una puerta o un motivo vacíos o demasiado largos se rechazan
+- OK tabla de transiciones del Gateway frente a la de Operations V2-P6-EQ SCHEDULED → SCHEDULED: el Gateway y el dominio de Operations coinciden
+- OK tabla de transiciones del Gateway frente a la de Operations V2-P6-EQ SCHEDULED → BOARDING: el Gateway y el dominio de Operations coinciden
+- OK tabla de transiciones del Gateway frente a la de Operations V2-P6-EQ SCHEDULED → DEPARTED: el Gateway y el dominio de Operations coinciden
+- OK tabla de transiciones del Gateway frente a la de Operations V2-P6-EQ SCHEDULED → DELAYED: el Gateway y el dominio de Operations coinciden
+- OK tabla de transiciones del Gateway frente a la de Operations V2-P6-EQ SCHEDULED → ARRIVED: el Gateway y el dominio de Operations coinciden
+- OK tabla de transiciones del Gateway frente a la de Operations V2-P6-EQ SCHEDULED → CANCELLED: el Gateway y el dominio de Operations coinciden
+- OK tabla de transiciones del Gateway frente a la de Operations V2-P6-EQ SCHEDULED → DIVERTED: el Gateway y el dominio de Operations coinciden
+- OK tabla de transiciones del Gateway frente a la de Operations V2-P6-EQ BOARDING → SCHEDULED: el Gateway y el dominio de Operations coinciden
+- OK tabla de transiciones del Gateway frente a la de Operations V2-P6-EQ BOARDING → BOARDING: el Gateway y el dominio de Operations coinciden
+- OK tabla de transiciones del Gateway frente a la de Operations V2-P6-EQ BOARDING → DEPARTED: el Gateway y el dominio de Operations coinciden
+- OK tabla de transiciones del Gateway frente a la de Operations V2-P6-EQ BOARDING → DELAYED: el Gateway y el dominio de Operations coinciden
+- OK tabla de transiciones del Gateway frente a la de Operations V2-P6-EQ BOARDING → ARRIVED: el Gateway y el dominio de Operations coinciden
+- OK tabla de transiciones del Gateway frente a la de Operations V2-P6-EQ BOARDING → CANCELLED: el Gateway y el dominio de Operations coinciden
+- OK tabla de transiciones del Gateway frente a la de Operations V2-P6-EQ BOARDING → DIVERTED: el Gateway y el dominio de Operations coinciden
+- OK tabla de transiciones del Gateway frente a la de Operations V2-P6-EQ DEPARTED → SCHEDULED: el Gateway y el dominio de Operations coinciden
+- OK tabla de transiciones del Gateway frente a la de Operations V2-P6-EQ DEPARTED → BOARDING: el Gateway y el dominio de Operations coinciden
+- OK tabla de transiciones del Gateway frente a la de Operations V2-P6-EQ DEPARTED → DEPARTED: el Gateway y el dominio de Operations coinciden
+- OK tabla de transiciones del Gateway frente a la de Operations V2-P6-EQ DEPARTED → DELAYED: el Gateway y el dominio de Operations coinciden
+- OK tabla de transiciones del Gateway frente a la de Operations V2-P6-EQ DEPARTED → ARRIVED: el Gateway y el dominio de Operations coinciden
+- OK tabla de transiciones del Gateway frente a la de Operations V2-P6-EQ DEPARTED → CANCELLED: el Gateway y el dominio de Operations coinciden
+- OK tabla de transiciones del Gateway frente a la de Operations V2-P6-EQ DEPARTED → DIVERTED: el Gateway y el dominio de Operations coinciden
+- OK tabla de transiciones del Gateway frente a la de Operations V2-P6-EQ DELAYED → SCHEDULED: el Gateway y el dominio de Operations coinciden
+- OK tabla de transiciones del Gateway frente a la de Operations V2-P6-EQ DELAYED → BOARDING: el Gateway y el dominio de Operations coinciden
+- OK tabla de transiciones del Gateway frente a la de Operations V2-P6-EQ DELAYED → DEPARTED: el Gateway y el dominio de Operations coinciden
+- OK tabla de transiciones del Gateway frente a la de Operations V2-P6-EQ DELAYED → DELAYED: el Gateway y el dominio de Operations coinciden
+- OK tabla de transiciones del Gateway frente a la de Operations V2-P6-EQ DELAYED → ARRIVED: el Gateway y el dominio de Operations coinciden
+- OK tabla de transiciones del Gateway frente a la de Operations V2-P6-EQ DELAYED → CANCELLED: el Gateway y el dominio de Operations coinciden
+- OK tabla de transiciones del Gateway frente a la de Operations V2-P6-EQ DELAYED → DIVERTED: el Gateway y el dominio de Operations coinciden
+- OK tabla de transiciones del Gateway frente a la de Operations V2-P6-EQ ARRIVED → SCHEDULED: el Gateway y el dominio de Operations coinciden
+- OK tabla de transiciones del Gateway frente a la de Operations V2-P6-EQ ARRIVED → BOARDING: el Gateway y el dominio de Operations coinciden
+- OK tabla de transiciones del Gateway frente a la de Operations V2-P6-EQ ARRIVED → DEPARTED: el Gateway y el dominio de Operations coinciden
+- OK tabla de transiciones del Gateway frente a la de Operations V2-P6-EQ ARRIVED → DELAYED: el Gateway y el dominio de Operations coinciden
+- OK tabla de transiciones del Gateway frente a la de Operations V2-P6-EQ ARRIVED → ARRIVED: el Gateway y el dominio de Operations coinciden
+- OK tabla de transiciones del Gateway frente a la de Operations V2-P6-EQ ARRIVED → CANCELLED: el Gateway y el dominio de Operations coinciden
+- OK tabla de transiciones del Gateway frente a la de Operations V2-P6-EQ ARRIVED → DIVERTED: el Gateway y el dominio de Operations coinciden
+- OK tabla de transiciones del Gateway frente a la de Operations V2-P6-EQ CANCELLED → SCHEDULED: el Gateway y el dominio de Operations coinciden
+- OK tabla de transiciones del Gateway frente a la de Operations V2-P6-EQ CANCELLED → BOARDING: el Gateway y el dominio de Operations coinciden
+- OK tabla de transiciones del Gateway frente a la de Operations V2-P6-EQ CANCELLED → DEPARTED: el Gateway y el dominio de Operations coinciden
+- OK tabla de transiciones del Gateway frente a la de Operations V2-P6-EQ CANCELLED → DELAYED: el Gateway y el dominio de Operations coinciden
+- OK tabla de transiciones del Gateway frente a la de Operations V2-P6-EQ CANCELLED → ARRIVED: el Gateway y el dominio de Operations coinciden
+- OK tabla de transiciones del Gateway frente a la de Operations V2-P6-EQ CANCELLED → CANCELLED: el Gateway y el dominio de Operations coinciden
+- OK tabla de transiciones del Gateway frente a la de Operations V2-P6-EQ CANCELLED → DIVERTED: el Gateway y el dominio de Operations coinciden
+- OK tabla de transiciones del Gateway frente a la de Operations V2-P6-EQ DIVERTED → SCHEDULED: el Gateway y el dominio de Operations coinciden
+- OK tabla de transiciones del Gateway frente a la de Operations V2-P6-EQ DIVERTED → BOARDING: el Gateway y el dominio de Operations coinciden
+- OK tabla de transiciones del Gateway frente a la de Operations V2-P6-EQ DIVERTED → DEPARTED: el Gateway y el dominio de Operations coinciden
+- OK tabla de transiciones del Gateway frente a la de Operations V2-P6-EQ DIVERTED → DELAYED: el Gateway y el dominio de Operations coinciden
+- OK tabla de transiciones del Gateway frente a la de Operations V2-P6-EQ DIVERTED → ARRIVED: el Gateway y el dominio de Operations coinciden
+- OK tabla de transiciones del Gateway frente a la de Operations V2-P6-EQ DIVERTED → CANCELLED: el Gateway y el dominio de Operations coinciden
+- OK tabla de transiciones del Gateway frente a la de Operations V2-P6-EQ DIVERTED → DIVERTED: el Gateway y el dominio de Operations coinciden
+- OK tabla de transiciones del Gateway frente a la de Operations V2-P6-EQ-00 los siete estados del contrato v2 están cubiertos
+- OK F12a P6 integración: promotion_agreement en Postgres V2-P6-DB-01 guarda y lee el acuerdo de un cliente con todos sus campos
+- OK F12a P6 integración: promotion_agreement en Postgres V2-P6-DB-02 guardar de nuevo reemplaza el acuerdo sin duplicarlo
+- OK F12a P6 integración: promotion_agreement en Postgres V2-P6-DB-03 el acuerdo es por cliente y uno sin registro devuelve null
+- OK F12a P6 integración: promotion_agreement en Postgres V2-P6-DB-04 los campos opcionales ausentes no se inventan
