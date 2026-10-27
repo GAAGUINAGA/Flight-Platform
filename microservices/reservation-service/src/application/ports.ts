@@ -19,6 +19,7 @@ export interface PricingPort {
   getChangeOffer?(input: { changeOfferId: string; ownerId: string }): Promise<unknown>;
   markChangeOfferUsed?(input: { changeOfferId: string; ownerId: string }): Promise<void>;
   quoteCancellation?(input: unknown): Promise<unknown>;
+  releaseHold?(input: { holdId: string; ownerId: string }): Promise<void>;
 }
 export interface AncillariesPort {
   registerBaggageAllowance(input: { bookingId: string; ownerId: string; allowances: Array<{ passengerId: string; itineraryId: string; checkedBaggageIncluded: number }> }): Promise<void>;
@@ -37,6 +38,6 @@ export interface TicketingPort {
   reissueTickets?(input: { bookingId: string; ownerId: string; newItineraries: unknown[] }): Promise<unknown[]>;
   refundTickets?(input: { bookingId: string; ownerId: string }): Promise<void>;
 }
-export interface EventPublisher { publish(input: { ownerId: string; eventType: string; bookingId: string; pnr: string; status: string; eventId?: string; refundAmount?: string }): Promise<void>; }
+export interface EventPublisher { publish(input: { ownerId: string; eventType: string; bookingId: string; pnr: string; status: string; eventId?: string; refundAmount?: string; extra?: Record<string, unknown> }): Promise<void>; }
 export type PaymentResult = 'AUTHORIZED' | 'PENDING';
-export interface PaymentVerifier { verify(input: { paymentReference: string; currency: string; total: string }): Promise<PaymentResult>; void(input: { paymentReference: string }): Promise<void>; refund?(input: { paymentReference: string; amount: string; currency: string }): Promise<void>; }
+export interface PaymentVerifier { verify(input: { paymentReference: string; currency: string; total: string; channel?: string }): Promise<PaymentResult>; void(input: { paymentReference: string }): Promise<void>; refund?(input: { paymentReference: string; amount: string; currency: string }): Promise<void>; }

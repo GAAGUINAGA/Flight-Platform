@@ -15,6 +15,10 @@ service ReservationService {
   rpc GetCancellationQuote(GetReservationRequest) returns (flightplatform.common.v1.CancellationQuote);
   rpc CancelReservation(CancelReservationRequest) returns (flightplatform.common.v1.BookingDetail);
   rpc ResumePending(ResumePendingRequest) returns (ResumePendingResponse);
+  // Aditivo F12a (D3): payment.failed de Booking. Anula boletos, libera asientos y capacidad y marca FAILED; idempotente.
+  rpc FailReservation(FailReservationRequest) returns (flightplatform.common.v1.BookingDetail);
+  // Aditivo F12a: reintenta de inmediato la reserva indicada (p. ej. payment.confirmed de una reserva en PENDING_PAYMENT o TICKET_ISSUING).
+  rpc ResumeReservation(GetReservationRequest) returns (flightplatform.common.v1.BookingDetail);
 }
 
 message CreateReservationRequest {
@@ -23,12 +27,21 @@ message CreateReservationRequest {
   repeated flightplatform.common.v1.Passenger passengers = 3;
   flightplatform.common.v1.PaymentReference payment = 4;
   string idempotency_key = 5;
+  // Aditivo F12a: canal de verificación de pago ("BOOKING" consulta la API de pagos de Booking). Ausente = verificador v1.
+  optional string payment_channel = 6;
+  // Aditivo F12a: si Ticketing falla tras consumir el hold, devuelve la reserva en TICKET_ISSUING (a reintentar) en lugar de error.
+  optional bool defer_issuance_failure = 7;
 }
+message FailReservationRequest { string booking_id = 1; string owner_id = 2; optional string reason = 3; }
 message GetReservationRequest { string booking_id = 1; string owner_id = 2; }
 message ListReservationsRequest {
   string owner_id = 1;
   optional string pnr = 2;
   flightplatform.common.v1.PageRequest page = 3;
+  // Aditivo F12a: filtros de GET /vuelos/bookings (fechas ISO 8601; el estado usa el nombre interno).
+  optional string status = 4;
+  optional string created_from = 5;
+  optional string created_to = 6;
 }
 message ListReservationsResponse {
   repeated flightplatform.common.v1.BookingSummary items = 1;
@@ -63,6 +76,7 @@ message AddBaggageRequest {
   uint32 quantity = 5;
   flightplatform.common.v1.PaymentReference payment = 6;
   string idempotency_key = 7;
+  optional string payment_channel = 8;
 }
 message BaggageAddedResponse { string passenger_id = 1; string itinerary_id = 2; uint32 total_baggage = 3; }
 message DateChangeSelection { string itinerary_id = 1; string new_departure_date = 2; }
@@ -79,6 +93,7 @@ message ConfirmDateChangeRequest {
   optional flightplatform.common.v1.PaymentReference payment = 4;
   repeated flightplatform.common.v1.AssignedSeat assigned_seats = 5;
   string idempotency_key = 6;
+  optional string payment_channel = 7;
 }
 message CancelReservationRequest {
   string booking_id = 1;

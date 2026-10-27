@@ -51,6 +51,7 @@ export class GrpcPricingGateway implements PricingPort {
   async getChangeOffer(input: { changeOfferId: string; ownerId: string }): Promise<unknown> { return call(this.client(input.ownerId, 'system'), 'getChangeOffer', input); }
   async markChangeOfferUsed(input: { changeOfferId: string; ownerId: string }): Promise<void> { await call(this.client(input.ownerId, 'system'), 'markChangeOfferUsed', input); }
   async quoteCancellation(input: unknown): Promise<unknown> { return call(this.client((input as { ownerId: string }).ownerId, 'system'), 'quoteCancellation', input); }
+  async releaseHold(input: { holdId: string; ownerId: string }): Promise<void> { await call(this.client(input.ownerId, 'system'), 'releaseOfferHold', input); }
 }
 export class GrpcAncillariesGateway implements AncillariesPort {
   constructor(private readonly client: GrpcServiceForOwner) {}
@@ -73,5 +74,5 @@ export class GrpcTicketingGateway implements TicketingPort {
 }
 export class GrpcEventPublisher implements EventPublisher {
   constructor(private readonly client: GrpcServiceForOwner) {}
-  async publish(input: { ownerId: string; eventType: string; bookingId: string; pnr: string; status: string; eventId?: string; refundAmount?: string }): Promise<void> { await readDependency('webhooks', 'publishEvent', () => call(this.client(input.ownerId, 'system'), 'publishEvent', { ownerId: input.ownerId, payload: { eventId: input.eventId ?? input.bookingId, eventType: input.eventType, occurredAt: new Date().toISOString(), apiVersion: 'v1', data: { bookingId: input.bookingId, pnr: input.pnr, status: input.status, ...(input.refundAmount ? { refundAmount: input.refundAmount } : {}) } } })); }
+  async publish(input: { ownerId: string; eventType: string; bookingId: string; pnr: string; status: string; eventId?: string; refundAmount?: string; extra?: Record<string, unknown> }): Promise<void> { await readDependency('webhooks', 'publishEvent', () => call(this.client(input.ownerId, 'system'), 'publishEvent', { ownerId: input.ownerId, payload: { eventId: input.eventId ?? input.bookingId, eventType: input.eventType, occurredAt: new Date().toISOString(), apiVersion: 'v1', data: { bookingId: input.bookingId, pnr: input.pnr, status: input.status, ...(input.refundAmount ? { refundAmount: input.refundAmount } : {}), ...(input.extra && Object.keys(input.extra).length ? { dataJson: JSON.stringify(input.extra) } : {}) } } })); }
 }

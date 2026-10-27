@@ -8,6 +8,8 @@ service WebhooksService {
   rpc DeleteSubscription(DeleteSubscriptionRequest) returns (flightplatform.common.v1.Empty);
   rpc PublishEvent(PublishEventRequest) returns (PublishEventResponse);
   rpc DispatchPending(flightplatform.common.v1.Empty) returns (DispatchPendingResponse);
+  // Aditivo F12a: almacén global de eventos para el feed GET /vuelos/eventos de v2.
+  rpc ListEvents(ListEventsRequest) returns (ListEventsResponse);
 }
 
 message CreateSubscriptionRequest {
@@ -15,7 +17,27 @@ message CreateSubscriptionRequest {
   string url = 2;
   repeated string events = 3;
   optional string secret = 4;
+  // Aditivo F12a: "2" entrega CloudEvents v1.0 firmados con X-Webhook-Signature; ausente o "1" es el formato v1.
+  optional string api_version = 5;
 }
+message StoredEvent {
+  uint64 seq = 1;
+  string event_id = 2;
+  string owner_id = 3;
+  string event_type = 4;
+  string occurred_at = 5;
+  string api_version = 6;
+  optional string correlation_id = 7;
+  string data_json = 8;
+}
+// owner_prefix es el clientId: devuelve los eventos de recursos <clientId> y <clientId>~*.
+message ListEventsRequest {
+  string owner_prefix = 1;
+  optional uint64 after_seq = 2;
+  optional uint32 limit = 3;
+  optional string event_type = 4;
+}
+message ListEventsResponse { repeated StoredEvent items = 1; uint64 total = 2; }
 message ListSubscriptionsRequest { string owner_id = 1; }
 message ListSubscriptionsResponse { repeated flightplatform.common.v1.WebhookSubscription subscriptions = 1; }
 message DeleteSubscriptionRequest { string id = 1; string owner_id = 2; }

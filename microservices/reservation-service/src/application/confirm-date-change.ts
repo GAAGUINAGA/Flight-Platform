@@ -7,7 +7,7 @@ import { ReservationStore, StoredReservation } from './reservation-store';
 type Segment = { flightInstanceId?: string; segmentId: string; departure: { at: string; iataCode?: string }; arrival?: { iataCode?: string }; [key: string]: unknown };
 type Itinerary = { itineraryId: string; segments: Segment[]; pricingOptions: Array<{ cabinClass?: string; fareRules?: { isChangeable?: boolean }; [key: string]: unknown }> } & PostSaleItinerary;
 type Offer = { changeOfferId: string; expiresAt: string; segments: Segment[]; priceDifference: { totalToPay: string } };
-type Input = { bookingId: string; ownerId: string; changeOfferId: string; payment?: { paymentReference: string }; assignedSeats: unknown[]; idempotencyKey: string };
+type Input = { bookingId: string; ownerId: string; changeOfferId: string; payment?: { paymentReference: string }; assignedSeats: unknown[]; idempotencyKey: string; paymentChannel?: string };
 
 export class ConfirmDateChange {
   private readonly active = new Map<string, Promise<StoredReservation>>();
@@ -41,7 +41,7 @@ export class ConfirmDateChange {
     if (amountMinor > 0) {
       if (!input.payment?.paymentReference) throw new DomainError('PAYMENT_REFERENCE_INVALID');
       await this.reservations.claimPaymentReference(input.payment.paymentReference, booking.id);
-      const result = await this.payment.verify({ paymentReference: input.payment.paymentReference, currency: booking.grandTotal.currency, total: minorToDecimal(amountMinor) });
+      const result = await this.payment.verify({ paymentReference: input.payment.paymentReference, currency: booking.grandTotal.currency, total: minorToDecimal(amountMinor), ...(input.paymentChannel ? { channel: input.paymentChannel } : {}) });
       if (result !== 'AUTHORIZED') throw new DomainError('PAYMENT_NOT_AUTHORIZED');
     }
     await this.pricing.markChangeOfferUsed({ changeOfferId: input.changeOfferId, ownerId: input.ownerId });
