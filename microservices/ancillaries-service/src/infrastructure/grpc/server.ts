@@ -56,7 +56,8 @@ const buildDeps = (runtime?: AncillariesRuntime, supplied?: AncillariesDeps): An
   const pricing = runtime.pricing ?? new FakePricingGateway();
   const layouts = new PrismaSeatMapStore(runtime.prisma);
   const ownership = new PrismaBookingOwnershipStore(runtime.prisma);
-  return { seatMap: new GetSeatMapForOffer(pricing, layouts, layouts), seats: new SeatAssignments(pricing, layouts, new PrismaSeatAssignmentStore(runtime.prisma), ownership), baggage: new Baggage(new PrismaBaggageStore(runtime.prisma), Number(process.env.BAGGAGE_MAX_ALLOWED ?? '3'), ownership) };
+  const assignmentStore = new PrismaSeatAssignmentStore(runtime.prisma);
+  return { seatMap: new GetSeatMapForOffer(pricing, layouts, layouts), seats: new SeatAssignments(pricing, layouts, assignmentStore, ownership, assignmentStore), baggage: new Baggage(new PrismaBaggageStore(runtime.prisma), Number(process.env.BAGGAGE_MAX_ALLOWED ?? '3'), ownership) };
 };
 export async function createAncillariesServer(options: { url: string; internalApiKey: string; runtime?: AncillariesRuntime; deps?: AncillariesDeps; logger?: PinoLogger }): Promise<INestMicroservice> {
   if (Buffer.byteLength(options.internalApiKey) < 32) throw new Error('INTERNAL_API_KEY must be at least 32 bytes');

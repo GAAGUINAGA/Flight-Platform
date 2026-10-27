@@ -8,6 +8,8 @@ import { decimalToMinor } from '@flight-platform/shared';
 import type { GatewayConfig } from '../config';
 import { callGatewayGrpc } from '../grpc-clients';
 import { GatewayProblemError } from '../web-errors';
+import { V2Cancellation } from './cancellation';
+import { deterministicUuid } from './ids';
 import { loadV2Spec } from './http';
 import { v2Controller, v2Route } from './route';
 import type { V2BookingRecord, V2StateStore } from './state';
@@ -25,7 +27,9 @@ export interface BookingCloudEvent { specversion: string; type: string; source: 
 
 export class V2BookingEventsController {
   private readonly validators: Record<'payment' | 'package', ValidateFunction>;
+  private readonly cancellation: V2Cancellation;
   constructor(private readonly config: GatewayConfig, private readonly state: V2StateStore) {
+    this.cancellation = new V2Cancellation(config, state);
     const spec = loadV2Spec() as unknown as { components: { schemas: Record<string, object> } }; const ajv = new Ajv({ strict: false, allErrors: false }); addFormats(ajv);
     const compile = (name: string) => ajv.compile({ ...spec.components.schemas[name], components: spec.components });
     this.validators = { payment: compile('EventPaymentConfirmed'), package: compile('EventPackageCancelled') };
@@ -82,8 +86,17 @@ export class V2BookingEventsController {
     catch (error) { if (typeof error === 'object' && error !== null && (error as { code?: unknown }).code === grpcStatus.FAILED_PRECONDITION) return 'IGNORED_STATE'; throw error; }
   }
 
-  /** Hook de P4: la compensación de combos se conecta con la cancelación de postventa. */
-  protected async packageOutcome(_event: BookingCloudEvent, _record: V2BookingRecord): Promise<string> { void _event; void _record; return 'IGNORED_UNSUPPORTED'; }
+  /** Compensación de combos: cancela la parte de vuelo con SAGA_COMPENSATION (sin penalidad dentro de la ventana configurable, D5). */
+  private async packageOutcome(event: BookingCloudEvent, record: V2BookingRecord): Promise<string> {
+    const auth = { ownerId: record.ownerId, role: 'partner', scopes: new Set<string>(), clientId: record.clientId };
+    const booking = await this.call(record, 'getReservation', { bookingId: record.bookingId }, event.correlationid) as { status: string };
+    if (booking.status === 'CANCELLED') return 'ALREADY_CANCELLED';
+    if (booking.status === 'FAILED') return 'IGNORED_FAILED';
+    // Una reserva que aún no emitió se compensa liberándola; si está emitiendo, 409 para que Booking reintente cuando termine.
+    if (booking.status === 'PENDING_PAYMENT') { await this.call(record, 'failReservation', { bookingId: record.bookingId, reason: typeof event.data.reason === 'string' ? event.data.reason.slice(0, 255) : 'package.cancelled' }, event.correlationid); return 'FAILED_APPLIED'; }
+    const result = await this.cancellation.cancel(auth, { bookingId: record.bookingId, reasonCode: 'SAGA_COMPENSATION', ...(typeof event.data.reason === 'string' ? { reason: event.data.reason } : {}), idempotencyKey: deterministicUuid(`cancel:${event.id}`), correlationId: event.correlationid });
+    return result.httpStatus === 200 ? 'CANCELLED' : 'CANCELLATION_PENDING';
+  }
 
   async receive(req: Request, res: Response, body: unknown): Promise<Json> {
     this.authenticate(req); const event = this.parse(body); res.status(202);

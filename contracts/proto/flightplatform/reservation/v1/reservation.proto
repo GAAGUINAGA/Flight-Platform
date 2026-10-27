@@ -19,7 +19,13 @@ service ReservationService {
   rpc FailReservation(FailReservationRequest) returns (flightplatform.common.v1.BookingDetail);
   // Aditivo F12a: reintenta de inmediato la reserva indicada (p. ej. payment.confirmed de una reserva en PENDING_PAYMENT o TICKET_ISSUING).
   rpc ResumeReservation(GetReservationRequest) returns (flightplatform.common.v1.BookingDetail);
+  // Aditivo F12a (D5): cotización con la penalidad exenta (SAGA_COMPENSATION dentro de la ventana, FLIGHT_CANCELLED).
+  rpc QuoteCancellation(QuoteCancellationRequest) returns (flightplatform.common.v1.CancellationQuote);
+  // Aditivo F12a: lee una cotización ya emitida (también vencida o usada) para informar el reembolso de POST cancel.
+  rpc GetStoredCancellationQuote(StoredQuoteRequest) returns (flightplatform.common.v1.CancellationQuote);
 }
+message QuoteCancellationRequest { string booking_id = 1; string owner_id = 2; optional bool waive_penalty = 3; }
+message StoredQuoteRequest { string booking_id = 1; string owner_id = 2; string quote_id = 3; }
 
 message CreateReservationRequest {
   string owner_id = 1;
@@ -101,6 +107,8 @@ message CancelReservationRequest {
   string quote_id = 3;
   optional string reason = 4;
   string idempotency_key = 5;
+  // Aditivo F12a: CUSTOMER_REQUEST, SAGA_COMPENSATION, FLIGHT_CANCELLED u OTHER (viaja en el evento booking.cancelled de v2).
+  optional string reason_code = 6;
 }
 message ResumePendingRequest { uint32 limit = 1; }
 message ResumePendingResponse { uint32 resumed_count = 1; }

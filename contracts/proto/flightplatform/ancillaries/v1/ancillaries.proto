@@ -14,6 +14,8 @@ service AncillariesService {
   rpc GetBaggageOptions(BookingOwnerRequest) returns (BaggageOptionsResponse);
   rpc PurchaseBaggage(PurchaseBaggageRequest) returns (BaggageAddedResponse);
   rpc ReleaseAll(BookingOwnerRequest) returns (flightplatform.common.v1.Empty);
+  // Aditivo F12a: cambio atómico de asientos (PUT /vuelos/bookings/{id}/seats): o se cambian todos o ninguno.
+  rpc ChangeSeats(ChangeSeatsRequest) returns (ChangeSeatsResponse);
 }
 
 message GetSeatMapForOfferRequest { string offer_id = 1; optional string segment_id = 2; }
@@ -60,3 +62,8 @@ message PurchaseBaggageRequest {
   optional string operation_id = 6;
 }
 message BaggageAddedResponse { string passenger_id = 1; string itinerary_id = 2; uint32 total_baggage = 3; }
+message SeatChange { string passenger_id = 1; string segment_id = 2; string seat_number = 3; string passenger_type = 4; string cabin_class = 5; }
+// new_assignment_status: estado (PROVISIONAL o CONFIRMED) de un pasajero que aún no tenía asiento en el segmento.
+message ChangeSeatsRequest { string booking_id = 1; string owner_id = 2; repeated SeatChange changes = 3; string new_assignment_status = 4; }
+message SeatChangeResult { string passenger_id = 1; string segment_id = 2; optional string previous_seat_number = 3; string seat_number = 4; string status = 5; }
+message ChangeSeatsResponse { repeated SeatChangeResult results = 1; }

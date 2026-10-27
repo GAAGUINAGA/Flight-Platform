@@ -3,6 +3,7 @@ import { Clock, decimalToMinor, DomainError, minorToDecimal } from '@flight-plat
 import { assertPostSaleEligible, PostSaleItinerary } from '../domain/post-sale-eligibility';
 import { AncillariesPort, EventPublisher, PaymentVerifier } from './ports';
 import { BaggageOperation, BaggageOperations, BaggageResult } from './baggage-operations';
+import { eventExtra } from './allocation';
 import { ReservationStore, StoredReservation } from './reservation-store';
 
 type Itinerary = PostSaleItinerary & { itineraryId: string; pricingOptions: Array<{ extraCheckedBaggagePrice?: { currency: string; total: string } }> };
@@ -63,7 +64,7 @@ export class PostSaleBaggage {
     const result = await this.operations.complete(saved, this.clock.now(), async () => {
       const purchased = await this.ancillaries.purchaseBaggage({ bookingId: input.bookingId, ownerId: input.ownerId, passengerId: input.passengerId, itineraryId: input.itineraryId, quantity: input.quantity, operationId: saved.id });
       this.validateResponse('BaggageAddedResponse', purchased);
-      await this.events.publish({ ownerId: input.ownerId, bookingId: input.bookingId, pnr: booking.pnr, status: booking.status, eventType: 'booking.baggage_added', eventId: saved.id });
+      await this.events.publish({ ownerId: input.ownerId, bookingId: input.bookingId, pnr: booking.pnr, status: booking.status, eventType: 'booking.baggage_added', eventId: saved.id, extra: eventExtra(booking, { changeType: 'BAGGAGE', amountCharged: { currency: booking.grandTotal.currency, total: minorToDecimal(saved.amountMinor) }, paymentReference: saved.paymentReference }) });
       return purchased;
     });
     this.validateResponse('BaggageAddedResponse', result);

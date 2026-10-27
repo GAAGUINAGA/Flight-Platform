@@ -22,6 +22,18 @@ import {
 
 export const protobufPackage = "flightplatform.reservation.v1";
 
+export interface QuoteCancellationRequest {
+  bookingId: string;
+  ownerId: string;
+  waivePenalty?: boolean | undefined;
+}
+
+export interface StoredQuoteRequest {
+  bookingId: string;
+  ownerId: string;
+  quoteId: string;
+}
+
 export interface CreateReservationRequest {
   ownerId: string;
   holdId: string;
@@ -139,6 +151,8 @@ export interface CancelReservationRequest {
   quoteId: string;
   reason?: string | undefined;
   idempotencyKey: string;
+  /** Aditivo F12a: CUSTOMER_REQUEST, SAGA_COMPENSATION, FLIGHT_CANCELLED u OTHER (viaja en el evento booking.cancelled de v2). */
+  reasonCode?: string | undefined;
 }
 
 export interface ResumePendingRequest {
@@ -185,6 +199,14 @@ export interface ReservationServiceClient {
   /** Aditivo F12a: reintenta de inmediato la reserva indicada (p. ej. payment.confirmed de una reserva en PENDING_PAYMENT o TICKET_ISSUING). */
 
   resumeReservation(request: GetReservationRequest): Observable<BookingDetail>;
+
+  /** Aditivo F12a (D5): cotización con la penalidad exenta (SAGA_COMPENSATION dentro de la ventana, FLIGHT_CANCELLED). */
+
+  quoteCancellation(request: QuoteCancellationRequest): Observable<CancellationQuote>;
+
+  /** Aditivo F12a: lee una cotización ya emitida (también vencida o usada) para informar el reembolso de POST cancel. */
+
+  getStoredCancellationQuote(request: StoredQuoteRequest): Observable<CancellationQuote>;
 }
 
 export interface ReservationServiceController {
@@ -244,6 +266,18 @@ export interface ReservationServiceController {
   /** Aditivo F12a: reintenta de inmediato la reserva indicada (p. ej. payment.confirmed de una reserva en PENDING_PAYMENT o TICKET_ISSUING). */
 
   resumeReservation(request: GetReservationRequest): Promise<BookingDetail> | Observable<BookingDetail> | BookingDetail;
+
+  /** Aditivo F12a (D5): cotización con la penalidad exenta (SAGA_COMPENSATION dentro de la ventana, FLIGHT_CANCELLED). */
+
+  quoteCancellation(
+    request: QuoteCancellationRequest,
+  ): Promise<CancellationQuote> | Observable<CancellationQuote> | CancellationQuote;
+
+  /** Aditivo F12a: lee una cotización ya emitida (también vencida o usada) para informar el reembolso de POST cancel. */
+
+  getStoredCancellationQuote(
+    request: StoredQuoteRequest,
+  ): Promise<CancellationQuote> | Observable<CancellationQuote> | CancellationQuote;
 }
 
 export function ReservationServiceControllerMethods() {
@@ -263,6 +297,8 @@ export function ReservationServiceControllerMethods() {
       "resumePending",
       "failReservation",
       "resumeReservation",
+      "quoteCancellation",
+      "getStoredCancellationQuote",
     ];
     for (const method of grpcMethods) {
       const descriptor: any = Reflect.getOwnPropertyDescriptor(constructor.prototype, method);

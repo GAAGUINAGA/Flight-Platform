@@ -55,8 +55,9 @@ export function v2ProblemFromError(error: unknown, request: V2RequestInfo): V2Pr
     if (grpc === grpcStatus.UNAVAILABLE || grpc === grpcStatus.DEADLINE_EXCEEDED) return buildV2Problem('PROVIDER_UNAVAILABLE', request, { detail: 'Servicio temporalmente no disponible' });
     if (grpc === grpcStatus.UNAUTHENTICATED) return buildV2Problem('UNAUTHORIZED', request);
     if (grpc === grpcStatus.PERMISSION_DENIED) return buildV2Problem('FORBIDDEN', request);
-    if (grpc === grpcStatus.NOT_FOUND) return buildV2Problem('NOT_FOUND', request, { detail: 'Recurso no encontrado' });
+    // Un código del catálogo manda sobre el estado gRPC (p. ej. BOARDING_PASS_NOT_AVAILABLE llega como NOT_FOUND pero el contrato lo lista como 409).
     if (typeof details === 'string' && details in V2_PROBLEM_STATUS) return buildV2Problem(details, request);
+    if (grpc === grpcStatus.NOT_FOUND) return buildV2Problem('NOT_FOUND', request, { detail: 'Recurso no encontrado' });
     if (grpc === grpcStatus.INVALID_ARGUMENT) return buildV2Problem('VALIDATION_FAILED', request);
     return buildV2Problem('INTERNAL_ERROR', request, { detail: 'Ocurrió un error inesperado' });
   }

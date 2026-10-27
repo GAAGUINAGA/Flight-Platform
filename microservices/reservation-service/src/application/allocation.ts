@@ -25,6 +25,11 @@ export const isV2Reservation = (reservation: StoredReservation): boolean => Bool
 /** Datos de evento que solo ven las suscripciones v2. Para reservas de v1 es `undefined`: el evento sale exactamente como siempre. */
 export const eventExtra = (reservation: StoredReservation, more: Record<string, unknown> = {}): Record<string, unknown> | undefined => isV2Reservation(reservation) ? { grandTotal: reservation.grandTotal, ...more } : undefined;
 
+/** Identificador de reembolso que se informa a Booking: estable por cotización. */
+export const refundIdFor = (quoteId: string): string => `REF-VUE-${createHash('sha256').update(quoteId).digest('hex').slice(0, 8).toUpperCase()}`;
+/** Asientos de inventario que ocupa la reserva (los infantes viajan sin asiento). */
+export const seatsOf = (reservation: StoredReservation): number => (reservation.passengers as Array<{ passengerType?: string }>).filter((passenger) => passenger.passengerType !== 'INFANT').length;
+
 type TicketLike = { ticketId?: string; eTicketNumber?: string; passengerId?: string };
 export const ticketSummary = (tickets: unknown[]): TicketLike[] => (tickets as TicketLike[]).map((ticket) => ({ ticketId: ticket.ticketId, eTicketNumber: ticket.eTicketNumber, passengerId: ticket.passengerId }));
 

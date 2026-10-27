@@ -93,6 +93,34 @@ export interface BaggageAddedResponse {
   totalBaggage: number;
 }
 
+export interface SeatChange {
+  passengerId: string;
+  segmentId: string;
+  seatNumber: string;
+  passengerType: string;
+  cabinClass: string;
+}
+
+/** new_assignment_status: estado (PROVISIONAL o CONFIRMED) de un pasajero que aún no tenía asiento en el segmento. */
+export interface ChangeSeatsRequest {
+  bookingId: string;
+  ownerId: string;
+  changes: SeatChange[];
+  newAssignmentStatus: string;
+}
+
+export interface SeatChangeResult {
+  passengerId: string;
+  segmentId: string;
+  previousSeatNumber?: string | undefined;
+  seatNumber: string;
+  status: string;
+}
+
+export interface ChangeSeatsResponse {
+  results: SeatChangeResult[];
+}
+
 export const FLIGHTPLATFORM_ANCILLARIES_V1_PACKAGE_NAME = "flightplatform.ancillaries.v1";
 
 export interface AncillariesServiceClient {
@@ -117,6 +145,10 @@ export interface AncillariesServiceClient {
   purchaseBaggage(request: PurchaseBaggageRequest): Observable<BaggageAddedResponse>;
 
   releaseAll(request: BookingOwnerRequest): Observable<Empty>;
+
+  /** Aditivo F12a: cambio atómico de asientos (PUT /vuelos/bookings/{id}/seats): o se cambian todos o ninguno. */
+
+  changeSeats(request: ChangeSeatsRequest): Observable<ChangeSeatsResponse>;
 }
 
 export interface AncillariesServiceController {
@@ -155,6 +187,12 @@ export interface AncillariesServiceController {
   ): Promise<BaggageAddedResponse> | Observable<BaggageAddedResponse> | BaggageAddedResponse;
 
   releaseAll(request: BookingOwnerRequest): Promise<Empty> | Observable<Empty> | Empty;
+
+  /** Aditivo F12a: cambio atómico de asientos (PUT /vuelos/bookings/{id}/seats): o se cambian todos o ninguno. */
+
+  changeSeats(
+    request: ChangeSeatsRequest,
+  ): Promise<ChangeSeatsResponse> | Observable<ChangeSeatsResponse> | ChangeSeatsResponse;
 }
 
 export function AncillariesServiceControllerMethods() {
@@ -171,6 +209,7 @@ export function AncillariesServiceControllerMethods() {
       "getBaggageOptions",
       "purchaseBaggage",
       "releaseAll",
+      "changeSeats",
     ];
     for (const method of grpcMethods) {
       const descriptor: any = Reflect.getOwnPropertyDescriptor(constructor.prototype, method);

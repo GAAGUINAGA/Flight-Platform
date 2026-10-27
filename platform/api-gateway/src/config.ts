@@ -42,6 +42,8 @@ export interface V2Config {
   stateStore: 'prisma' | 'memory';
   /** Código de la aerolínea en el `source` de los CloudEvents: /aerolineas/<código>/vuelos. */
   sourceCode: string;
+  /** Ventana, desde que se creó la reserva, en la que una SAGA_COMPENSATION no paga penalidad (D5). Fuera de ella aplica la de la tarifa. */
+  sagaWaiverMinutes: number;
   /** POST /api/v2/vuelos/booking-events: HMAC-SHA256 del cuerpo con un secreto compartido. Sin secreto el endpoint rechaza todo. */
   bookingEvents: { secret?: string; signatureHeader: string; signaturePrefix: string; clientId?: string };
 }
@@ -77,7 +79,7 @@ export function loadConfig(env: Environment = process.env): GatewayConfig {
       failureLimit: Number(env.DEV_AUTH_FAILURE_LIMIT_PER_MIN ?? 10)
     },
     healthTimeoutMs: Number(env.HEALTH_TIMEOUT_MS ?? 800), healthCacheMs: Number(env.HEALTH_CACHE_MS ?? 5000),
-    sourceCode: env.WEBHOOK_SOURCE_CODE ?? 'gabatair',
+    sourceCode: env.WEBHOOK_SOURCE_CODE ?? 'gabatair', sagaWaiverMinutes: Number(env.SAGA_PENALTY_WAIVER_MINUTES ?? 120),
     bookingEvents: { secret: env.BOOKING_EVENTS_SECRET || undefined, signatureHeader: (env.BOOKING_EVENTS_SIGNATURE_HEADER ?? 'x-webhook-signature').toLowerCase(), signaturePrefix: env.BOOKING_EVENTS_SIGNATURE_PREFIX ?? 'sha256=', clientId: env.BOOKING_EVENTS_CLIENT_ID || undefined },
     stateStore: env.V2_STATE_STORE === 'memory' || (env.NODE_ENV === 'test' && env.V2_STATE_STORE !== 'prisma') ? 'memory' : 'prisma'
   };

@@ -40,6 +40,7 @@ import { mountV2Http } from './v2/http';
 import { V2ShoppingController } from './v2/shopping.controller';
 import { V2HoldController } from './v2/hold.controller';
 import { V2BookingController } from './v2/booking.controller';
+import { V2PostSaleController } from './v2/postsale.controller';
 import { V2EventsController, V2WebhooksController } from './v2/webhooks.controller';
 import { V2BookingEventsController } from './v2/booking-events.controller';
 import { V2IdempotencyInterceptor } from './v2/idempotency';
@@ -94,7 +95,7 @@ export async function createGatewayApp(config: GatewayConfig) {
     GatewayExceptionFilter, { provide: APP_FILTER, useExisting: GatewayExceptionFilter }
   ];
   class GatewayModule {}
-  const v2Controllers = [V2AuthController, V2HealthController, V2ShoppingController, V2HoldController, V2BookingController, V2WebhooksController, V2EventsController, V2BookingEventsController, ...(process.env.NODE_ENV === 'test' ? [(await import('./v2/test-controller')).V2TestController] : [])];
+  const v2Controllers = [V2AuthController, V2HealthController, V2ShoppingController, V2HoldController, V2BookingController, V2PostSaleController, V2WebhooksController, V2EventsController, V2BookingEventsController, ...(process.env.NODE_ENV === 'test' ? [(await import('./v2/test-controller')).V2TestController] : [])];
   Module({ imports: [LoggerModule.forRoot({ pinoHttp: loggerOptions })], controllers: testComponents ? [HealthController, ShoppingController, HoldController, BookingController, PostSaleController, OperationsController, WebhooksController, AdminController, ...v2Controllers, testComponents.TestController] : [HealthController, ShoppingController, HoldController, BookingController, PostSaleController, OperationsController, WebhooksController, AdminController, ...v2Controllers], providers })(GatewayModule);
   const app = await NestFactory.create(GatewayModule);
   const express = app.getHttpAdapter().getInstance(); express.set('trust proxy', 1);

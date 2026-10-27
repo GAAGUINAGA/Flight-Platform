@@ -88,7 +88,7 @@ export interface Scenario {
 export interface Stack {
   gateway: INestApplication; server: ReturnType<INestApplication['getHttpServer']>; payments: PaymentSimulator; devAuth: DevAuthService; clients: DevAuthClientStore;
   db: { inventory: InventoryPrisma; pricing: PricingPrisma; ancillaries: AncillariesPrisma; reservation: ReservationPrisma; ticketing: TicketingPrisma; webhooks: WebhooksPrisma; operations: OperationsPrisma };
-  scheduler: GatewayScheduler; newClient(scopes?: string[]): Promise<TestClient>; scenario(options?: { sellable?: number; domestic?: boolean; hoursAhead?: number }): Promise<Scenario>; dispatchWebhooks(): Promise<number>; subscribe(ownerId: string, events: string[], secret?: string, apiVersion?: '1' | '2'): Promise<{ id: string; secret: string }>; close(): Promise<void>;
+  scheduler: GatewayScheduler; newClient(scopes?: string[]): Promise<TestClient>; scenario(options?: { sellable?: number; domestic?: boolean; hoursAhead?: number; origin?: string; destination?: string; changeable?: boolean }): Promise<Scenario>; dispatchWebhooks(): Promise<number>; subscribe(ownerId: string, events: string[], secret?: string, apiVersion?: '1' | '2'): Promise<{ id: string; secret: string }>; close(): Promise<void>;
 }
 
 export async function startStack(env: Record<string, string | undefined> = {}): Promise<Stack> {
@@ -126,13 +126,13 @@ export async function startStack(env: Record<string, string | undefined> = {}): 
 
   const scenario: Stack['scenario'] = async (options = {}) => {
     const client = await registerClient(clients, ALL); const flightId = randomUUID(); const code = () => Array.from({ length: 3 }, () => String.fromCharCode(65 + randomInt(0, 26))).join('');
-    const origin = options.domestic ? 'UIO' : code(); let destination = options.domestic ? 'GYE' : code(); if (destination === origin) destination = 'QQQ';
-    const flightNumber = `FP${randomInt(1000, 10000)}`; const aircraft = `T${randomUUID().replace(/-/g, '').slice(0, 20)}`;
+    const origin = options.origin ?? (options.domestic ? 'UIO' : code()); let destination = options.destination ?? (options.domestic ? 'GYE' : code()); if (destination === origin) destination = 'QQQ';
+    const flightNumber = `FP${randomInt(100000, 1000000)}`; const aircraft = `T${randomUUID().replace(/-/g, '').slice(0, 20)}`;
     const departure = new Date(Date.now() + (options.hoursAhead ?? 5 * 24) * 3_600_000); const date = departure.toISOString().slice(0, 10); const seats = ['1A', '1B', '1C'];
     const offerIds: string[] = []; const clientIds = [client.clientId];
     await inventory.flightInstance.create({ data: { id: flightId, flightNumber, departureIata: origin, arrivalIata: destination, departureAt: departure, arrivalAt: new Date(departure.getTime() + 3_600_000), aircraft, cabins: { create: { cabinClass: 'ECONOMY', sellable: options.sellable ?? 5 } } } });
     await operations.operationalFlight.create({ data: { flightInstanceId: flightId, flightNumber, date, marketingCarrier: 'FP', operatingCarrier: 'FP', departureIata: origin, arrivalIata: destination, scheduledDepartureAt: departure, scheduledArrivalAt: new Date(departure.getTime() + 3_600_000), aircraft, status: 'SCHEDULED' } });
-    await pricing.fare.create({ data: { flightInstanceId: flightId, cabinClass: 'ECONOMY', brand: 'CLASSIC', baseFareMinor: 10000, taxesMinor: 2000, rules: { changeable: true, refundable: true }, baggage: { checkedBags: 0 }, extraBagMinor: 5000 } });
+    await pricing.fare.create({ data: { flightInstanceId: flightId, cabinClass: 'ECONOMY', brand: 'CLASSIC', baseFareMinor: 10000, taxesMinor: 2000, rules: { changeable: options.changeable ?? true, refundable: true }, baggage: { checkedBags: 0 }, extraBagMinor: 5000 } });
     for (const [index, seatNumber] of seats.entries()) await ancillaries.seatLayout.create({ data: { aircraft, cabinClass: 'ECONOMY', seatNumber, rowNumber: index + 1, characteristics: ['WINDOW'] } });
     return {
       clientId: client.clientId, client, async extraClient() { const extra = await registerClient(clients, ALL); clientIds.push(extra.clientId); return extra; }, origin, destination, flightNumber, flightId, aircraft, departure, date, seats,

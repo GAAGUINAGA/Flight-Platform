@@ -1,5 +1,5 @@
 import { DomainError } from '@flight-platform/shared';
-import { allocationOf, deterministicEventId, eventExtra, isV2Reservation, ticketSummary, translateDependencyError } from './allocation';
+import { allocationOf, deterministicEventId, eventExtra, isV2Reservation, refundIdFor, seatsOf, ticketSummary, translateDependencyError } from './allocation';
 import { AncillariesPort, EventPublisher, InventoryPort, PaymentVerifier, PricingPort, TicketingPort } from './ports';
 import { ReservationStore, StoredReservation } from './reservation-store';
 
@@ -103,7 +103,7 @@ export class ResumePending {
       if (operation.step === 'PAYMENT_SETTLED') { const tickets = await this.ticketing.listTickets({ bookingId: booking.id, ownerId: booking.ownerId }); if (Number(operation.refundAmount) > 0 && tickets.some((ticket) => (ticket as { status?: string }).status === 'ISSUED')) { if (!this.ticketing.refundTickets) return false; await this.ticketing.refundTickets({ bookingId: booking.id, ownerId: booking.ownerId }); } else await this.ticketing.voidTickets({ bookingId: booking.id, ownerId: booking.ownerId }); operation.step = 'TICKETS_SETTLED'; await this.store.update(booking); }
       if (operation.step === 'TICKETS_SETTLED') { await this.inventory.releaseReservedInventory({ bookingId: booking.id, ownerId: booking.ownerId }); operation.step = 'INVENTORY_RELEASED'; await this.store.update(booking); }
       if (operation.step === 'INVENTORY_RELEASED') { await this.ancillaries.releaseAll({ bookingId: booking.id, ownerId: booking.ownerId }); operation.step = 'ANCILLARIES_RELEASED'; await this.store.update(booking); }
-      booking.status = 'CANCELLED'; booking.pendingOperation = undefined; booking.changes.push({ changedAt: new Date().toISOString(), description: 'CANCELLED' }); await this.store.update(booking); await this.events.publish({ ownerId: booking.ownerId, eventType: 'booking.cancelled', bookingId: booking.id, pnr: booking.pnr, status: booking.status, eventId: operation.quoteId, refundAmount: operation.refundAmount }); return true;
+      booking.status = 'CANCELLED'; booking.pendingOperation = undefined; booking.changes.push({ changedAt: new Date().toISOString(), description: 'CANCELLED' }); await this.store.update(booking); await this.events.publish({ ownerId: booking.ownerId, eventType: 'booking.cancelled', bookingId: booking.id, pnr: booking.pnr, status: booking.status, eventId: operation.quoteId, refundAmount: operation.refundAmount, extra: eventExtra(booking, { reasonCode: operation.reasonCode ?? 'CUSTOMER_REQUEST', refundId: refundIdFor(operation.quoteId), seatsReleased: seatsOf(booking) }) }); return true;
     } catch { booking.attempts += 1; await this.store.update(booking); return false; }
   }
 }

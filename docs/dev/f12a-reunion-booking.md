@@ -41,4 +41,13 @@ Respuesta al aceptar: `202 {"eventId","outcome"}`. Idempotente por `id` del Clou
 - `source` de los eventos: `WEBHOOK_SOURCE_CODE` (`gabatair`).
 - Dos incoherencias del contrato que conviene comentar con ellos: `secret` es obligatorio y `writeOnly` a la vez en `WebhookSubscription`, y `booking.ticket_failed` no tiene esquema CloudEvent.
 
+## 5. Cancelaciones, compensación de combos y asientos
+| Qué confirmar | Variable | Por defecto |
+|---|---|---|
+| Ventana en la que `SAGA_COMPENSATION` no paga penalidad (desde la creación de la reserva); fuera de ella aplica la penalidad de la tarifa | `SAGA_PENALTY_WAIVER_MINUTES` (api-gateway) | 120 |
+- `FLIGHT_CANCELLED` sin `quoteId` siempre devuelve el total. Con `CUSTOMER_REQUEST` u `OTHER` el `quoteId` es obligatorio (400 si falta).
+- `package.cancelled` (combo fallido) se envía a `booking-events`: cancela la parte de vuelo con `SAGA_COMPENSATION`.
+- Cambio de asientos (`PUT …/seats`): no hay tarifa de asientos, así que **no se cobra** y la respuesta no trae `amountCharged`; un `payment` enviado se ignora.
+- El reembolso lo calcula la aerolínea (`refund.status = CALCULATED`) y **lo ejecuta Booking**.
+
 _(Las secciones de stock gRPC, cancelaciones/combos, operaciones y credenciales se completan con los bloques P4 a P6 y la guía de la plataforma local.)_
