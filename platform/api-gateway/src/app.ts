@@ -41,6 +41,8 @@ import { V2ShoppingController } from './v2/shopping.controller';
 import { V2HoldController } from './v2/hold.controller';
 import { V2BookingController } from './v2/booking.controller';
 import { V2PostSaleController } from './v2/postsale.controller';
+import { InMemoryStockOutbox, PrismaStockOutbox } from './v2/stock/outbox';
+import { GrpcStockPusher, StockSync } from './v2/stock/stock-sync';
 import { V2EventsController, V2WebhooksController } from './v2/webhooks.controller';
 import { V2BookingEventsController } from './v2/booking-events.controller';
 import { V2IdempotencyInterceptor } from './v2/idempotency';
@@ -78,7 +80,8 @@ export async function createGatewayApp(config: GatewayConfig) {
     { provide: PrismaClient, useFactory: () => new PrismaClient() },
     { provide: PrismaIdempotencyStore, useFactory: (client: PrismaClient) => new PrismaIdempotencyStore(client, config.idempotencyTtlHours), inject: [PrismaClient] },
     { provide: PrismaSchedulerStore, useFactory: (client: PrismaClient) => new PrismaSchedulerStore(client), inject: [PrismaClient] },
-    { provide: GatewayScheduler, useFactory: (store: PrismaSchedulerStore) => new GatewayScheduler(config, store), inject: [PrismaSchedulerStore] },
+    { provide: 'STOCK_SYNC', useFactory: (client: PrismaClient) => new StockSync(config, config.v2!.stock.store === 'memory' ? new InMemoryStockOutbox() : new PrismaStockOutbox(client), new GrpcStockPusher(config.v2!.stock)), inject: [PrismaClient] },
+    { provide: GatewayScheduler, useFactory: (store: PrismaSchedulerStore, stock: StockSync) => new GatewayScheduler(config, store, undefined, stock), inject: [PrismaSchedulerStore, 'STOCK_SYNC'] },
     ...(testComponents ? [{ provide: testComponents.GatewayTestGrpcClient, useFactory: () => new testComponents.GatewayTestGrpcClient(config) }] : []),
     { provide: DEV_AUTH_STORE, useFactory: (client: PrismaClient): DevAuthClientStore => config.v2!.devAuth.store === 'memory' ? new InMemoryDevAuthClientStore() : new PrismaDevAuthClientStore(client), inject: [PrismaClient] },
     { provide: DevAuthService, useFactory: (store: DevAuthClientStore) => DevAuthService.create(config.v2!, store), inject: [DEV_AUTH_STORE] },

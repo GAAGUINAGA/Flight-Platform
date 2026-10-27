@@ -11,6 +11,7 @@ import { bookingLinks } from './links';
 import { assertPassengerRules, domesticSet, normalizeBreakdown } from './rules';
 import { v2Controller, v2Route } from './route';
 import { InMemoryV2StateStore, type V2StateStore } from './state';
+import type { StockSync } from './stock/stock-sync';
 import { ownerClient } from './v2-security';
 
 type Json = Record<string, unknown>;
@@ -23,7 +24,7 @@ interface BookingBody { holdId: string; passengers: Array<{ passengerId: string;
 /** Reservas, emisión y boletos de v2. Las sagas siguen en Reservation (F12b las moverá al orquestador sin cambiar lo observable aquí). */
 export class V2BookingController {
   private readonly domestic: ReadonlySet<string>;
-  constructor(private readonly config: GatewayConfig, private readonly state: V2StateStore = new InMemoryV2StateStore()) { this.domestic = domesticSet(process.env.DOMESTIC_AIRPORTS); }
+  constructor(private readonly config: GatewayConfig, private readonly state: V2StateStore = new InMemoryV2StateStore(), private readonly stock?: StockSync) { this.domestic = domesticSet(process.env.DOMESTIC_AIRPORTS); }
   private get base(): string { return this.config.v2!.publicBaseUrl; }
   private call(req: Request, service: 'reservation' | 'pricing', method: string, input: object): Promise<unknown> { return callGatewayGrpc(this.config, service, method, { ...input, ownerId: req.auth!.ownerId }, correlation(req), req.auth); }
   private async fetch(req: Request, bookingId: string): Promise<RawBooking> { return await this.call(req, 'reservation', 'getReservation', { bookingId }) as RawBooking; }
@@ -55,7 +56,8 @@ export class V2BookingController {
     const created = await this.call(req, 'reservation', 'createReservation', { holdId: body.holdId, passengers, payment: { paymentReference: body.payment.paymentReference }, idempotencyKey: req.header('idempotency-key'), ...(partner ? { paymentChannel: 'BOOKING', deferIssuanceFailure: true } : {}) }) as { bookingId: string; status: string };
     // La fila de v2 se (re)escribe también en los reintentos: una caída entre Reservation y esta tabla se repara con el reintento.
     await this.state.saveBooking({ bookingId: created.bookingId, clientId, ownerId: req.auth!.ownerId, holdId: body.holdId, paymentReference: body.payment.paymentReference, ...(body.salesChannel ? { salesChannel: body.salesChannel } : {}), passengerMap: internalToExternal }).catch(() => logger.error('v2 booking state could not be saved'));
-    const detail = await this.compose(await this.fetch(req, created.bookingId));
+    const raw = await this.fetch(req, created.bookingId); await this.stock?.trigger(this.stock.flightsOf(raw as never), correlation(req));
+    const detail = await this.compose(raw);
     res.status(replay ? 200 : created.status === 'CONFIRMED' ? 201 : 202); res.setHeader('Location', `${this.base}/api/v2/vuelos/bookings/${created.bookingId}`);
     return detail;
   }
@@ -84,7 +86,7 @@ export class V2BookingController {
     return { bookingId: raw.bookingId, pnr: raw.pnr, status, tickets: ticketViews(raw, record?.passengerMap ?? {}), issued: Math.max(0, issuedCount(raw) - before), _links: bookingLinks(this.base, raw.bookingId, status, raw.status === 'CONFIRMED') };
   }
 }
-v2Controller(V2BookingController, 'vuelos/bookings', ['GATEWAY_CONFIG', 'V2_STATE']);
+v2Controller(V2BookingController, 'vuelos/bookings', ['GATEWAY_CONFIG', 'V2_STATE', 'STOCK_SYNC']);
 v2Route(V2BookingController.prototype, 'list', 'get', '', ['req', 'query'], { scopes: ['flights:read'] });
 v2Route(V2BookingController.prototype, 'create', 'post', '', ['req', 'res', 'body'], { scopes: ['flights:book'], idempotent: { operation: 'createBooking', recompute: true } });
 v2Route(V2BookingController.prototype, 'detail', 'get', ':bookingId', ['req', 'param:bookingId'], { scopes: ['flights:read'] });

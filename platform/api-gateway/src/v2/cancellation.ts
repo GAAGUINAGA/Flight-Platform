@@ -6,6 +6,7 @@ import type { GatewayConfig } from '../config';
 import { callGatewayGrpc } from '../grpc-clients';
 import { GatewayProblemError } from '../web-errors';
 import type { V2StateStore } from './state';
+import type { StockSync } from './stock/stock-sync';
 
 type Json = Record<string, unknown>;
 export type CancelReason = 'CUSTOMER_REQUEST' | 'SAGA_COMPENSATION' | 'FLIGHT_CANCELLED' | 'OTHER';
@@ -20,7 +21,7 @@ const minor = (value: string): number => Math.round(Number(value) * 100);
  * cotización: FLIGHT_CANCELLED y SAGA_COMPENSATION dentro de la ventana configurable no pagan penalidad (D5); fuera de ella, la de la tarifa.
  */
 export class V2Cancellation {
-  constructor(private readonly config: GatewayConfig, private readonly state: V2StateStore) {}
+  constructor(private readonly config: GatewayConfig, private readonly state: V2StateStore, private readonly stock?: StockSync) {}
   private call(auth: AuthContext, method: string, input: object, correlationId: string): Promise<unknown> { return callGatewayGrpc(this.config, 'reservation', method, { ...input, ownerId: auth.ownerId }, correlationId, auth); }
 
   async cancel(auth: AuthContext, input: CancelInput): Promise<CancelResult> {
@@ -40,6 +41,7 @@ export class V2Cancellation {
     const issued = (raw.tickets ?? []).filter((ticket) => ticket.status === 'ISSUED').map((ticket) => String(ticket.ticketId));
     const cancelled = await this.call(auth, 'cancelReservation', { bookingId, quoteId: quote.quoteId, reasonCode: input.reasonCode, ...(input.reason ? { reason: input.reason.slice(0, 255) } : {}), idempotencyKey: input.idempotencyKey }, correlationId) as RawBooking;
     const status = v2Status(cancelled.status) === 'CANCELLED' ? 'CANCELLED' : 'CANCELLATION_PENDING';
+    if (status === 'CANCELLED') await this.stock?.trigger(this.stock.flightsOf(raw as never), correlationId);
     const record = await this.state.findBooking(bookingId).catch(() => null); const refund = minor(quote.refundAmount); const penalty = minor(quote.penaltyAmount);
     const seats = (raw.passengers ?? []).filter((passenger) => passenger.passengerType !== 'INFANT').length;
     return {

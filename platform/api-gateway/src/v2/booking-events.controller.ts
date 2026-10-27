@@ -9,6 +9,7 @@ import type { GatewayConfig } from '../config';
 import { callGatewayGrpc } from '../grpc-clients';
 import { GatewayProblemError } from '../web-errors';
 import { V2Cancellation } from './cancellation';
+import type { StockSync } from './stock/stock-sync';
 import { deterministicUuid } from './ids';
 import { loadV2Spec } from './http';
 import { v2Controller, v2Route } from './route';
@@ -28,8 +29,8 @@ export interface BookingCloudEvent { specversion: string; type: string; source: 
 export class V2BookingEventsController {
   private readonly validators: Record<'payment' | 'package', ValidateFunction>;
   private readonly cancellation: V2Cancellation;
-  constructor(private readonly config: GatewayConfig, private readonly state: V2StateStore) {
-    this.cancellation = new V2Cancellation(config, state);
+  constructor(private readonly config: GatewayConfig, private readonly state: V2StateStore, private readonly stock?: StockSync) {
+    this.cancellation = new V2Cancellation(config, state, stock);
     const spec = loadV2Spec() as unknown as { components: { schemas: Record<string, object> } }; const ajv = new Ajv({ strict: false, allErrors: false }); addFormats(ajv);
     const compile = (name: string) => ajv.compile({ ...spec.components.schemas[name], components: spec.components });
     this.validators = { payment: compile('EventPaymentConfirmed'), package: compile('EventPackageCancelled') };
@@ -70,7 +71,7 @@ export class V2BookingEventsController {
     const amount = data.amount as { currency?: string; total?: string } | undefined;
     if (!amount || typeof amount.total !== 'string' || typeof amount.currency !== 'string') throw new GatewayProblemError(400, 'VALIDATION_FAILED', 'amount es obligatorio en los eventos de pago');
     if (typeof data.paymentReference === 'string' && data.paymentReference !== record.paymentReference) throw new GatewayProblemError(422, 'PAYMENT_REFERENCE_INVALID', 'La referencia no corresponde a la reserva');
-    let booking = await this.call(record, 'getReservation', { bookingId: record.bookingId }, correlationId) as { status: string; grandTotal: { currency: string; total: string } };
+    let booking = await this.call(record, 'getReservation', { bookingId: record.bookingId }, correlationId) as { status: string; grandTotal: { currency: string; total: string }; itineraries?: Array<Record<string, unknown>> };
     if (amount.currency !== booking.grandTotal.currency || decimalToMinor(amount.total) !== decimalToMinor(booking.grandTotal.total)) throw new GatewayProblemError(422, 'AMOUNT_MISMATCH', 'El monto del evento no coincide con el de la reserva');
     if (confirmed) {
       if (booking.status === 'CONFIRMED') return 'ALREADY_ISSUED';
@@ -82,18 +83,18 @@ export class V2BookingEventsController {
     }
     if (booking.status === 'FAILED') return 'ALREADY_FAILED';
     if (booking.status === 'CANCELLED') return 'IGNORED_CANCELLED';
-    try { await this.call(record, 'failReservation', { bookingId: record.bookingId, ...(typeof data.failureReason === 'string' && data.failureReason ? { reason: data.failureReason.slice(0, 255) } : {}) }, correlationId); return 'FAILED_APPLIED'; }
+    try { await this.call(record, 'failReservation', { bookingId: record.bookingId, ...(typeof data.failureReason === 'string' && data.failureReason ? { reason: data.failureReason.slice(0, 255) } : {}) }, correlationId); await this.stock?.trigger(this.stock.flightsOf(booking as never), correlationId); return 'FAILED_APPLIED'; }
     catch (error) { if (typeof error === 'object' && error !== null && (error as { code?: unknown }).code === grpcStatus.FAILED_PRECONDITION) return 'IGNORED_STATE'; throw error; }
   }
 
   /** Compensación de combos: cancela la parte de vuelo con SAGA_COMPENSATION (sin penalidad dentro de la ventana configurable, D5). */
   private async packageOutcome(event: BookingCloudEvent, record: V2BookingRecord): Promise<string> {
     const auth = { ownerId: record.ownerId, role: 'partner', scopes: new Set<string>(), clientId: record.clientId };
-    const booking = await this.call(record, 'getReservation', { bookingId: record.bookingId }, event.correlationid) as { status: string };
+    const booking = await this.call(record, 'getReservation', { bookingId: record.bookingId }, event.correlationid) as { status: string; itineraries?: Array<Record<string, unknown>> };
     if (booking.status === 'CANCELLED') return 'ALREADY_CANCELLED';
     if (booking.status === 'FAILED') return 'IGNORED_FAILED';
     // Una reserva que aún no emitió se compensa liberándola; si está emitiendo, 409 para que Booking reintente cuando termine.
-    if (booking.status === 'PENDING_PAYMENT') { await this.call(record, 'failReservation', { bookingId: record.bookingId, reason: typeof event.data.reason === 'string' ? event.data.reason.slice(0, 255) : 'package.cancelled' }, event.correlationid); return 'FAILED_APPLIED'; }
+    if (booking.status === 'PENDING_PAYMENT') { await this.call(record, 'failReservation', { bookingId: record.bookingId, reason: typeof event.data.reason === 'string' ? event.data.reason.slice(0, 255) : 'package.cancelled' }, event.correlationid); await this.stock?.trigger(this.stock.flightsOf(booking as never), event.correlationid); return 'FAILED_APPLIED'; }
     const result = await this.cancellation.cancel(auth, { bookingId: record.bookingId, reasonCode: 'SAGA_COMPENSATION', ...(typeof event.data.reason === 'string' ? { reason: event.data.reason } : {}), idempotencyKey: deterministicUuid(`cancel:${event.id}`), correlationId: event.correlationid });
     return result.httpStatus === 200 ? 'CANCELLED' : 'CANCELLATION_PENDING';
   }
@@ -113,5 +114,5 @@ export class V2BookingEventsController {
     } catch (error) { await this.state.releaseEvent(NAMESPACE, event.id).catch(() => undefined); throw error; }
   }
 }
-v2Controller(V2BookingEventsController, 'vuelos/booking-events', ['GATEWAY_CONFIG', 'V2_STATE']);
+v2Controller(V2BookingEventsController, 'vuelos/booking-events', ['GATEWAY_CONFIG', 'V2_STATE', 'STOCK_SYNC']);
 v2Route(V2BookingEventsController.prototype, 'receive', 'post', '', ['req', 'res', 'body'], { public: true });

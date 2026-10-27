@@ -69,6 +69,21 @@ model V2ProcessedEvent {
   @@schema("gateway")
 }
 
+model StockOutbox {
+  id               String   @id @default(uuid()) @db.Uuid
+  flightInstanceId String   @map("flight_instance_id") @db.Uuid
+  dueAt            DateTime @map("due_at")
+  status           String   @default("PENDING")
+  attempts         Int      @default(0)
+  correlationId    String?  @map("correlation_id")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @default(now()) @updatedAt @map("updated_at")
+
+  @@index([status, dueAt])
+  @@map("stock_outbox")
+  @@schema("gateway")
+}
+
 model SchedulerLock {
   task        String   @id
   lockedUntil DateTime @map("locked_until")

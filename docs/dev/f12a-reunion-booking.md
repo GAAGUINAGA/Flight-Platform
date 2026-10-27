@@ -50,4 +50,14 @@ Respuesta al aceptar: `202 {"eventId","outcome"}`. Idempotente por `id` del Clou
 - Cambio de asientos (`PUT …/seats`): no hay tarifa de asientos, así que **no se cobra** y la respuesta no trae `amountCharged`; un `payment` enviado se ignora.
 - El reembolso lo calcula la aerolínea (`refund.status = CALCULATED`) y **lo ejecuta Booking**.
 
+## 6. Stock por gRPC (aerolínea → Booking)
+| Qué confirmar | Variable | Por defecto |
+|---|---|---|
+| Dirección del `PushStockUpdate` de Booking | `BOOKING_STOCK_GRPC_URL` | `booking.epn.edu.ec:50051` |
+| `x-api-key` que Booking entrega | `BOOKING_STOCK_API_KEY` | vacío = envío **apagado** |
+| TLS (en la prueba local sin TLS: `INTEGRATION_LOCAL=true` + `BOOKING_STOCK_TLS=false`) | `BOOKING_STOCK_TLS`, `BOOKING_STOCK_TLS_CA_FILE` | TLS activo |
+- Se envía un mensaje por vuelo y cabina (`<vuelo>-<cabina>`, fecha y hora locales de salida, asientos libres) cada vez que cambia la capacidad; si Booking no responde se reintenta hasta 8 veces.
+- Tras una compra Booking verá varios mensajes seguidos (hold y reserva): son estados sucesivos del mismo vuelo.
+- Pendiente para F12b: `StreamInventoryChanges`.
+
 _(Las secciones de stock gRPC, cancelaciones/combos, operaciones y credenciales se completan con los bloques P4 a P6 y la guía de la plataforma local.)_

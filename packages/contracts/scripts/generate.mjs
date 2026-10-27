@@ -17,7 +17,8 @@ const files = [];
 function collect(directory) {
   for (const entry of readdirSync(directory, { withFileTypes: true })) {
     const path = resolve(directory, entry.name);
-    if (entry.isDirectory()) collect(path);
+    // `external/` guarda contratos de terceros (Booking) que se cargan con proto-loader, no se generan.
+    if (entry.isDirectory()) { if (entry.name !== 'external') collect(path); }
     else if (entry.name.endsWith('.proto')) files.push(path);
   }
 }

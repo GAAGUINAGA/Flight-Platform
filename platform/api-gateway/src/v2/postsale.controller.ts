@@ -10,6 +10,7 @@ import { bookingLinks } from './links';
 import { v2Controller, v2Route } from './route';
 import { publicSegment } from './shapes';
 import { InMemoryV2StateStore, type V2BookingRecord, type V2StateStore } from './state';
+import type { StockSync } from './stock/stock-sync';
 
 type Json = Record<string, unknown>;
 const correlation = (req: Request): string => String(req.res?.getHeader('X-Correlation-Id') ?? '');
@@ -20,7 +21,7 @@ interface Access { raw: RawBooking; record: V2BookingRecord | null; map: Record<
 /** Postventa, asientos y check-in de v2 sobre la reserva del dueño. */
 export class V2PostSaleController {
   private readonly cancellation: V2Cancellation;
-  constructor(private readonly config: GatewayConfig, private readonly state: V2StateStore = new InMemoryV2StateStore()) { this.cancellation = new V2Cancellation(config, state); }
+  constructor(private readonly config: GatewayConfig, private readonly state: V2StateStore = new InMemoryV2StateStore(), private readonly stock?: StockSync) { this.cancellation = new V2Cancellation(config, state, stock); }
   private get base(): string { return this.config.v2!.publicBaseUrl; }
   private call(req: Request, service: 'reservation' | 'ancillaries' | 'operations', method: string, input: object): Promise<unknown> { return callGatewayGrpc(this.config, service, method, { ...input, ownerId: req.auth!.ownerId }, correlation(req), req.auth); }
 
@@ -54,7 +55,9 @@ export class V2PostSaleController {
   }
 
   async dateChange(req: Request, res: Response, bookingId: string, body: { changeOfferId: string; payment?: { paymentReference: string }; assignedSeats?: unknown[] }): Promise<Json> {
+    const before = this.stock?.enabled ? await this.call(req, 'reservation', 'getReservation', { bookingId }).catch(() => undefined) : undefined;
     const confirmed = await this.call(req, 'reservation', 'confirmDateChange', { bookingId, changeOfferId: body.changeOfferId, assignedSeats: body.assignedSeats ?? [], ...(body.payment ? { payment: { paymentReference: body.payment.paymentReference }, ...this.paymentChannel(req) } : {}), idempotencyKey: req.header('idempotency-key') }) as RawBooking;
+    await this.stock?.trigger([...this.stock.flightsOf(before as never), ...this.stock.flightsOf(confirmed as never)], correlation(req));
     res.status(confirmed.status === 'CHANGE_PENDING' ? 202 : 200);
     return bookingView(confirmed, await this.state.findBooking(bookingId).catch(() => null), this.base);
   }
@@ -93,7 +96,7 @@ export class V2PostSaleController {
     return { ...result, boardingPasses: (result.boardingPasses ?? []).map((pass) => ({ ...pass, passengerId: externalId(map, String(pass.passengerId)) })) };
   }
 }
-v2Controller(V2PostSaleController, 'vuelos/bookings/:bookingId', ['GATEWAY_CONFIG', 'V2_STATE']);
+v2Controller(V2PostSaleController, 'vuelos/bookings/:bookingId', ['GATEWAY_CONFIG', 'V2_STATE', 'STOCK_SYNC']);
 const proto = V2PostSaleController.prototype;
 v2Route(proto, 'baggageOptions', 'get', 'baggage-options', ['req', 'param:bookingId'], { scopes: ['flights:read'] });
 v2Route(proto, 'baggage', 'post', 'baggage', ['req', 'param:bookingId', 'body'], { scopes: ['flights:book'], status: 200, idempotent: { operation: 'addBaggage' } });
