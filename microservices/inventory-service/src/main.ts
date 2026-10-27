@@ -1,4 +1,5 @@
 /* global __dirname */
+import { grpcBindUrl } from './bind-host';
 import 'reflect-metadata';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
@@ -18,7 +19,7 @@ async function bootstrap(): Promise<void> {
   const root = findProtoRoot(); const webhookOptions = { url: process.env.WEBHOOKS_GRPC_URL ?? 'localhost:50057', grpcTls: process.env.GRPC_TLS === 'true', internalApiKey, correlationId: 'inventory-service', role: 'system', packageName: 'flightplatform.webhooks.v1', protoPath: join(root, 'flightplatform', 'webhooks', 'v1', 'webhooks.proto'), serviceName: 'WebhooksService' };
   const webhookClient = createGrpcClient(webhookOptions); const logger = createLogger(); const events = new SafeEventPublisher(new GrpcEventPublisher(withGrpcCallContext(webhookClient.getService(webhookOptions.serviceName), webhookOptions)), logger);
   const app = await createInventoryServer({
-    url: `0.0.0.0:${process.env.PORT ?? '50051'}`,
+    url: grpcBindUrl(process.env, '50051'),
     internalApiKey,
     runtime: { prisma, events }, logger
   });

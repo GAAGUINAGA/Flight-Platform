@@ -1,5 +1,5 @@
 import { clearTimeout, setTimeout } from 'node:timers';
-import { credentials, loadPackageDefinition } from '@grpc/grpc-js';
+import { credentials, loadPackageDefinition, Metadata } from '@grpc/grpc-js';
 import { loadSync } from '@grpc/proto-loader';
 import type { Response } from 'express';
 import { GRPC_HEALTH_PROTO_PATH } from '@flight-platform/shared';
@@ -10,7 +10,7 @@ export const HEALTH_SERVICES = ['inventory', 'pricing', 'ancillaries', 'reservat
 // Sin estos tres no se puede buscar, bloquear ni reservar: el nodo está DOWN. Con el resto caído solo se degrada.
 const CRITICAL = new Set(['inventory', 'pricing', 'reservation']);
 
-interface HealthClient { check(request: { service: string }, options: { deadline: Date }, callback: (error: Error | null, response?: { status?: string }) => void): void; close(): void; }
+interface HealthClient { check(request: { service: string }, metadata: Metadata, options: { deadline: Date }, callback: (error: Error | null, response?: { status?: string }) => void): void; close(): void; }
 let healthCtor: (new (url: string, creds: ReturnType<typeof credentials.createInsecure>) => HealthClient) | undefined;
 const loadHealthClient = () => {
   if (!healthCtor) {
@@ -23,7 +23,7 @@ const loadHealthClient = () => {
 export interface DependencyHealth { nombre: string; status: 'UP' | 'DOWN'; latencia_ms: number; }
 export interface HealthReport { status: 'HEALTHY' | 'DEGRADED' | 'DOWN'; dependencias: DependencyHealth[]; latencia_ms: number; }
 
-const probe = (service: string, url: string, tls: boolean, timeoutMs: number): Promise<DependencyHealth> => new Promise((resolve) => {
+const probe = (service: string, url: string, tls: boolean, timeoutMs: number, internalApiKey: string): Promise<DependencyHealth> => new Promise((resolve) => {
   const started = Date.now(); let client: HealthClient | undefined;
   let finished = false;
   const done = (up: boolean) => { if (finished) return; finished = true; clearTimeout(guard); try { client?.close(); } catch { /* canal ya cerrado */ } resolve({ nombre: `${service}-service`, status: up ? 'UP' : 'DOWN', latencia_ms: Date.now() - started }); };
@@ -32,7 +32,9 @@ const probe = (service: string, url: string, tls: boolean, timeoutMs: number): P
   try {
     const Ctor = loadHealthClient();
     client = new Ctor(url, tls ? credentials.createSsl() : credentials.createInsecure());
-    client.check({ service: '' }, { deadline: new Date(Date.now() + timeoutMs) }, (error, response) => done(!error && response?.status === 'SERVING'));
+    // El health de los servicios también exige la llave interna (ADR-0-04): sin ella todos responderían UNAUTHENTICATED.
+    const metadata = new Metadata(); metadata.set('x-internal-key', internalApiKey);
+    client.check({ service: '' }, metadata, { deadline: new Date(Date.now() + timeoutMs) }, (error, response) => done(!error && response?.status === 'SERVING'));
   } catch { done(false); }
 });
 
@@ -47,7 +49,7 @@ export class V2HealthService {
     if (this.cached && Date.now() - this.cached.at < v2.healthCacheMs) return this.cached.report;
     this.inflight ??= (async () => {
       const started = Date.now();
-      const dependencias = await Promise.all(HEALTH_SERVICES.map((service) => probe(service, grpcUrl(service), this.config.grpcTls, v2.healthTimeoutMs)));
+      const dependencias = await Promise.all(HEALTH_SERVICES.map((service) => probe(service, grpcUrl(service), this.config.grpcTls, v2.healthTimeoutMs, this.config.internalApiKey)));
       const down = dependencias.filter((d) => d.status === 'DOWN');
       const status = down.some((d) => CRITICAL.has(d.nombre.replace('-service', ''))) ? 'DOWN' : down.length ? 'DEGRADED' : 'HEALTHY';
       const report: HealthReport = { status, dependencias, latencia_ms: Date.now() - started };

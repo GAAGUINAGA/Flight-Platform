@@ -1,4 +1,5 @@
 /* global require, module */
+import { grpcBindUrl } from './bind-host';
 import 'reflect-metadata';
 import { join } from 'node:path';
 import process from 'node:process';
@@ -41,7 +42,7 @@ async function bootstrap() {
   if (!internalApiKey) throw new Error('INTERNAL_API_KEY is required');
   const prisma = new PrismaClient();
   const composition = createOperationsRuntime(internalApiKey, prisma);
-  const app = await createOperationsServer({ url: `0.0.0.0:${process.env.PORT ?? '50056'}`, internalApiKey, runtime: composition.runtime });
+  const app = await createOperationsServer({ url: grpcBindUrl(process.env, '50056'), internalApiKey, runtime: composition.runtime });
   app.enableShutdownHooks();
   await app.listen();
   process.once('beforeExit', () => { composition.close(); void prisma.$disconnect(); });

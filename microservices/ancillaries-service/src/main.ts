@@ -1,4 +1,5 @@
 /* global __dirname */
+import { grpcBindUrl } from './bind-host';
 import 'reflect-metadata';
 import { existsSync } from 'node:fs';
 import process from 'node:process';
@@ -18,7 +19,7 @@ async function bootstrap(): Promise<void> {
   const root = findProtoRoot();
   const pricing = new GrpcPricingGateway(createGrpcService<PricingGrpcService>({ url: process.env.PRICING_GRPC_URL ?? 'localhost:50052', grpcTls: process.env.GRPC_TLS === 'true', internalApiKey, correlationId: 'ancillaries-service', role: 'system', packageName: 'flightplatform.pricing.v1', protoPath: join(root, 'flightplatform', 'pricing', 'v1', 'pricing.proto'), serviceName: 'PricingService' }));
   const prisma = new PrismaClient();
-  const app = await createAncillariesServer({ url: `0.0.0.0:${process.env.PORT ?? '50053'}`, internalApiKey, runtime: { prisma, pricing } });
+  const app = await createAncillariesServer({ url: grpcBindUrl(process.env, '50053'), internalApiKey, runtime: { prisma, pricing } });
   app.enableShutdownHooks();
   await app.listen();
   process.once('beforeExit', () => void prisma.$disconnect());

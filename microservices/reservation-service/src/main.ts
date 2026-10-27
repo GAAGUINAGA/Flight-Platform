@@ -1,4 +1,5 @@
 /* global __dirname */
+import { grpcBindUrl } from './bind-host';
 import 'reflect-metadata';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
@@ -32,10 +33,7 @@ async function bootstrap(): Promise<void> {
   // v1 conserva su verificador; los clientes client_credentials de v2 usan el canal BOOKING (API de pagos de Booking, configurable por entorno).
   const prisma = new PrismaClient(); const store = new PrismaReservationStore(prisma); const bookingPayments = bookingPaymentsConfigFromEnv(); warnIfVerificationOff(bookingPayments); const payment = new RoutingPaymentVerifier(new FakePaymentVerifier(), { BOOKING: new BookingPaymentVerifier(bookingPayments) });
   const deps = composeReservation({ store, pricing, payment, ancillaries, inventory, ticketing, events, operations: new PrismaBaggageOperations(prisma), quotes: new PrismaCancellationQuotes(prisma), clock: new SystemClock(), cutoffHours: Number(process.env.BAGGAGE_CUTOFF_HOURS ?? '4'), holdTtlMinutes: Number(process.env.HOLD_TTL_MINUTES ?? '20'), validateResponse: createResponseValidator() });
-  // Perfil de integración local: solo escucha en loopback para no exponer el servicio a la red privada de la reunión.
-  const local = process.env.INTEGRATION_LOCAL === 'true'; if (local && process.env.NODE_ENV === 'production') throw new Error('INTEGRATION_LOCAL is forbidden in production');
-  const host = process.env.GRPC_BIND_HOST ?? (local ? '127.0.0.1' : '0.0.0.0');
-  const app = await createReservationServer({ url: `${host}:${process.env.PORT ?? '50054'}`, internalApiKey, deps });
+  const app = await createReservationServer({ url: grpcBindUrl(process.env, '50054'), internalApiKey, deps });
   app.enableShutdownHooks();
   await app.listen();
 }

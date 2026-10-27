@@ -9,6 +9,9 @@ import { v2Controller, v2Route } from './route';
 import { publicItinerary } from './shapes';
 
 type Json = Record<string, unknown>;
+// El catálogo de ancillaries usa EXIT_ROW; el contrato v2 lo llama EMERGENCY_EXIT y no admite otros valores.
+const SEAT_CHARACTERISTICS: Record<string, string> = { WINDOW: 'WINDOW', AISLE: 'AISLE', EXTRA_LEGROOM: 'EXTRA_LEGROOM', EMERGENCY_EXIT: 'EMERGENCY_EXIT', EXIT_ROW: 'EMERGENCY_EXIT' };
+export const v2SeatCharacteristics = (values: unknown): string[] => [...new Set((Array.isArray(values) ? values : []).map((value) => SEAT_CHARACTERISTICS[String(value)]).filter((value): value is string => Boolean(value)))];
 const correlation = (req: Request): string => String(req.res?.getHeader('X-Correlation-Id') ?? '');
 /** Búsqueda, mapa de asientos y estado público de vuelos (sin token). */
 export class V2ShoppingController {
@@ -24,9 +27,9 @@ export class V2ShoppingController {
     if (!isUuid(offerId) || !isUuid(segmentId)) throw new GatewayProblemError(404, 'NOT_FOUND', 'Oferta o segmento no encontrado');
     try { await callGatewayGrpc(this.config, 'pricing', 'resolveSegment', { segmentId }, correlation(req)); }
     catch (error) { if (typeof error === 'object' && error !== null && 'code' in error && error.code === status.NOT_FOUND) throw new GatewayProblemError(404, 'NOT_FOUND', 'Oferta o segmento no encontrado'); throw error; }
-    const map = await callGatewayGrpc(this.config, 'ancillaries', 'getSeatMapForOffer', { offerId, segmentId }, correlation(req)) as { segmentId?: string; cabins?: Array<{ rows?: Array<{ seats?: Array<{ isAvailable?: boolean }> }> }> };
+    const map = await callGatewayGrpc(this.config, 'ancillaries', 'getSeatMapForOffer', { offerId, segmentId }, correlation(req)) as { segmentId?: string; cabins?: Array<{ rows?: Array<{ seats?: Array<{ isAvailable?: boolean; characteristics?: unknown }> }> }> };
     // Solo hay dos estados calculables hoy (disponible y ocupado); HELD por asiento y BOARDED llegan con F12b.
-    return { ...map, cabins: (map.cabins ?? []).map((cabin) => ({ ...cabin, rows: (cabin.rows ?? []).map((row) => ({ ...row, seats: (row.seats ?? []).map((seat) => ({ ...seat, status: seat.isAvailable ? 'AVAILABLE' : 'BOOKED' })) })) })) };
+    return { ...map, cabins: (map.cabins ?? []).map((cabin) => ({ ...cabin, rows: (cabin.rows ?? []).map((row) => ({ ...row, seats: (row.seats ?? []).map((seat) => ({ ...seat, characteristics: v2SeatCharacteristics(seat.characteristics), status: seat.isAvailable ? 'AVAILABLE' : 'BOOKED' })) })) })) };
   }
 
   async flightStatus(req: Request, flightNumber: string, date: string): Promise<Json> {

@@ -17,6 +17,11 @@
     "gen:contracts": "npm run gen --workspace=@flight-platform/contracts",
     "dev:token": "tsx infra/scripts/dev-token.ts",
     "dev-auth:client": "tsx platform/api-gateway/scripts/dev-auth-client.ts",
+    "local:up": "powershell -NoProfile -File scripts/local-platform/up.ps1",
+    "local:down": "powershell -NoProfile -File scripts/local-platform/down.ps1",
+    "local:seed": "powershell -NoProfile -File scripts/local-platform/seed.ps1",
+    "local:health": "node scripts/local-platform/health.cjs",
+    "local:journey": "node scripts/local-platform/journey.cjs",
     "audit:policy": "node scripts/audit-policy.cjs",
     "format:check": "prettier --check ."
   },

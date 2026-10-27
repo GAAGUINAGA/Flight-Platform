@@ -1,3 +1,4 @@
+import { grpcBindUrl } from './bind-host';
 import 'reflect-metadata';
 import process from 'node:process';
 import { join } from 'node:path';
@@ -23,7 +24,7 @@ async function bootstrap(): Promise<void> {
     serviceName: 'InventoryService'
   })) : undefined;
   const app = await createPricingServer({
-    url: `0.0.0.0:${process.env.PORT ?? '50052'}`,
+    url: grpcBindUrl(process.env, '50052'),
     internalApiKey,
     runtime: { prisma, inventory }
   });
