@@ -113,3 +113,8 @@
 - pricing-service: en `pricePerPassengerType` aparecen `TOTAL` y `CHILDRE`. `TOTAL` no es un tipo de pasajero sino una fila de resumen que Pricing incluye en el desglose por tipo (el hold la usa para el precio bloqueado); `CHILDRE` es el ni√±o escrito de forma abreviada. El contrato v2 solo admite ADULT, YOUTH, CHILD e INFANT. Hoy el Gateway v2 filtra `TOTAL` y normaliza `CHILDRE` a `CHILD` (platform/api-gateway/src/v2/shapes.ts); en F12b separar el total del desglose por tipo y corregir el nombre en Pricing.
 - F12b: aceptar con 202 el pago pendiente en equipaje (`addBaggage`) y cambio de fecha (`confirmDateChange`), que el contrato v2 admite; hoy responden 422 PAYMENT_NOT_AUTHORIZED (ADR-F12-04).
 - F12b (panel de operaciones, P6): `CHECKED_IN` puede calcularse con los check-ins de operations por vuelo (hoy sale 0); junto con `HELD` por asiento y `BOARDED` (sin proceso de abordaje todav√≠a). `BOOKED` sigue en 0 mientras la emisi√≥n v2 sea inmediata (ADR-F12-10).
+
+## Observaciones de docs/audit/audits/F12/audit-1.md (antes del despliegue en la nube)
+- La redacciÛn de logs no incluye las cabeceras x-webhook-signature, x-api-key, x-user-id ni x-device-fingerprint; agregarlas y una prueba de logs v2.
+- platform/api-gateway/src/v2/http.ts:40-43 valida la entrada (422) antes de autenticar; autenticar primero.
+- booking-events sin BOOKING_EVENTS_CLIENT_ID permite apuntar a reservas de cualquier cliente: hacerlo obligatorio (negarse a arrancar sin Èl cuando booking-events est· habilitado).
