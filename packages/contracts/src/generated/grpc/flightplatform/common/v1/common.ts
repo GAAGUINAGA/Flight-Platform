@@ -267,6 +267,9 @@ export interface WebhookSubscription {
   url: string;
   events: string[];
   secret: string;
+  /** Aditivo F12a: solo se rellenan en suscripciones v2. */
+  active?: boolean | undefined;
+  createdAt?: string | undefined;
 }
 
 export interface WebhookEventData {
@@ -274,7 +277,11 @@ export interface WebhookEventData {
   pnr?: string | undefined;
   status?: string | undefined;
   refundAmount?: string | undefined;
-  holdId?: string | undefined;
+  holdId?:
+    | string
+    | undefined;
+  /** Aditivo F12a: campos extra del evento v2 (objeto JSON serializado, <= 8 KB). v1 nunca los entrega. */
+  dataJson?: string | undefined;
 }
 
 export interface WebhookPayload {
@@ -282,7 +289,11 @@ export interface WebhookPayload {
   eventType: string;
   occurredAt: string;
   apiVersion: string;
-  data: WebhookEventData | undefined;
+  data:
+    | WebhookEventData
+    | undefined;
+  /** Aditivo F12a: X-Correlation-Id del proceso que originó el evento. */
+  correlationId?: string | undefined;
 }
 
 export interface CheckInSegment {

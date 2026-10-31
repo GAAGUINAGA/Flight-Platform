@@ -85,6 +85,21 @@ export class InventoryController {
     return this.flight(await this.d.queries.find(ctxOf(metadata), data));
   }
 
+  async listCabinOccupancy(data: unknown, metadata: Metadata) {
+    const { items, nextCursor } = await this.d.queries.occupancy(ctxOf(metadata), data);
+    return {
+      items: items.map(({ flight, activeHolds, nextHoldExpiryAt }) => ({
+        flightInstanceId: flight.id,
+        segment: segmentDto(flight, this.d.config.airlineCode),
+        closed: flight.props.closed,
+        cabins: flight.props.cabins.map((c) => ({ cabinClass: c.cabinClass, sellable: c.sellable, held: c.held, sold: c.sold })),
+        activeHolds,
+        ...(nextHoldExpiryAt ? { nextHoldExpiryAt: nextHoldExpiryAt.toISOString() } : {})
+      })),
+      page: nextCursor ? { nextCursor } : {}
+    };
+  }
+
   async queryAvailability(data: unknown, metadata: Metadata) {
     const flights = await this.d.queries.queryAvailability(ctxOf(metadata), data);
     return {
@@ -136,7 +151,8 @@ const RPC_METHODS: Record<string, keyof InventoryController> = {
   ReleaseHold: 'releaseHold',
   ConsumeHold: 'consumeHold',
   ReleaseReservedInventory: 'releaseReservedInventory',
-  ExpireHolds: 'expireHolds'
+  ExpireHolds: 'expireHolds',
+  ListCabinOccupancy: 'listCabinOccupancy'
 };
 for (const [rpc, key] of Object.entries(RPC_METHODS)) {
   const descriptor = Object.getOwnPropertyDescriptor(InventoryController.prototype, key) as PropertyDescriptor;

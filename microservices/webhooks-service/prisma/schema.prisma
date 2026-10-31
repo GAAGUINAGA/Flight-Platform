@@ -16,10 +16,25 @@ model Subscription {
   events          String[]
   encryptedSecret String     @map("encrypted_secret")
   active          Boolean    @default(true)
+  apiVersion      String     @default("1") @map("api_version") @db.VarChar(8)
   createdAt       DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
   deliveries      Delivery[]
   @@index([ownerId, active])
   @@map("subscriptions")
+}
+
+model Event {
+  seq           BigInt   @id @default(autoincrement())
+  eventId       String   @unique @map("event_id") @db.Uuid
+  ownerId       String   @map("owner_id") @db.VarChar(128)
+  eventType     String   @map("event_type") @db.VarChar(64)
+  occurredAt    DateTime @map("occurred_at") @db.Timestamptz(3)
+  apiVersion    String   @map("api_version") @db.VarChar(32)
+  correlationId String?  @map("correlation_id") @db.VarChar(100)
+  data          Json
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  @@index([ownerId, seq])
+  @@map("events")
 }
 
 model Delivery {

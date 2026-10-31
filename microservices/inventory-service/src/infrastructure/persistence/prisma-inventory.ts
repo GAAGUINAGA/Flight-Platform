@@ -6,7 +6,7 @@ import { InventoryError } from '../../domain/errors';
 import { FlightInstance } from '../../domain/flight-instance';
 import { HoldStatus, InventoryHold } from '../../domain/inventory-hold';
 import {
-  FlightReader, InventoryTx, ListFlightsQuery, ReservedRow, UnitOfWork
+  FlightReader, HoldSummary, InventoryTx, ListFlightsQuery, ReservedRow, UnitOfWork
 } from '../../application/ports';
 
 // D-03: el esquema es fijo por servicio; las consultas crudas lo califican expl?citamente.
@@ -71,6 +71,19 @@ export class PrismaFlightReader implements FlightReader {
       ...(q.cursor ? { cursor: { id: q.cursor }, skip: 1 } : {})
     });
     return rows.map(toFlight);
+  }
+
+  async holdSummary(flightInstanceIds: string[], now: Date): Promise<Map<string, HoldSummary>> {
+    const result = new Map<string, HoldSummary>();
+    if (flightInstanceIds.length === 0) return result;
+    const holds = await this.db.hold.findMany({ where: { status: 'HELD', expiresAt: { gt: now }, lines: { some: { flightInstanceId: { in: flightInstanceIds } } } }, select: { expiresAt: true, lines: { select: { flightInstanceId: true } } } });
+    for (const hold of holds) {
+      for (const flightId of new Set(hold.lines.map((line) => line.flightInstanceId))) {
+        const current = result.get(flightId) ?? { activeHolds: 0 };
+        result.set(flightId, { activeHolds: current.activeHolds + 1, nextExpiryAt: current.nextExpiryAt && current.nextExpiryAt < hold.expiresAt ? current.nextExpiryAt : hold.expiresAt });
+      }
+    }
+    return result;
   }
 
   async search(origin: string, destination: string, from: Date, to: Date): Promise<FlightInstance[]> {

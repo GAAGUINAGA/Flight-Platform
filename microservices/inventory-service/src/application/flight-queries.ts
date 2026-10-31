@@ -46,6 +46,13 @@ export class FlightQueries {
     return { items, nextCursor: rows.length > limit ? items[items.length - 1].id : undefined };
   }
 
+  /** Ocupación por vuelo y cabina (held/sold) con los holds vigentes: alimenta el panel de operaciones. */
+  async occupancy(ctx: RequestContext, input: unknown): Promise<{ items: Array<{ flight: FlightInstance; activeHolds: number; nextHoldExpiryAt?: Date }>; nextCursor?: string }> {
+    const { items, nextCursor } = await this.list(ctx, input);
+    const summary = await this.reader.holdSummary(items.map((f) => f.id), this.clock.now());
+    return { items: items.map((flight) => ({ flight, activeHolds: summary.get(flight.id)?.activeHolds ?? 0, nextHoldExpiryAt: summary.get(flight.id)?.nextExpiryAt })), nextCursor };
+  }
+
   /** Disponibilidad por cabina; libera perezosamente los holds vencidos de los vuelos consultados. */
   async queryAvailability(ctx: RequestContext, input: unknown): Promise<AvailableFlightView[]> {
     const req = validate(availabilityRequest, input);

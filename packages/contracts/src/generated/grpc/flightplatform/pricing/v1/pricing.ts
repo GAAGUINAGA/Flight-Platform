@@ -86,6 +86,8 @@ export interface HoldOfferRequest {
   itinerarySelections: ItinerarySelection[];
   passengersBreakdown: PassengerMix | undefined;
   idempotencyKey: string;
+  /** Aditivo F12a: vigencia del hold en minutos (5 a 30). Ausente = la configurada en el servicio. */
+  ttlMinutes?: number | undefined;
 }
 
 export interface HoldOfferResponse {

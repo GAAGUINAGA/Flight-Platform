@@ -1,9 +1,9 @@
 import { DomainError } from '@flight-platform/shared';
 import process from 'node:process';
-import { CheckInPass, CheckInResult, CheckInStore } from '../../application/check-in-ports';
+import { CheckedInCount, CheckInCounts, CheckInPass, CheckInResult, CheckInStore } from '../../application/check-in-ports';
 import { Prisma, PrismaClient } from './prisma-client/client';
 
-export class PrismaCheckInStore implements CheckInStore {
+export class PrismaCheckInStore implements CheckInStore, CheckInCounts {
   constructor(private readonly prisma: PrismaClient) {}
 
   async find(ownerId: string, bookingId: string): Promise<{ status: string; result: CheckInResult | null; eventPublished: boolean } | null> {
@@ -49,6 +49,14 @@ export class PrismaCheckInStore implements CheckInStore {
       if (row.barcodeType !== 'QR') throw new Error('Unsupported boarding pass barcode type');
       return { ...row, barcodeType: 'QR' };
     });
+  }
+  /** Pasajeros únicos (reserva + pasajero) con pase válido por vuelo y cabina: reemitir un pase o repetir el check-in no cambia el conteo. */
+  async countCheckedIn(flightInstanceIds: string[]): Promise<CheckedInCount[]> {
+    if (!flightInstanceIds.length) return [];
+    const rows = await this.prisma.boardingPass.findMany({ where: { segmentId: { in: flightInstanceIds }, valid: true }, select: { segmentId: true, bookingId: true, seat: true, cabinClass: true } });
+    const passengers = new Map<string, Set<string>>();
+    for (const row of rows) { const key = `${row.segmentId}|${row.cabinClass ?? ''}`; (passengers.get(key) ?? passengers.set(key, new Set()).get(key)!).add(`${row.bookingId}|${row.seat}`); }
+    return [...passengers.entries()].map(([key, set]) => { const [flightInstanceId, cabin] = key.split('|'); return { flightInstanceId, cabinClass: cabin || null, seats: set.size }; });
   }
   async claimStale(_now: Date, staleBefore: Date, limit: number): Promise<Array<{ ownerId: string; bookingId: string }>> {
     const candidates = await this.prisma.checkIn.findMany({ where: { status: 'IN_PROGRESS', updatedAt: { lte: staleBefore } }, orderBy: { updatedAt: 'asc' }, take: limit, select: { ownerId: true, bookingId: true, updatedAt: true } });

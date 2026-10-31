@@ -1,6 +1,7 @@
 import { ArgumentsHost, Catch, ExceptionFilter, HttpException, Injectable } from '@nestjs/common';
 import type { Response } from 'express';
 import { problemFor, problemFromGrpc, type ProblemDetails } from './errors';
+import { isV2Path, v2ProblemFromError } from './v2/problem';
 
 export class GatewayProblemError extends Error {
   constructor(public readonly statusCode: number, public readonly code: string, public readonly safeDetail?: string) { super(code); }
@@ -25,7 +26,13 @@ export function asProblem(error: unknown, operation?: string): ProblemDetails {
 @Injectable()
 export class GatewayExceptionFilter implements ExceptionFilter {
   catch(error: unknown, host: ArgumentsHost): void {
-    const http = host.switchToHttp(); const response = http.getResponse<Response>(); const request = http.getRequest<{ method: string; path: string }>(); const problem = asProblem(error, request.method === 'POST' && request.path === '/flights/v1/bookings' ? 'booking' : undefined);
+    const http = host.switchToHttp(); const response = http.getResponse<Response>(); const request = http.getRequest<{ method: string; path: string }>();
+    if (isV2Path(request.path)) {
+      const v2 = v2ProblemFromError(error, { method: request.method, path: request.path, correlationId: String(response.getHeader('X-Correlation-Id') ?? '') || undefined });
+      if (v2.status === 503 && !response.getHeader('Retry-After')) response.setHeader('Retry-After', '5');
+      response.status(v2.status).type('application/problem+json').json(v2); return;
+    }
+    const problem = asProblem(error, request.method === 'POST' && request.path === '/flights/v1/bookings' ? 'booking' : undefined);
     if (problem.status === 404 && request.path === '/flights/v1/health' && request.method !== 'GET') problem.status = 405;
     if (problem.status === 503) response.setHeader('Retry-After', '5');
     response.status(problem.status).type('application/problem+json').json(problem);

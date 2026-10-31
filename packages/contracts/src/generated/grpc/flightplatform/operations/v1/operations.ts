@@ -11,6 +11,25 @@ import { BoardingPass, CheckInResponse, FlightStatus } from "../../common/v1/com
 
 export const protobufPackage = "flightplatform.operations.v1";
 
+export interface CountCheckedInRequest {
+  flightInstanceIds: string[];
+}
+
+export interface CheckedInCabin {
+  cabinClass: string;
+  seats: number;
+}
+
+export interface CheckedInFlight {
+  flightInstanceId: string;
+  cabins: CheckedInCabin[];
+  withoutCabin: number;
+}
+
+export interface CountCheckedInResponse {
+  flights: CheckedInFlight[];
+}
+
 export interface GetFlightStatusRequest {
   flightNumber: string;
   date: string;
@@ -25,6 +44,8 @@ export interface RecordOperationalUpdateRequest {
   actualArrivalAt?: string | undefined;
   departureTerminal?: string | undefined;
   arrivalTerminal?: string | undefined;
+  departureGate?: string | undefined;
+  reason?: string | undefined;
 }
 
 export interface CheckInRequest {
@@ -63,6 +84,8 @@ export interface OperationsServiceClient {
   listBoardingPasses(request: BookingOwnerRequest): Observable<BoardingPassListResponse>;
 
   recoverCheckIns(request: RecoverCheckInsRequest): Observable<RecoverCheckInsResponse>;
+
+  countCheckedIn(request: CountCheckedInRequest): Observable<CountCheckedInResponse>;
 }
 
 export interface OperationsServiceController {
@@ -81,6 +104,10 @@ export interface OperationsServiceController {
   recoverCheckIns(
     request: RecoverCheckInsRequest,
   ): Promise<RecoverCheckInsResponse> | Observable<RecoverCheckInsResponse> | RecoverCheckInsResponse;
+
+  countCheckedIn(
+    request: CountCheckedInRequest,
+  ): Promise<CountCheckedInResponse> | Observable<CountCheckedInResponse> | CountCheckedInResponse;
 }
 
 export function OperationsServiceControllerMethods() {
@@ -91,6 +118,7 @@ export function OperationsServiceControllerMethods() {
       "checkIn",
       "listBoardingPasses",
       "recoverCheckIns",
+      "countCheckedIn",
     ];
     for (const method of grpcMethods) {
       const descriptor: any = Reflect.getOwnPropertyDescriptor(constructor.prototype, method);

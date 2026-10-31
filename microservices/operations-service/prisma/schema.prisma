@@ -31,6 +31,8 @@ model OperationalFlight {
   actualArrivalAt DateTime? @map("actual_arrival_at") @db.Timestamptz(3)
   departureTerminal String? @map("departure_terminal") @db.VarChar(16)
   arrivalTerminal String? @map("arrival_terminal") @db.VarChar(16)
+  departureGate String? @map("departure_gate") @db.VarChar(16)
+  statusReason String? @map("status_reason") @db.VarChar(200)
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
   updates OperationalUpdate[]
@@ -73,8 +75,10 @@ model BoardingPass {
   barcode String
   barcodeType String @map("barcode_type") @db.VarChar(16)
   valid Boolean @default(true)
+  cabinClass String? @map("cabin_class") @db.VarChar(24)
   checkIn CheckIn @relation(fields: [checkInId], references: [id], onDelete: Cascade)
   @@unique([bookingId, passengerId, segmentId])
+  @@index([segmentId])
   @@index([ownerId, bookingId])
   @@map("boarding_passes")
 }

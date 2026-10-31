@@ -25,14 +25,15 @@ export class OfferHolds {
     });
     const lockedPriceMinor = selected.reduce((total, item) => total + this.total(item.option), 0);
     const seats = request.passengersBreakdown.adults + request.passengersBreakdown.youths + request.passengersBreakdown.children;
-    const inventoryHold = await this.inventory.createHold({ ownerId: request.ownerId, expiresAt: new Date(this.clock.now().getTime() + this.config.holdTtlMinutes * 60_000).toISOString(), idempotencyKey: request.idempotencyKey, segments: selected.flatMap(({ itinerary, selection }) => itinerary.segments.map((segment) => ({ flightInstanceId: segment.flightInstanceId, cabinClass: selection.cabinClass as 'ECONOMY' | 'PREMIUM_ECONOMY' | 'BUSINESS' | 'FIRST', seats }))) });
+    const ttlMinutes = request.ttlMinutes ?? this.config.holdTtlMinutes;
+    const inventoryHold = await this.inventory.createHold({ ownerId: request.ownerId, expiresAt: new Date(this.clock.now().getTime() + ttlMinutes * 60_000).toISOString(), idempotencyKey: request.idempotencyKey, segments: selected.flatMap(({ itinerary, selection }) => itinerary.segments.map((segment) => ({ flightInstanceId: segment.flightInstanceId, cabinClass: selection.cabinClass as 'ECONOMY' | 'PREMIUM_ECONOMY' | 'BUSINESS' | 'FIRST', seats }))) });
     try {
       await this.store.createPriceLock({ holdId: inventoryHold.holdId, ownerId: request.ownerId, offerId: request.offerId, lockedPriceMinor, expiresAt: new Date(inventoryHold.expiresAt), status: inventoryHold.status, selections: request.itinerarySelections, passengersBreakdown: request.passengersBreakdown, fareSnapshot: offer.snapshot });
     } catch (error) {
       await this.inventory.releaseHold({ holdId: inventoryHold.holdId, ownerId: request.ownerId });
       throw error;
     }
-    return { holdId: inventoryHold.holdId, status: inventoryHold.status, expiresAt: inventoryHold.expiresAt, ttlMinutes: this.config.holdTtlMinutes, lockedPrice: money(lockedPriceMinor, this.config.currency) };
+    return { holdId: inventoryHold.holdId, status: inventoryHold.status, expiresAt: inventoryHold.expiresAt, ttlMinutes, lockedPrice: money(lockedPriceMinor, this.config.currency) };
   }
   async get(input: unknown) {
     const request = validate(offerHoldRequest, input);

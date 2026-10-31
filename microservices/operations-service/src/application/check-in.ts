@@ -73,7 +73,7 @@ export class CheckInUseCase {
           const adult = passengers.find((value) => value.passengerId === passenger.associatedAdultId);
           const adultSegment = adult?.segments.find((value) => value.segmentId === segment.segmentId && value.status === 'CHECKED_IN');
           if (!adultSegment?.seat) { results.push({ segmentId: segment.segmentId, status: 'FAILED' }); continue; }
-          await this.store.savePass(request.ownerId, request.bookingId, { passengerId: passenger.passengerId, segmentId: segment.segmentId, seat: adultSegment.seat, barcode: `M1/${randomUUID()}/${adultSegment.seat}`, barcodeType: 'QR' });
+          await this.store.savePass(request.ownerId, request.bookingId, { passengerId: passenger.passengerId, segmentId: segment.segmentId, seat: adultSegment.seat, barcode: `M1/${randomUUID()}/${adultSegment.seat}`, barcodeType: 'QR', cabinClass: cabin });
           newSuccess = true;
           results.push({ segmentId: segment.segmentId, seat: adultSegment.seat, status: 'CHECKED_IN' });
           continue;
@@ -81,7 +81,7 @@ export class CheckInUseCase {
         try {
           const seat = await this.seats.assign({ ...request, passengerId: passenger.passengerId, segmentId: segment.segmentId, passengerType: passenger.passengerType, cabinClass: cabin });
           if (seat.status !== 'CHECKED_IN') throw new DomainError('CHECK_IN_FAILED');
-          await this.store.savePass(request.ownerId, request.bookingId, { passengerId: passenger.passengerId, segmentId: segment.segmentId, seat: seat.seatNumber, barcode: `M1/${randomUUID()}/${seat.seatNumber}`, barcodeType: 'QR' });
+          await this.store.savePass(request.ownerId, request.bookingId, { passengerId: passenger.passengerId, segmentId: segment.segmentId, seat: seat.seatNumber, barcode: `M1/${randomUUID()}/${seat.seatNumber}`, barcodeType: 'QR', cabinClass: cabin });
           newSuccess = true;
           results.push({ segmentId: segment.segmentId, seat: seat.seatNumber, status: 'CHECKED_IN' });
         } catch (error) {

@@ -43,6 +43,8 @@ export interface PricingConfig {
   currency: string;
   airlineCode: string;
   airlineName: string;
+  maxOffers: number;
+  maxCandidatesPerLeg?: number;
 }
 export interface PricingRuntime { prisma: PrismaClient; clock?: Clock; inventory?: InventoryGateway; config?: Partial<PricingConfig> }
 
@@ -59,7 +61,9 @@ export function buildDeps(runtime: PricingRuntime): PricingDeps {
     cancelPenaltyMinor: runtime.config?.cancelPenaltyMinor ?? Number(process.env.CANCEL_PENALTY_MINOR ?? '0'),
     currency: runtime.config?.currency ?? process.env.CURRENCY ?? 'USD',
     airlineCode: runtime.config?.airlineCode ?? process.env.AIRLINE_CODE ?? 'FP',
-    airlineName: runtime.config?.airlineName ?? process.env.AIRLINE_NAME ?? 'Flight Platform'
+    airlineName: runtime.config?.airlineName ?? process.env.AIRLINE_NAME ?? 'Flight Platform',
+    maxOffers: runtime.config?.maxOffers ?? Number(process.env.SEARCH_MAX_OFFERS ?? '10'),
+    maxCandidatesPerLeg: runtime.config?.maxCandidatesPerLeg ?? Number(process.env.SEARCH_MAX_CANDIDATES_PER_LEG ?? '100')
   };
   const store = new PrismaOfferStore(runtime.prisma);
   return { currency: config.currency, search: new SearchOffers(inventory, store, clock, config), holds: new OfferHolds(inventory, store, clock, config), postSale: new PostSalePricing(store, inventory, clock, config), fares: new FareAdmin(store) };

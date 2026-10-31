@@ -4,6 +4,8 @@ import type { Request, Response } from 'express';
 import { verifyBearer, type AuthContext } from './auth';
 import type { GatewayConfig } from './config';
 import { GatewayProblemError } from './web-errors';
+import type { DevAuthService } from './v2/dev-auth';
+import { authenticateV2, isV2Path } from './v2/v2-security';
 
 export const PUBLIC = 'gateway:public';
 export const ROLES = 'gateway:roles';
@@ -18,10 +20,17 @@ declare module 'express-serve-static-core' { interface Request { auth?: AuthCont
 
 @Injectable()
 export class JwtAuthGuard implements CanActivate {
-  constructor(private readonly reflector: Reflector, private readonly config: GatewayConfig) {}
+  constructor(private readonly reflector: Reflector, private readonly config: GatewayConfig, private readonly devAuth?: DevAuthService) {}
   async canActivate(context: ExecutionContext): Promise<boolean> {
     if (this.reflector.getAllAndOverride<boolean>(PUBLIC, [context.getHandler(), context.getClass()])) return true;
     const request = context.switchToHttp().getRequest<Request>();
+    if (isV2Path(request.path)) {
+      try { request.auth = await authenticateV2(request, this.config, this.devAuth); return true; }
+      catch (error) {
+        if (error instanceof GatewayProblemError) throw error;
+        throw new GatewayProblemError(401, 'UNAUTHORIZED', 'Se requiere autenticación');
+      }
+    }
     try { request.auth = await verifyBearer(request.header('authorization'), this.config.jwtIssuers); return true; }
     catch { throw new GatewayProblemError(401, 'VALIDATION_FAILED', 'Authentication required'); }
   }

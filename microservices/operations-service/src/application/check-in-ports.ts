@@ -30,7 +30,11 @@ export interface CheckInResult {
   status: 'COMPLETED' | 'FAILED';
   checkedInPassengers: Array<{ passengerId: string; status: 'CHECKED_IN' | 'NOT_CHECKED_IN' | 'FAILED'; segments: Array<{ segmentId: string; seat?: string; status: 'CHECKED_IN' | 'NOT_CHECKED_IN' | 'FAILED' }> }>;
 }
-export interface CheckInPass { passengerId: string; segmentId: string; seat: string; barcode: string; barcodeType: 'QR' }
+/** `cabinClass` solo se escribe al guardar el pase (viene de la reserva); `listPasses` no lo devuelve. */
+export interface CheckInPass { passengerId: string; segmentId: string; seat: string; barcode: string; barcodeType: 'QR'; cabinClass?: string }
+/** Asientos con check-in por vuelo y cabina; `cabinClass` null = check-in anterior a F12a-2, sin cabina registrada. */
+export interface CheckedInCount { flightInstanceId: string; cabinClass: string | null; seats: number }
+export interface CheckInCounts { countCheckedIn(flightInstanceIds: string[]): Promise<CheckedInCount[]> }
 export interface CheckInStore {
   find(ownerId: string, bookingId: string): Promise<{ status: string; result: CheckInResult | null; eventPublished: boolean } | null>;
   begin(ownerId: string, bookingId: string): Promise<boolean>;

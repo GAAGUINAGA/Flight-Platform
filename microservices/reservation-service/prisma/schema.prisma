@@ -23,6 +23,7 @@ model Reservation {
   sagaStep        String   @map("saga_step") @db.VarChar(64)
   pendingOperation Json?   @map("pending_operation")
   attempts        Int      @default(0)
+  paymentChannel  String?  @map("payment_channel") @db.VarChar(16)
   createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
   passengers      ReservationPassenger[]

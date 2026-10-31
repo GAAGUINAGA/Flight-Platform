@@ -60,3 +60,21 @@ describe('OPS-04/OPS-05: errores e idempotencia', () => {
     expect(publish).toHaveBeenCalledTimes(2);
   });
 });
+
+describe('OPS-P6: puerta y motivo del cambio de estado', () => {
+  const id = '00000000-0000-0000-0000-000000000001';
+  const seeded = async () => { const store = new Store(); await store.save(new OperationalFlight({ id: '', flightInstanceId: id, flightNumber: 'FP101', date: '2026-10-11', marketingCarrier: 'FP', operatingCarrier: 'FP', departureIata: 'UIO', arrivalIata: 'BOG', scheduledDepartureAt: new Date('2026-10-11T10:00:00Z'), scheduledArrivalAt: new Date('2026-10-11T11:00:00Z'), status: 'SCHEDULED' })); return store; };
+  const make = (store: Store) => new FlightStatusUseCases(store, { findFlight: async () => { throw new Error(); }, closeFlightInstance: async () => undefined }, { listByFlightInstance: async () => [] }, { publish: async () => undefined }, 15);
+  it('OPS-P6-01: departureGate y reason se guardan en el vuelo y en el registro de la actualización', async () => {
+    const store = await seeded(); const update = jest.spyOn(store, 'update'); const flight = await make(store).update({ flightInstanceId: id, status: 'BOARDING', departureGate: 'A6', reason: 'Embarque anticipado' });
+    expect(flight.props).toMatchObject({ status: 'BOARDING', departureGate: 'A6', statusReason: 'Embarque anticipado' }); expect(update).toHaveBeenCalledWith(flight, expect.objectContaining({ departureGate: 'A6', statusReason: 'Embarque anticipado' }));
+  });
+  it('OPS-P6-02: sin puerta ni motivo el vuelo conserva los que ya tenía', async () => {
+    const store = await seeded(); const useCases = make(store); await useCases.update({ flightInstanceId: id, status: 'BOARDING', departureGate: 'B2', reason: 'Cambio de puerta' });
+    const flight = await useCases.update({ flightInstanceId: id, status: 'BOARDING' }); expect(flight.props).toMatchObject({ departureGate: 'B2', statusReason: 'Cambio de puerta' });
+  });
+  it('OPS-P6-03: una puerta o un motivo vacíos o demasiado largos se rechazan', async () => {
+    const store = await seeded(); const useCases = make(store);
+    for (const extra of [{ departureGate: '' }, { departureGate: 'G'.repeat(17) }, { reason: '' }, { reason: 'x'.repeat(201) }, { gate: 'A1' }]) await expect(useCases.update({ flightInstanceId: id, status: 'BOARDING', ...extra })).rejects.toThrow();
+  });
+});

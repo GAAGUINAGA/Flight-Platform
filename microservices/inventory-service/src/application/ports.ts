@@ -34,7 +34,11 @@ export interface FlightReader {
   list(query: ListFlightsQuery): Promise<FlightInstance[]>;
   search(origin: string, destination: string, from: Date, to: Date): Promise<FlightInstance[]>;
   findByNumberAndDeparture(flightNumber: string, departureAt: Date): Promise<FlightInstance | null>;
+  /** Holds vigentes (HELD y no vencidos) por vuelo y el próximo vencimiento, para el panel de operaciones. */
+  holdSummary(flightInstanceIds: string[], now: Date): Promise<Map<string, HoldSummary>>;
 }
+
+export interface HoldSummary { activeHolds: number; nextExpiryAt?: Date }
 
 /** Operaciones dentro de una transacci?n de base de datos. */
 export interface InventoryTx {

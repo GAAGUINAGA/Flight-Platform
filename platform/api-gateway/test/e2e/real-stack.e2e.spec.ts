@@ -681,13 +681,19 @@ describeReal('Gateway: composición gRPC real en proceso', () => {
       const journeys = promisify(execFile)(process.execPath, [join(process.cwd(), 'platform/api-gateway/scripts/render-journeys.cjs')], {
         env: { BASE_URL: `http://127.0.0.1:${address.port}`, SUPABASE_CUSTOMER_TOKEN: token('flights:read flights:hold flights:book flights:cancel', journeyOwners[0]).slice(7), SUPABASE_ADMIN_TOKEN: token('flights:read flights:hold flights:book flights:cancel flights:webhooks flights:admin', journeyOwners[1], 'admin').slice(7), SUPABASE_PARTNER_TOKEN: token('flights:read flights:hold flights:book flights:cancel flights:webhooks', journeyOwners[2], 'partner').slice(7), SMOKE_ORIGIN: origin, SMOKE_DESTINATION: destination, SMOKE_POSTSALE_FLIGHT_NUMBER: numberA, SMOKE_CHECKIN_FLIGHT_NUMBER: numberC, SMOKE_WEBHOOK_URL: 'https://93.184.216.34/journeys', SMOKE_RECEIVER_API_URL: `http://127.0.0.1:${receiverPort}/requests`, SMOKE_WEBHOOK_SECRET: journeySecret, SMOKE_POLL_SECONDS: '1', SMOKE_J2_EVENT_GRACE_SECONDS: '20', SMOKE_RETRY_SECONDS: '1' }, timeout: 240_000
       });
-      // El hold TTL real es de 20 min: el hold a vencer del partner se adelanta en la base y el vencimiento por lectura publica hold.expired.
+      // El hold TTL real es de 20 min: se adelanta en la base y se barre por el RPC real después de registrar la suscripción.
       let expiring: string | undefined; let finished = false;
       const outcome = journeys.then((value) => ({ value }), (error: { stdout?: string; stderr?: string }) => ({ error })).finally(() => { finished = true; });
       for (let attempt = 0; attempt < 600 && !expiring && !finished; attempt++) {
         // El primer hold del recorrido se libera; el que vence es el segundo.
         const partnerHolds = await inventoryDb.hold.findMany({ where: { ownerId: journeyOwners[2] } }); const target = partnerHolds.length >= 2 ? partnerHolds.find((item) => item.status === 'HELD') : undefined;
-        if (target) { expiring = target.id; await inventoryDb.hold.update({ where: { id: target.id }, data: { expiresAt: new Date(0) } }); await scheduler.run('expire-holds'); } else await delay(300);
+        const subscriptionReady = target && await webhooksDb.subscription.findFirst({ where: { ownerId: journeyOwners[2], active: true, events: { has: 'hold.expired' } }, select: { id: true } });
+        if (target && subscriptionReady) {
+          expiring = target.id;
+          await inventoryDb.hold.update({ where: { id: target.id }, data: { expiresAt: new Date(0) } });
+          const swept = await callGatewayGrpc({ internalApiKey: key, grpcTls: false } as GatewayConfig, 'inventory', 'expireHolds', {}, 'journey-test', { ownerId: 'journey-test', role: 'system', scopes: new Set() }) as { expiredCount: number };
+          expect(swept.expiredCount).toBeGreaterThan(0);
+        } else await delay(300);
       }
       const failed = (error: { stdout?: string; stderr?: string }) => new Error(`render-journeys.cjs falló\n${error.stdout ?? ''}\n${error.stderr ?? ''}`);
       if (!expiring) { const settled = await outcome; throw 'error' in settled ? failed(settled.error) : new Error('El script terminó sin crear el hold a vencer de J2'); }

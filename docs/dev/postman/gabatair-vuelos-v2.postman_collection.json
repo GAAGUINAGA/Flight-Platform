@@ -1,0 +1,1653 @@
+{
+  "info": {
+    "name": "GabatAIR · Vuelos v2 (integración local)",
+    "_postman_id": "6f1a7b52-9a0e-4d52-8a54-0b1c2d3e4f50",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "Recorrido del contrato `vuelos-openapi-v2.yaml` contra la plataforma local de GabatAIR (nodo NODE_VUE_GABATAIR). Todas las URLs usan {{baseUrl}}: elige el entorno \"GabatAIR · integración local\" y cambia solo baseUrl (http://100.x.x.x:3000 por Tailscale).\n\nOrden sugerido: 0 → 1 → 2 → 3. Las carpetas 4 y 5 son lo que Booking ejecuta hacia la aerolínea y viceversa. Los secretos (clientSecret, bookingEventsSecret, webhookSecret) viven solo en el entorno (tipo secret); nunca los pegues en una petición."
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{accessToken}}",
+        "type": "string"
+      }
+    ]
+  },
+  "item": [
+    {
+      "name": "0 · Conexión y seguridad",
+      "item": [
+        {
+          "name": "Health del nodo (público)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v2/vuelos/health",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v2",
+                "vuelos",
+                "health"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('HEALTHY con 7 dependencias', function () { const b = pm.response.json(); pm.expect(b.status).to.eql('HEALTHY'); pm.expect(b.dependencias.length).to.eql(7); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Token (client_credentials)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v2/oauth2/token",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v2",
+                "oauth2",
+                "token"
+              ]
+            },
+            "description": "Guarda access_token en {{accessToken}}. Vigencia 1 h por defecto (DEV_AUTH_TOKEN_TTL_SECONDS).",
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "grant_type",
+                  "value": "client_credentials"
+                },
+                {
+                  "key": "client_id",
+                  "value": "{{clientId}}"
+                },
+                {
+                  "key": "client_secret",
+                  "value": "{{clientSecret}}"
+                }
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', function () { pm.response.to.have.status(200); });",
+                  "const b = pm.response.json(); pm.environment.set('accessToken', b.access_token);",
+                  "pm.test('Bearer', function () { pm.expect(String(b.token_type).toLowerCase()).to.eql('bearer'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "JWKS público",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v2/.well-known/jwks.json",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v2",
+                ".well-known",
+                "jwks.json"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "1 · Búsqueda y hold",
+      "item": [
+        {
+          "name": "Buscar vuelos",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-device-fingerprint",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v2/vuelos/search",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v2",
+                "vuelos",
+                "search"
+              ]
+            },
+            "description": "Guarda la primera oferta. Si da 0 ofertas, ejecuta `npm run local:seed` (vuelos de los próximos 60 días).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"itineraries\": [\n    {\n      \"origin\": \"{{origin}}\",\n      \"destination\": \"{{destination}}\",\n      \"departureDate\": \"{{departureDate}}\"\n    }\n  ],\n  \"passengers\": {\n    \"adults\": 1\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.environment.get('departureDate')) { pm.environment.set('departureDate', new Date(Date.now() + 5 * 86400000).toISOString().slice(0, 10)); }"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', function () { pm.response.to.have.status(200); });",
+                  "const b = pm.response.json(); pm.test('hay ofertas', function () { pm.expect(b.offers.length).to.be.above(0); });",
+                  "const o = b.offers[0], i = o.itineraries[0], p = i.pricingOptions[0];",
+                  "pm.environment.set('offerId', o.offerId); pm.environment.set('itineraryId', i.itineraryId); pm.environment.set('segmentId', i.segments[0].segmentId);",
+                  "pm.environment.set('flightNumber', i.segments[0].flightNumber); pm.environment.set('cabinClass', p.cabinClass); pm.environment.set('fareBrand', p.fareBrand);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Mapa de asientos",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v2/vuelos/offers/{{offerId}}/seatmap?segmentId={{segmentId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v2",
+                "vuelos",
+                "offers",
+                "{{offerId}}",
+                "seatmap"
+              ],
+              "query": [
+                {
+                  "key": "segmentId",
+                  "value": "{{segmentId}}"
+                }
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Estado de un vuelo",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v2/vuelos/flights/{{flightNumber}}/status?date={{departureDate}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v2",
+                "vuelos",
+                "flights",
+                "{{flightNumber}}",
+                "status"
+              ],
+              "query": [
+                {
+                  "key": "date",
+                  "value": "{{departureDate}}"
+                }
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Crear hold (precio congelado)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{userId}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v2/vuelos/offers/hold",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v2",
+                "vuelos",
+                "offers",
+                "hold"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"offerId\": \"{{offerId}}\",\n  \"itinerarySelections\": [\n    {\n      \"itineraryId\": \"{{itineraryId}}\",\n      \"cabinClass\": \"{{cabinClass}}\",\n      \"fareBrand\": \"{{fareBrand}}\"\n    }\n  ],\n  \"passengersBreakdown\": {\n    \"adults\": 1\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 201', function () { pm.response.to.have.status(201); });",
+                  "const b = pm.response.json(); pm.environment.set('holdId', b.holdId); pm.environment.set('lockedTotal', b.lockedPrice.total); pm.environment.set('lockedCurrency', b.lockedPrice.currency);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Consultar hold",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-User-Id",
+                "value": "{{userId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v2/vuelos/offers/hold/{{holdId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v2",
+                "vuelos",
+                "offers",
+                "hold",
+                "{{holdId}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Liberar hold (compensación)",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "X-User-Id",
+                "value": "{{userId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v2/vuelos/offers/hold/{{holdId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v2",
+                "vuelos",
+                "offers",
+                "hold",
+                "{{holdId}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 204', function () { pm.response.to.have.status(204); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "2 · Reserva y boletos",
+      "item": [
+        {
+          "name": "Crear reserva",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{userId}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v2/vuelos/bookings",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v2",
+                "vuelos",
+                "bookings"
+              ]
+            },
+            "description": "201 CONFIRMED si Booking ya confirmó el pago; 202 PENDING_PAYMENT si sigue pendiente (se completa con el evento payment.confirmed).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"holdId\": \"{{holdId}}\",\n  \"passengers\": [\n    {\n      \"passengerId\": \"PAX-1\",\n      \"passengerType\": \"ADULT\",\n      \"firstName\": \"Maria\",\n      \"lastName\": \"Andrade\",\n      \"documentType\": \"PASSPORT\",\n      \"documentNumber\": \"PM123456\",\n      \"nationality\": \"EC\",\n      \"documentExpiryDate\": \"2035-01-01\",\n      \"birthDate\": \"1990-01-01\",\n      \"gender\": \"F\",\n      \"contact\": {\n        \"email\": \"maria@example.invalid\",\n        \"phone\": \"+593999999999\"\n      },\n      \"assignedSeats\": [],\n      \"extraBaggage\": []\n    }\n  ],\n  \"payment\": {\n    \"paymentReference\": \"{{paymentReference}}\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.environment.get('paymentReference')) { pm.environment.set('paymentReference', 'PAY-PM-' + pm.variables.replaceIn('{{$guid}}')); }"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 o 202', function () { pm.expect([201, 202]).to.include(pm.response.code); });",
+                  "const b = pm.response.json(); pm.environment.set('bookingId', b.bookingId); pm.environment.set('pnr', b.pnr);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Detalle de la reserva",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-User-Id",
+                "value": "{{userId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v2/vuelos/bookings/{{bookingId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v2",
+                "vuelos",
+                "bookings",
+                "{{bookingId}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Listar reservas (por PNR)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-User-Id",
+                "value": "{{userId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v2/vuelos/bookings?pnr={{pnr}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v2",
+                "vuelos",
+                "bookings"
+              ],
+              "query": [
+                {
+                  "key": "pnr",
+                  "value": "{{pnr}}"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Boletos de la reserva",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-User-Id",
+                "value": "{{userId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v2/vuelos/bookings/{{bookingId}}/tickets",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v2",
+                "vuelos",
+                "bookings",
+                "{{bookingId}}",
+                "tickets"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Emitir boletos pendientes",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-User-Id",
+                "value": "{{userId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v2/vuelos/bookings/{{bookingId}}/tickets",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v2",
+                "vuelos",
+                "bookings",
+                "{{bookingId}}",
+                "tickets"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 o 422 si el pago sigue pendiente', function () { pm.expect([200, 422]).to.include(pm.response.code); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "3 · Postventa, asientos y check-in",
+      "item": [
+        {
+          "name": "Opciones de equipaje",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-User-Id",
+                "value": "{{userId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v2/vuelos/bookings/{{bookingId}}/baggage-options",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v2",
+                "vuelos",
+                "bookings",
+                "{{bookingId}}",
+                "baggage-options"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Comprar equipaje",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{userId}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v2/vuelos/bookings/{{bookingId}}/baggage",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v2",
+                "vuelos",
+                "bookings",
+                "{{bookingId}}",
+                "baggage"
+              ]
+            },
+            "description": "Booking debe tener ese pago CONFIRMADO por el total de la maleta; con pago pendiente responde 422 PAYMENT_NOT_AUTHORIZED (el 202 llega con F12b).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"passengerId\": \"PAX-1\",\n  \"itineraryId\": \"{{itineraryId}}\",\n  \"quantity\": 1,\n  \"payment\": {\n    \"paymentReference\": \"{{baggagePaymentReference}}\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.environment.set('baggagePaymentReference', 'PAY-PM-BAG-' + pm.variables.replaceIn('{{$guid}}'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 o 422', function () { pm.expect([200, 422]).to.include(pm.response.code); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Buscar cambio de fecha",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-User-Id",
+                "value": "{{userId}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v2/vuelos/bookings/{{bookingId}}/date-change/search",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v2",
+                "vuelos",
+                "bookings",
+                "{{bookingId}}",
+                "date-change",
+                "search"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"changes\": [\n    {\n      \"itineraryId\": \"{{itineraryId}}\",\n      \"newDepartureDate\": \"{{newDepartureDate}}\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.environment.get('newDepartureDate')) { pm.environment.set('newDepartureDate', new Date(Date.now() + 6 * 86400000).toISOString().slice(0, 10)); }"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) { const b = pm.response.json(); if (b.length) { pm.environment.set('changeOfferId', b[0].changeOfferId); pm.environment.set('changeAmount', b[0].priceDifference.totalToPay); } }",
+                  "pm.test('200', function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Confirmar cambio de fecha",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{userId}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v2/vuelos/bookings/{{bookingId}}/date-change",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v2",
+                "vuelos",
+                "bookings",
+                "{{bookingId}}",
+                "date-change"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"changeOfferId\": \"{{changeOfferId}}\",\n  \"payment\": {\n    \"paymentReference\": \"{{changePaymentReference}}\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200, 202 o 422', function () { pm.expect([200, 202, 422]).to.include(pm.response.code); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Cambiar asiento",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{userId}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v2/vuelos/bookings/{{bookingId}}/seats",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v2",
+                "vuelos",
+                "bookings",
+                "{{bookingId}}",
+                "seats"
+              ]
+            },
+            "description": "Elige un asiento AVAILABLE de la misma cabina (mapa de asientos). No tiene costo: no se cobra.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"seats\": [\n    {\n      \"passengerId\": \"PAX-1\",\n      \"segmentId\": \"{{segmentId}}\",\n      \"seatNumber\": \"{{seatNumber}}\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200, 409 o 422', function () { pm.expect([200, 409, 422]).to.include(pm.response.code); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Check-in (ventana de 48 h)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-User-Id",
+                "value": "{{userId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v2/vuelos/bookings/{{bookingId}}/check-in",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v2",
+                "vuelos",
+                "bookings",
+                "{{bookingId}}",
+                "check-in"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 o 409 fuera de ventana', function () { pm.expect([200, 409]).to.include(pm.response.code); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Pases de abordar",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-User-Id",
+                "value": "{{userId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v2/vuelos/bookings/{{bookingId}}/boarding-passes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v2",
+                "vuelos",
+                "bookings",
+                "{{bookingId}}",
+                "boarding-passes"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 o 409 antes del check-in', function () { pm.expect([200, 409]).to.include(pm.response.code); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Cotizar cancelación",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-User-Id",
+                "value": "{{userId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v2/vuelos/bookings/{{bookingId}}/cancellation-quote",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v2",
+                "vuelos",
+                "bookings",
+                "{{bookingId}}",
+                "cancellation-quote"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', function () { pm.response.to.have.status(200); });",
+                  "pm.environment.set('quoteId', pm.response.json().quoteId);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Cancelar con cotización",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{userId}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v2/vuelos/bookings/{{bookingId}}/cancel",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v2",
+                "vuelos",
+                "bookings",
+                "{{bookingId}}",
+                "cancel"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"quoteId\": \"{{quoteId}}\",\n  \"reasonCode\": \"CUSTOMER_REQUEST\",\n  \"reason\": \"Cancelación desde Postman\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Cancelar por compensación de saga (sin cotización)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{userId}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v2/vuelos/bookings/{{bookingId}}/cancel",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v2",
+                "vuelos",
+                "bookings",
+                "{{bookingId}}",
+                "cancel"
+              ]
+            },
+            "description": "Sin penalidad dentro de la ventana SAGA_PENALTY_WAIVER_MINUTES (120 por defecto); fuera de ella, la penalidad de la tarifa.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reasonCode\": \"SAGA_COMPENSATION\",\n  \"reason\": \"Falló la reserva del hotel\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 o 409 si ya estaba cancelada', function () { pm.expect([200, 409]).to.include(pm.response.code); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "4 · Eventos de Booking hacia la aerolínea (firmados)",
+      "item": [
+        {
+          "name": "payment.confirmed",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/cloudevents+json"
+              },
+              {
+                "key": "X-Webhook-Signature",
+                "value": "{{eventSignature}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v2/vuelos/booking-events",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v2",
+                "vuelos",
+                "booking-events"
+              ]
+            },
+            "description": "Firma HMAC-SHA256 del cuerpo exacto con {{bookingEventsSecret}} (el mismo valor que BOOKING_EVENTS_SECRET en la plataforma). Responde 202 {eventId, outcome}.",
+            "body": {
+              "mode": "raw",
+              "raw": "{{eventBody}}"
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const secret = pm.environment.get('bookingEventsSecret');",
+                  "const event = { specversion: '1.0', type: 'ec.edu.epn.booking.pagos.payment.confirmed', source: '/booking', id: 'evt-pm-' + pm.variables.replaceIn('{{$guid}}'), time: new Date().toISOString(), correlationid: 'corr-' + pm.variables.replaceIn('{{$guid}}'), data: { bookingId: pm.environment.get('bookingId'), paymentReference: pm.environment.get('paymentReference'), amount: { currency: pm.environment.get('lockedCurrency'), total: pm.environment.get('lockedTotal') } } };",
+                  "const body = JSON.stringify(event); pm.variables.set('eventBody', body);",
+                  "pm.variables.set('eventSignature', 'sha256=' + CryptoJS.HmacSHA256(body, secret).toString(CryptoJS.enc.Hex));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 202', function () { pm.response.to.have.status(202); });",
+                  "pm.test('outcome conocido', function () { pm.expect(['ISSUED', 'ISSUING', 'ALREADY_ISSUED', 'PAYMENT_PENDING', 'IGNORED_FAILED', 'IGNORED_CANCELLED', 'IGNORED_STATE']).to.include(pm.response.json().outcome); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "payment.failed",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/cloudevents+json"
+              },
+              {
+                "key": "X-Webhook-Signature",
+                "value": "{{eventSignature}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v2/vuelos/booking-events",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v2",
+                "vuelos",
+                "booking-events"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{{eventBody}}"
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const secret = pm.environment.get('bookingEventsSecret');",
+                  "const event = { specversion: '1.0', type: 'ec.edu.epn.booking.pagos.payment.failed', source: '/booking', id: 'evt-pm-' + pm.variables.replaceIn('{{$guid}}'), time: new Date().toISOString(), correlationid: 'corr-' + pm.variables.replaceIn('{{$guid}}'), data: { bookingId: pm.environment.get('bookingId'), paymentReference: pm.environment.get('paymentReference'), amount: { currency: pm.environment.get('lockedCurrency'), total: pm.environment.get('lockedTotal') }, failureReason: 'Tarjeta rechazada' } };",
+                  "const body = JSON.stringify(event); pm.variables.set('eventBody', body);",
+                  "pm.variables.set('eventSignature', 'sha256=' + CryptoJS.HmacSHA256(body, secret).toString(CryptoJS.enc.Hex));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('202', function () { pm.response.to.have.status(202); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "package.cancelled (compensación del combo)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/cloudevents+json"
+              },
+              {
+                "key": "X-Webhook-Signature",
+                "value": "{{eventSignature}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v2/vuelos/booking-events",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v2",
+                "vuelos",
+                "booking-events"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{{eventBody}}"
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const secret = pm.environment.get('bookingEventsSecret');",
+                  "const event = { specversion: '1.0', type: 'ec.edu.epn.booking.paquetes.package.cancelled', source: '/booking', id: 'evt-pm-' + pm.variables.replaceIn('{{$guid}}'), time: new Date().toISOString(), correlationid: 'corr-' + pm.variables.replaceIn('{{$guid}}'), data: { packageId: 'PKG-PM-0001', bookingId: pm.environment.get('bookingId'), reason: 'Falló la reserva del hotel' } };",
+                  "const body = JSON.stringify(event); pm.variables.set('eventBody', body);",
+                  "pm.variables.set('eventSignature', 'sha256=' + CryptoJS.HmacSHA256(body, secret).toString(CryptoJS.enc.Hex));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('202', function () { pm.response.to.have.status(202); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "5 · Webhooks de la aerolínea hacia Booking y feed",
+      "item": [
+        {
+          "name": "Registrar webhook",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v2/vuelos/webhooks",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v2",
+                "vuelos",
+                "webhooks"
+              ]
+            },
+            "description": "Scope flights:webhooks. La URL puede ser http://100.x.x.x:puerto/... solo en el perfil de integración local. El secret (≥ 16 caracteres) firma las entregas y no se devuelve nunca.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"url\": \"{{bookingWebhookUrl}}\",\n  \"events\": [\n    \"hold.created\",\n    \"hold.expired\",\n    \"booking.confirmed\",\n    \"booking.failed\",\n    \"booking.changed\",\n    \"booking.cancelled\",\n    \"booking.baggage_added\",\n    \"booking.seat_changed\",\n    \"booking.ticket_issued\",\n    \"booking.checked_in\",\n    \"flight.status_changed\"\n  ],\n  \"secret\": \"{{webhookSecret}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 201', function () { pm.response.to.have.status(201); });",
+                  "pm.environment.set('webhookId', pm.response.json().id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Listar webhooks",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v2/vuelos/webhooks",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v2",
+                "vuelos",
+                "webhooks"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Eliminar webhook",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v2/vuelos/webhooks/{{webhookId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v2",
+                "vuelos",
+                "webhooks",
+                "{{webhookId}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 204', function () { pm.response.to.have.status(204); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Feed de eventos",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v2/vuelos/eventos?limit=50",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v2",
+                "vuelos",
+                "eventos"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "50"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "6 · Operaciones y promociones (P6; token con flights:ops / flights:admin)",
+      "item": [
+        {
+          "name": "Cambiar estado de un vuelo (PATCH, flights:ops)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v2/vuelos/flights/{{flightNumber}}/status",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v2",
+                "vuelos",
+                "flights",
+                "{{flightNumber}}",
+                "status"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"date\": \"{{departureDate}}\",\n  \"status\": \"DELAYED\",\n  \"estimatedDepartureAt\": \"{{estimatedDepartureAt}}\",\n  \"departureGate\": \"A6\",\n  \"reason\": \"Condiciones meteorológicas\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('trae previousStatus, flight y eventId', function () { const b = pm.response.json(); pm.expect(b.previousStatus).to.be.a('string'); pm.expect(b.flight.status).to.eql('DELAYED'); pm.expect(b.eventId).to.be.a('string'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Panel de ocupación por vuelo (flights:ops)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v2/vuelos/operaciones/vuelos?date={{departureDate}}&limit=10",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v2",
+                "vuelos",
+                "operaciones",
+                "vuelos"
+              ],
+              "query": [
+                {
+                  "key": "date",
+                  "value": "{{departureDate}}"
+                },
+                {
+                  "key": "limit",
+                  "value": "10"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('items con cabinas y alertas', function () { const b = pm.response.json(); pm.expect(b.items).to.be.an('array'); pm.expect(b.totalFlights).to.be.a('number'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Registrar el acuerdo de promociones (PUT, flights:admin)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v2/vuelos/promociones/contrato",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v2",
+                "vuelos",
+                "promociones",
+                "contrato"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"permite_promociones\": true,\n  \"porcentaje_descuento_maximo\": 12,\n  \"destinos_habilitados\": [\"Quito\", \"Guayaquil\"],\n  \"rutas_habilitadas\": [\"UIO-GYE\", \"GYE-UIO\"],\n  \"cabinas_habilitadas\": [\"ECONOMY\"],\n  \"vigencia_hasta\": \"2026-12-31\",\n  \"condiciones_combo\": \"Hasta 12% en combos; no aplica en feriados.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('contrato con el nodo GabatAIR', function () { const b = pm.response.json(); pm.expect(b.success).to.eql(true); pm.expect(b.contrato.proveedor_codigo).to.eql('NODE_VUE_GABATAIR'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Consultar el acuerdo de promociones (flights:read)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v2/vuelos/promociones/contrato",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v2",
+                "vuelos",
+                "promociones",
+                "contrato"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200 (404 si aún no se registró el acuerdo de este cliente)', function () { pm.expect([200, 404]).to.include(pm.response.code); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

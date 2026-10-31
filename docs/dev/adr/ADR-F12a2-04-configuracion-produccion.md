@@ -1,0 +1,12 @@
+# ADR-F12a2-04 — Configuración de producción y Booking opcional
+- Estado: Aceptado · Fecha: 2026-10-27 · Fase/Tarea: F12a-2 / bloque E
+## Contexto
+El despliegue en la nube es la siguiente entrega. Booking aún no está en la nube y no se integrará hasta que lo esté: la plataforma debe arrancar y funcionar sin él, y nada suyo puede quedar fijo en el código.
+## Decisión
+- **Llave del dev-auth:** con `NODE_ENV=production` (y sin `DEV_AUTH_ENABLED=false`) `DevAuthService.create` se niega a arrancar si falta `DEV_AUTH_PRIVATE_KEY` o `PUBLIC_BASE_URL` explícita; nunca genera una llave efímera. `DEV_AUTH_PRIVATE_KEY_FILE` se rechaza en `loadConfig` en producción. Una llave inválida falla con un mensaje fijo, sin el contenido. La llave se guarda como variable secreta de Render; Secret Manager se usa para los servicios de Cloud Run (el Gateway no depende del SDK de GCP). El rechazo ocurre al crear el servicio y no en `loadConfig`, para que las pruebas de configuración existentes (que cargan configuraciones de producción incompletas sin arrancar) no cambien.
+- **Booking sin direcciones fijas:** se elimina el valor por defecto `booking.epn.edu.ec:50051`. El stock se activa solo con `BOOKING_STOCK_GRPC_URL` y `BOOKING_STOCK_API_KEY`; sin ellas queda apagado. Con el stock configurado el TLS es obligatorio en producción (ya lo imponían `BOOKING_STOCK_TLS=false` ⇒ `INTEGRATION_LOCAL` ⇒ prohibido en producción). `booking-events` sin secreto rechaza todo (401) y los pagos de clientes `client_credentials` sin `BOOKING_PAYMENTS_BASE_URL` responden 503 (comportamiento previo, ahora con prueba de punta a punta).
+- El `nodeId` (`NODE_VUE_GABATAIR`) es de la propia aerolínea y conserva su valor por defecto con variable `NODE_ID`; el prefijo de los tipos de evento `ec.edu.epn.booking.vuelos.*` lo fija el contrato v2.
+## Consecuencias
+- Las pruebas V2-STK-02/03 (stock) añaden la URL a su configuración porque ya no hay URL por defecto; `gateway.spec.ts` («does not expose test routes in production») añade llave y URL pública a su configuración de producción. Sus aserciones no cambian.
+- El Gateway en Render debe tener `PUBLIC_BASE_URL` y `DEV_AUTH_PRIVATE_KEY` antes del despliegue (o `DEV_AUTH_ENABLED=false`). Detalle en `docs/dev/f12a-despliegue.md`.
+- `platform/api-gateway/.env.supabase.example` traía una cadena de conexión con contraseña aparentemente real: se reemplazó por marcadores. La contraseña sigue en el historial de git (`00a0a30`) y debe rotarse.

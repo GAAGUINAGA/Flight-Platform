@@ -8,7 +8,13 @@ service OperationsService {
   rpc CheckIn(CheckInRequest) returns (flightplatform.common.v1.CheckInResponse);
   rpc ListBoardingPasses(BookingOwnerRequest) returns (BoardingPassListResponse);
   rpc RecoverCheckIns(RecoverCheckInsRequest) returns (RecoverCheckInsResponse);
+  rpc CountCheckedIn(CountCheckedInRequest) returns (CountCheckedInResponse);
 }
+
+message CountCheckedInRequest { repeated string flight_instance_ids = 1; }
+message CheckedInCabin { string cabin_class = 1; int32 seats = 2; }
+message CheckedInFlight { string flight_instance_id = 1; repeated CheckedInCabin cabins = 2; int32 without_cabin = 3; }
+message CountCheckedInResponse { repeated CheckedInFlight flights = 1; }
 
 message GetFlightStatusRequest { string flight_number = 1; string date = 2; }
 message RecordOperationalUpdateRequest {
@@ -20,6 +26,8 @@ message RecordOperationalUpdateRequest {
   optional string actual_arrival_at = 6;
   optional string departure_terminal = 7;
   optional string arrival_terminal = 8;
+  optional string departure_gate = 9;
+  optional string reason = 10;
 }
 message CheckInRequest { string booking_id = 1; string owner_id = 2; }
 message BookingOwnerRequest { string booking_id = 1; string owner_id = 2; }

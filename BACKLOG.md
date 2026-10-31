@@ -1,4 +1,4 @@
-# Backlog
+ï»¿# Backlog
 
 - Antes del cierre de F11: migrar coordinadamente todos los servicios, Gateway y `packages/shared` de Zod 3 a Zod 4; retirar la excepciÃ³n temporal `GHSA-mrhx-c7xc-m3w5` de `security/npm-audit-exceptions.json`.
 
@@ -84,27 +84,54 @@
 - Arranques en frÃ­o de Cloud Run: la primera llamada de cada flujo (createReservation en F11a, checkIn en F11b) puede responder 503 por plazo agotado. Antes de PLT-J3, decidir entre min-instances=1 en los servicios crÃ­ticos (con su costo) o un precalentamiento de los servicios antes de ejecutar los recorridos.
 
 ## Observaciones de docs/audit/audits/F11/audit-6.md
-- FECHA LÍMITE 2026-11-23: vence la excepción de zod en scripts/audit-policy.cjs; desde ese día el CI falla y no se puede desplegar. Migrar a zod 4 en todos los servicios antes de esa fecha.
-- FECHA LÍMITE inicios de diciembre de 2026: el seed de vuelos en Supabase deja de tener vuelos futuros; regenerarlo antes.
-- webhooks: payloadData pasó de .strict() a .passthrough() para aceptar holdId; restringirlo a los campos conocidos del contrato más holdId.
-- PLAN §1.3 (GAP-025) describe hold.expired como { status: "EXPIRED" }; actualizarlo con holdId (ADR-F11-13).
-- Faltan pruebas: PrismaSchedulerStore contra Postgres, y la rama de reversión de RecoverCheckIns (markBlocked) con almacén real.
+- FECHA Lï¿½MITE 2026-11-23: vence la excepciï¿½n de zod en scripts/audit-policy.cjs; desde ese dï¿½a el CI falla y no se puede desplegar. Migrar a zod 4 en todos los servicios antes de esa fecha.
+- FECHA Lï¿½MITE inicios de diciembre de 2026: el seed de vuelos en Supabase deja de tener vuelos futuros; regenerarlo antes.
+- webhooks: payloadData pasï¿½ de .strict() a .passthrough() para aceptar holdId; restringirlo a los campos conocidos del contrato mï¿½s holdId.
+- PLAN ï¿½1.3 (GAP-025) describe hold.expired como { status: "EXPIRED" }; actualizarlo con holdId (ADR-F11-13).
+- Faltan pruebas: PrismaSchedulerStore contra Postgres, y la rama de reversiï¿½n de RecoverCheckIns (markBlocked) con almacï¿½n real.
 - SCHEDULER_BATCH_SIZE solo acota resumePending y recoverCheckIns; expireHolds y dispatchPending usan lotes fijos de 500 y 100.
 
-- operations: al retrasar o cancelar un vuelo, también se notifica a las reservas ya canceladas; filtrar por estado. La notificación fallida solo se reintenta si un admin repite la actualización; considerar reintento desde el scheduler.
-- webhooks: webhook-security.spec.ts está en test/security y no corre en CI (el workflow solo ejecuta test/unit); moverla o ampliar el comando de CI.
+- operations: al retrasar o cancelar un vuelo, tambiï¿½n se notifica a las reservas ya canceladas; filtrar por estado. La notificaciï¿½n fallida solo se reintenta si un admin repite la actualizaciï¿½n; considerar reintento desde el scheduler.
+- webhooks: webhook-security.spec.ts estï¿½ en test/security y no corre en CI (el workflow solo ejecuta test/unit); moverla o ampliar el comando de CI.
 
-- Seed de Supabase renovado el 2026-10-25 (inventory y luego pricing, ambos idempotentes con skipDuplicates). Cubre 60 días desde esa fecha; renovarlo antes de que se agoten los vuelos futuros. Documentar el procedimiento en F11d-1.
+- Seed de Supabase renovado el 2026-10-25 (inventory y luego pricing, ambos idempotentes con skipDuplicates). Cubre 60 dï¿½as desde esa fecha; renovarlo antes de que se agoten los vuelos futuros. Documentar el procedimiento en F11d-1.
 
-- deploy-hello.yml fallaría si un push a main toca platform/hello: deploy-service.yml ejecuta prisma:generate y hello no define ese script. Corregirlo o retirar hello del despliegue.
+- deploy-hello.yml fallarï¿½a si un push a main toca platform/hello: deploy-service.yml ejecuta prisma:generate y hello no define ese script. Corregirlo o retirar hello del despliegue.
 
 - gateway-ci.yml no incluye packages/contracts/** en sus paths (hoy no afecta: el gateway no importa contracts).
 
 ## Observaciones de docs/audit/audits/F11/audit-14.md
-- render-journeys.cjs solo comprueba CORS con origen permitido si existe SMOKE_CORS_ALLOWED_ORIGIN; hacerlo obligatorio o tomarlo de la configuración.
-- Matriz PLT-SEC-03: las celdas de éxito de OP-05, OP-10, OP-12, OP-14 y OP-17 no releen el estado guardado, y las celdas 401 y 403 no comprueban ausencia de efectos (la prueba de recurso ajeno sí).
+- render-journeys.cjs solo comprueba CORS con origen permitido si existe SMOKE_CORS_ALLOWED_ORIGIN; hacerlo obligatorio o tomarlo de la configuraciï¿½n.
+- Matriz PLT-SEC-03: las celdas de ï¿½xito de OP-05, OP-10, OP-12, OP-14 y OP-17 no releen el estado guardado, y las celdas 401 y 403 no comprueban ausencia de efectos (la prueba de recurso ajeno sï¿½).
 - La negativa de ticketing a arrancar con TICKETING_FAIL_MODE depende de que NODE_ENV sea exactamente "production" (lo fija el Dockerfile).
 
 ## Observaciones de docs/audit/audits/F11/audit-15.md
 - render-journeys.cjs acepta hold.expired comprobando eventType, data.holdId y la firma, pero no valida el cuerpo completo contra WebhookPayload (eventId, occurredAt, apiVersion).
 - La firma real del despachador de webhooks solo se verifica contra Render; en local la calcula la propia prueba.
+
+## Observaciones de F12a (para revisar en F12b)
+- pricing-service: en `pricePerPassengerType` aparecen `TOTAL` y `CHILDRE`. `TOTAL` no es un tipo de pasajero sino una fila de resumen que Pricing incluye en el desglose por tipo (el hold la usa para el precio bloqueado); `CHILDRE` es el niÃ±o escrito de forma abreviada. El contrato v2 solo admite ADULT, YOUTH, CHILD e INFANT. Hoy el Gateway v2 filtra `TOTAL` y normaliza `CHILDRE` a `CHILD` (platform/api-gateway/src/v2/shapes.ts); en F12b separar el total del desglose por tipo y corregir el nombre en Pricing.
+- F12b: aceptar con 202 el pago pendiente en equipaje (`addBaggage`) y cambio de fecha (`confirmDateChange`), que el contrato v2 admite; hoy responden 422 PAYMENT_NOT_AUTHORIZED (ADR-F12-04).
+- F12b (panel de operaciones, P6): `CHECKED_IN` puede calcularse con los check-ins de operations por vuelo (hoy sale 0); junto con `HELD` por asiento y `BOARDED` (sin proceso de abordaje todavÃ­a). `BOOKED` sigue en 0 mientras la emisiÃ³n v2 sea inmediata (ADR-F12-10).
+
+## Observaciones de docs/audit/audits/F12/audit-1.md (antes del despliegue en la nube)
+- La redacciï¿½n de logs no incluye las cabeceras x-webhook-signature, x-api-key, x-user-id ni x-device-fingerprint; agregarlas y una prueba de logs v2.
+- booking-events sin BOOKING_EVENTS_CLIENT_ID permite apuntar a reservas de cualquier cliente: hacerlo obligatorio (negarse a arrancar sin ï¿½l cuando booking-events estï¿½ habilitado).
+- (F12a-2) Rotar la contraseÃ±a de svc_gateway que estuvo en platform/api-gateway/.env.supabase.example (commit 00a0a30).
+- (F12a-2) Relleno opcional de boarding_passes.cabin_class para check-ins anteriores a la migraciÃ³n 20261027220000 (ADR-F12a2-02).
+
+- PRC-12 (pricing-service, inventory-real.spec.ts): al ejecutarla sola con -t, Jest no termina el proceso (queda un recurso abierto, probablemente el cliente gRPC hacia inventory). Cerrar el recurso en el teardown.
+
+- PRC-12 (pricing-service, inventory-real.spec.ts): al ejecutarla sola con -t, Jest no termina el proceso (queda un recurso abierto, probablemente el cliente gRPC hacia inventory). Cerrar el recurso en el teardown.
+
+## Observaciones de docs/audit/audits/F12/audit-2.md
+- PRIORIDAD: la bï¿½squeda aplica SEARCH_MAX_OFFERS por tramo antes de combinar; en multidestino el mismo dï¿½a con un lï¿½mite bajo puede devolver cero ofertas aunque exista una combinaciï¿½n vï¿½lida. Aplicar el lï¿½mite despuï¿½s de combinar (o combinar con un tope por tramo mayor que el lï¿½mite final).
+- CHECKED_IN del panel: excluir a los infantes sin asiento propio.
+- Una prueba del gateway fallï¿½ una vez en el clon limpio (no identificada; no se repitiï¿½ en cuatro corridas). Vigilar.
+
+
+
+## Observaciones de docs/audit/audits/F12/audit-3.md
+- Rutas v2 protegidas con barra final (/offers/hold/) o con mayÃºsculas (/Offers/hold), sin token y con cuerpo invÃ¡lido, responden 400 en lugar de 401: el validador OpenAPI reconoce esas variantes y la autenticaciÃ³n previa no. Unificar la normalizaciÃ³n de rutas (o rechazar las variantes con 404).
+- PLT-A/B e I5/I6 (real-stack.e2e.spec.ts) fallÃ³ una vez en una corrida completa del gateway y no se reprodujo. Si reaparece, capturar el mensaje de error completo.
+- Las pruebas de la excepciÃ³n NODE_ENV=test de BOOKING_EVENTS_CLIENT_ID no fijan explÃ­citamente el caso test.

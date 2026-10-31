@@ -11,6 +11,27 @@ import { CabinClass, Empty, PageRequest, PageResponse, PassengerMix, SegmentSnap
 
 export const protobufPackage = "flightplatform.inventory.v1";
 
+export interface CabinOccupancy {
+  cabinClass: CabinClass;
+  sellable: number;
+  held: number;
+  sold: number;
+}
+
+export interface FlightOccupancy {
+  flightInstanceId: string;
+  segment: SegmentSnapshot | undefined;
+  closed: boolean;
+  cabins: CabinOccupancy[];
+  activeHolds: number;
+  nextHoldExpiryAt?: string | undefined;
+}
+
+export interface ListCabinOccupancyResponse {
+  items: FlightOccupancy[];
+  page: PageResponse | undefined;
+}
+
 export interface CabinCapacity {
   cabinClass: CabinClass;
   capacity: number;
@@ -138,6 +159,8 @@ export interface InventoryServiceClient {
   closeFlightInstance(request: GetFlightInstanceRequest): Observable<FlightInstanceResponse>;
 
   expireHolds(request: Empty): Observable<ExpireHoldsResponse>;
+
+  listCabinOccupancy(request: ListFlightInstancesRequest): Observable<ListCabinOccupancyResponse>;
 }
 
 export interface InventoryServiceController {
@@ -176,6 +199,10 @@ export interface InventoryServiceController {
   ): Promise<FlightInstanceResponse> | Observable<FlightInstanceResponse> | FlightInstanceResponse;
 
   expireHolds(request: Empty): Promise<ExpireHoldsResponse> | Observable<ExpireHoldsResponse> | ExpireHoldsResponse;
+
+  listCabinOccupancy(
+    request: ListFlightInstancesRequest,
+  ): Promise<ListCabinOccupancyResponse> | Observable<ListCabinOccupancyResponse> | ListCabinOccupancyResponse;
 }
 
 export function InventoryServiceControllerMethods() {
@@ -193,6 +220,7 @@ export function InventoryServiceControllerMethods() {
       "releaseReservedInventory",
       "closeFlightInstance",
       "expireHolds",
+      "listCabinOccupancy",
     ];
     for (const method of grpcMethods) {
       const descriptor: any = Reflect.getOwnPropertyDescriptor(constructor.prototype, method);

@@ -24,8 +24,32 @@ export interface AssignmentStore {
   activeSeatNumbers(flightInstanceId: string): Promise<string[]>;
 }
 
+const changeRequest = z.object({ bookingId: uuid, ownerId: z.string().trim().min(1).max(128), newAssignmentStatus: z.enum(['PROVISIONAL', 'CONFIRMED']), changes: z.array(z.object({ passengerId: uuid, segmentId: uuid, seatNumber, passengerType, cabinClass: cabin }).strict()).min(1).max(18) }).strict();
+export interface SeatChangePlan { bookingId: string; ownerId: string; passengerId: string; segmentId: string; flightInstanceId: string; seatNumber: string; passengerType: PassengerType; cabinClass: string; newStatus: 'PROVISIONAL' | 'CONFIRMED' }
+export interface SeatChangeOutcome { passengerId: string; segmentId: string; previousSeatNumber?: string; seatNumber: string; status: Assignment['status'] }
+/** Aplica todos los cambios en una sola transacción: si uno falla (p. ej. asiento ocupado) no se cambia ninguno. */
+export interface AtomicSeatChanges { changeMany(plan: SeatChangePlan[]): Promise<SeatChangeOutcome[]> }
+
 export class SeatAssignments {
-  constructor(private readonly pricing: PricingGateway, private readonly layouts: SeatLayoutStore, private readonly store: AssignmentStore, private readonly ownership: BookingOwnershipStore) {}
+  constructor(private readonly pricing: PricingGateway, private readonly layouts: SeatLayoutStore, private readonly store: AssignmentStore, private readonly ownership: BookingOwnershipStore, private readonly atomic?: AtomicSeatChanges) {}
+  /** Cambio de asientos: misma cabina, sin infantes, sin check-in hecho, todo o nada. */
+  async change(input: unknown): Promise<SeatChangeOutcome[]> {
+    const request = validate(changeRequest, input);
+    if (!this.atomic) throw new DomainError('VALIDATION_FAILED');
+    await this.ownership.assertOwner(request.bookingId, request.ownerId);
+    if (new Set(request.changes.map((item) => `${item.passengerId}:${item.segmentId}`)).size !== request.changes.length) throw new DomainError('VALIDATION_FAILED');
+    const segments = new Map<string, { flightInstanceId: string; aircraft?: string }>(); const plan: SeatChangePlan[] = [];
+    for (const item of request.changes) {
+      const segment = segments.get(item.segmentId) ?? await this.pricing.resolveSegment({ segmentId: item.segmentId }); segments.set(item.segmentId, segment);
+      const seat = (await this.layouts.listByAircraft(segment.aircraft ?? 'A320')).find((candidate) => candidate.seatNumber === item.seatNumber);
+      if (!seat) throw new DomainError('SEAT_CABIN_MISMATCH');
+      assertSeatEligibility({ passengerType: item.passengerType, purchasedCabin: item.cabinClass, seatCabin: seat.cabinClass, isEmergencyExit: seat.characteristics.includes('EMERGENCY_EXIT') || seat.characteristics.includes('EXIT_ROW') });
+      const current = await this.store.find(request.bookingId, request.ownerId, item.passengerId, item.segmentId);
+      if (current?.status === 'CHECKED_IN') throw new DomainError('CUTOFF_PASSED');
+      plan.push({ bookingId: request.bookingId, ownerId: request.ownerId, passengerId: item.passengerId, segmentId: item.segmentId, flightInstanceId: segment.flightInstanceId, seatNumber: item.seatNumber, passengerType: item.passengerType, cabinClass: item.cabinClass, newStatus: request.newAssignmentStatus });
+    }
+    return this.atomic.changeMany(plan);
+  }
   async reserve(input: unknown): Promise<Assignment[]> {
     const request = validate(reserveRequest, input);
     await this.ownership.claimOrAssertOwner(request.bookingId, request.ownerId);

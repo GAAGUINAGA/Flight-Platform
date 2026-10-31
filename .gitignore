@@ -14,3 +14,5 @@ microservices/*/src/infrastructure/persistence/generated/
 microservices/*/src/infrastructure/persistence/prisma-client/
 .claude/settings.local.json
 platform/api-gateway/generated/
+platform/api-gateway/.local/
+.local/

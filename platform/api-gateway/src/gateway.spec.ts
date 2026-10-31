@@ -18,6 +18,9 @@ const encode = (value: unknown) => Buffer.from(JSON.stringify(value));
 const decode = (value: Buffer) => JSON.parse(value.toString('utf8'));
 const base64 = (value: object) => Buffer.from(JSON.stringify(value)).toString('base64url');
 
+// Cada prueba levanta una app Nest y/o un servidor gRPC; no debe depender del plazo por defecto de Jest (5 s).
+jest.setTimeout(60_000);
+
 describe('F4 Gateway base', () => {
   const dir = mkdtempSync(join(tmpdir(), 'gateway-jwt-'));
   const keys = generateKeyPairSync('rsa', { modulusLength: 2048, privateKeyEncoding: { format: 'pem', type: 'pkcs8' }, publicKeyEncoding: { format: 'pem', type: 'spki' } });
@@ -91,5 +94,5 @@ describe('F4 Gateway base', () => {
     const instance = await app({ RATE_LIMIT_PUBLIC_PER_MIN: '1' }); try { expect((await request(instance.getHttpServer()).get('/flights/v1/health')).status).toBe(200); expect((await request(instance.getHttpServer()).get('/flights/v1/health').set('X-Device-Fingerprint', 'public')).status).toBe(200); expect((await request(instance.getHttpServer()).get('/flights/v1/health').set('X-Device-Fingerprint', 'public')).status).toBe(429); } finally { await instance.close(); }
     expect(configuredGrpcTargets(true, { INVENTORY_GRPC_URL: 'inventory.test:9443', PRICING_GRPC_URL: 'pricing.test:9443' }).find((target) => target.service === 'inventory')).toMatchObject({ url: 'inventory.test:9443', tls: true });
   });
-  it('does not expose test routes in production', async () => { const previous = process.env.NODE_ENV; process.env.NODE_ENV = 'production'; const instance = await createGatewayApp(loadConfig({ INTERNAL_API_KEY: 'x'.repeat(32), JWT_ISSUERS: JSON.stringify([{ iss: 'real', aud: 'real', jwksUri: 'https://issuer.example/jwks' }]), NODE_ENV: 'production' })); try { expect((await request(instance.getHttpServer()).post('/flights/v1/__test/secured').send({})).status).toBe(404); } finally { await instance.close(); process.env.NODE_ENV = previous; } });
+  it('does not expose test routes in production', async () => { const previous = process.env.NODE_ENV; process.env.NODE_ENV = 'production'; const instance = await createGatewayApp(loadConfig({ INTERNAL_API_KEY: 'x'.repeat(32), JWT_ISSUERS: JSON.stringify([{ iss: 'real', aud: 'real', jwksUri: 'https://issuer.example/jwks' }]), NODE_ENV: 'production', DEV_AUTH_PRIVATE_KEY: generateKeyPairSync('rsa', { modulusLength: 2048, privateKeyEncoding: { format: 'pem', type: 'pkcs8' }, publicKeyEncoding: { format: 'pem', type: 'spki' } }).privateKey, PUBLIC_BASE_URL: 'https://gateway.example' })); try { expect((await request(instance.getHttpServer()).post('/flights/v1/__test/secured').send({})).status).toBe(404); } finally { await instance.close(); process.env.NODE_ENV = previous; } });
 });

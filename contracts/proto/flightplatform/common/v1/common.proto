@@ -186,6 +186,9 @@ message WebhookSubscription {
   string url = 2;
   repeated string events = 3;
   string secret = 4;
+  // Aditivo F12a: solo se rellenan en suscripciones v2.
+  optional bool active = 5;
+  optional string created_at = 6;
 }
 message WebhookEventData {
   optional string booking_id = 1;
@@ -193,6 +196,8 @@ message WebhookEventData {
   optional string status = 3;
   optional string refund_amount = 4;
   optional string hold_id = 5;
+  // Aditivo F12a: campos extra del evento v2 (objeto JSON serializado, <= 8 KB). v1 nunca los entrega.
+  optional string data_json = 6;
 }
 message WebhookPayload {
   string event_id = 1;
@@ -200,6 +205,8 @@ message WebhookPayload {
   string occurred_at = 3;
   string api_version = 4;
   WebhookEventData data = 5;
+  // Aditivo F12a: X-Correlation-Id del proceso que originó el evento.
+  optional string correlation_id = 6;
 }
 
 message CheckInSegment { string segment_id = 1; optional string seat = 2; string status = 3; }

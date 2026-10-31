@@ -1,0 +1,26 @@
+// Contrato de ingesta de stock de Booking (vuelos v2, §9). Copia literal del contrato OpenAPI v2: no se modifica.
+// El cliente de GabatAIR (platform/api-gateway/src/v2/stock) llama a PushStockUpdate; no es un servicio nuestro.
+syntax = "proto3";
+package inventory;
+
+service InventoryStockService {
+  rpc PushStockUpdate (StockUpdateMessage) returns (StockUpdateAck);
+  rpc StreamInventoryChanges (stream StockChangeEvent) returns (StreamSummary);
+}
+
+message StockUpdateMessage {
+  string service_id = 1;      // "vuelos" o código del nodo (ej. "NODE_VUE_ECOAIRLINES")
+  string item_id = 2;         // número de vuelo + cabina, ej. "AV1632-ECONOMY"
+  string date = 3;            // fecha del vuelo YYYY-MM-DD
+  string time_slot = 4;       // hora de salida local HH:mm
+  int32 available_units = 5;  // asientos libres (AVAILABLE) en esa cabina
+  int64 timestamp = 6;        // epoch ms
+}
+message StockUpdateAck { bool success = 1; string message = 2; int64 processed_at = 3; }
+message StockChangeEvent {
+  string event_id = 1; string service_id = 2; string item_id = 3;
+  string date = 4; string time_slot = 5;
+  int32 delta = 6;            // -N al bloquear/vender, +N al liberar/cancelar
+  int64 timestamp = 7;
+}
+message StreamSummary { int32 total_events_processed = 1; bool is_synchronized = 2; string last_sync_hash = 3; }

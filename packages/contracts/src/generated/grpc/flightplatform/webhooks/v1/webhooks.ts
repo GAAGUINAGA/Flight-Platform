@@ -15,7 +15,35 @@ export interface CreateSubscriptionRequest {
   ownerId: string;
   url: string;
   events: string[];
-  secret?: string | undefined;
+  secret?:
+    | string
+    | undefined;
+  /** Aditivo F12a: "2" entrega CloudEvents v1.0 firmados con X-Webhook-Signature; ausente o "1" es el formato v1. */
+  apiVersion?: string | undefined;
+}
+
+export interface StoredEvent {
+  seq: number;
+  eventId: string;
+  ownerId: string;
+  eventType: string;
+  occurredAt: string;
+  apiVersion: string;
+  correlationId?: string | undefined;
+  dataJson: string;
+}
+
+/** owner_prefix es el clientId: devuelve los eventos de recursos <clientId> y <clientId>~*. */
+export interface ListEventsRequest {
+  ownerPrefix: string;
+  afterSeq?: number | undefined;
+  limit?: number | undefined;
+  eventType?: string | undefined;
+}
+
+export interface ListEventsResponse {
+  items: StoredEvent[];
+  total: number;
 }
 
 export interface ListSubscriptionsRequest {
@@ -56,6 +84,10 @@ export interface WebhooksServiceClient {
   publishEvent(request: PublishEventRequest): Observable<PublishEventResponse>;
 
   dispatchPending(request: Empty): Observable<DispatchPendingResponse>;
+
+  /** Aditivo F12a: almacén global de eventos para el feed GET /vuelos/eventos de v2. */
+
+  listEvents(request: ListEventsRequest): Observable<ListEventsResponse>;
 }
 
 export interface WebhooksServiceController {
@@ -76,6 +108,12 @@ export interface WebhooksServiceController {
   dispatchPending(
     request: Empty,
   ): Promise<DispatchPendingResponse> | Observable<DispatchPendingResponse> | DispatchPendingResponse;
+
+  /** Aditivo F12a: almacén global de eventos para el feed GET /vuelos/eventos de v2. */
+
+  listEvents(
+    request: ListEventsRequest,
+  ): Promise<ListEventsResponse> | Observable<ListEventsResponse> | ListEventsResponse;
 }
 
 export function WebhooksServiceControllerMethods() {
@@ -86,6 +124,7 @@ export function WebhooksServiceControllerMethods() {
       "deleteSubscription",
       "publishEvent",
       "dispatchPending",
+      "listEvents",
     ];
     for (const method of grpcMethods) {
       const descriptor: any = Reflect.getOwnPropertyDescriptor(constructor.prototype, method);
