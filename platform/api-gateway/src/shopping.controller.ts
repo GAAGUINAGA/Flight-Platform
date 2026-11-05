@@ -1,10 +1,9 @@
 import { Body, Controller, Get, HttpCode, Inject, Param, Post, Query, Req } from '@nestjs/common';
 import type { Request } from 'express';
 import type { GatewayConfig } from './config';
-import { callGatewayGrpc } from './grpc-clients';
+import { callGatewayGrpc, fetchSeatMap } from './grpc-clients';
 import { Public } from './security';
 import { GatewayProblemError } from './web-errors';
-import { status } from '@grpc/grpc-js';
 
 type Json = Record<string, unknown>;
 const stripSegment = (segment: Json): Json => {
@@ -34,13 +33,9 @@ export class ShoppingController {
   }
 
   async seatmap(req: Request, offerId: string, segmentId: string): Promise<unknown> {
-    try {
-      await callGatewayGrpc(this.config, 'pricing', 'resolveSegment', { segmentId }, String(req.res?.getHeader('X-Correlation-Id') ?? ''));
-    } catch (error) {
-      if (typeof error === 'object' && error !== null && 'code' in error && error.code === status.NOT_FOUND) throw new GatewayProblemError(404, 'OFFER_NO_LONGER_AVAILABLE', 'Offer or segment not available');
-      throw error;
-    }
-    return callGatewayGrpc(this.config, 'ancillaries', 'getSeatMapForOffer', { offerId, segmentId }, String(req.res?.getHeader('X-Correlation-Id') ?? ''));
+    const map = await fetchSeatMap(this.config, offerId, segmentId, String(req.res?.getHeader('X-Correlation-Id') ?? ''));
+    if (map === undefined) throw new GatewayProblemError(404, 'OFFER_NO_LONGER_AVAILABLE', 'Offer or segment not available');
+    return map;
   }
 }
 

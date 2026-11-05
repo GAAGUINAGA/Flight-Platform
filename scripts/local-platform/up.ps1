@@ -18,7 +18,8 @@ param(
   [switch]$SkipDocker,
   [int]$GatewayPort = 3000,
   [string]$ProfileFile,
-  [int]$HealthTimeoutSec = 120
+  [int]$HealthTimeoutSec = 120,
+  [ValidateSet('esb', 'grpc')][string]$Transport = 'esb'
 )
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'common.ps1')
@@ -31,9 +32,12 @@ if ($nodeMajor -lt 20) { throw "Se necesita Node 20 o superior (hay $nodeMajor).
 if ($env:NODE_ENV -eq 'production') { throw 'NODE_ENV=production en esta terminal: el perfil de integración local lo rechaza. Ábrela sin esa variable.' }
 foreach ($svc in $script:Services) { if (-not (Test-Path -LiteralPath (Join-Path $svc.Dir '.env'))) { throw "Falta $($svc.Dir)/.env (ver AGENTS.md y docs/dev/f12a-preparar-reunion.md)." } }
 if (-not (Test-Path -LiteralPath 'platform/api-gateway/.env')) { throw 'Falta platform/api-gateway/.env (plantilla: platform/api-gateway/.env.example).' }
+if (-not (Test-Path -LiteralPath (Join-Path $script:Esb.Dir '.env'))) { throw "Falta $($script:Esb.Dir)/.env (plantilla: $($script:Esb.Dir)/.env.example; INTERNAL_API_KEY igual que la del Gateway y los servicios)." }
 foreach ($svc in $script:Services) { if (Test-Path -LiteralPath (Join-Path $script:PidDir "$($svc.Name).pid")) { throw "Ya hay una plataforma en marcha (pid de $($svc.Name)). Ejecuta scripts/local-platform/down.ps1 primero." } }
+if (Test-Path -LiteralPath (Join-Path $script:PidDir 'esb.pid')) { throw 'Ya hay una plataforma en marcha (pid del esb). Ejecuta scripts/local-platform/down.ps1 primero.' }
 if (Test-Path -LiteralPath (Join-Path $script:PidDir 'gateway.pid')) { throw 'Ya hay una plataforma en marcha (pid del gateway). Ejecuta scripts/local-platform/down.ps1 primero.' }
 $busy = @($script:Services | Where-Object { Test-PortOpen $_.Port } | ForEach-Object { "$($_.Name):$($_.Port)" })
+if (Test-PortOpen $script:Esb.Port) { $busy += "esb:$($script:Esb.Port)" }
 if (Test-PortOpen $GatewayPort) { $busy += "gateway:$GatewayPort" }
 if ($busy.Count -gt 0) { throw "Puertos ocupados: $($busy -join ', '). Detén lo que los usa (o ejecuta down.ps1)." }
 
@@ -69,10 +73,12 @@ if (-not $SkipBuild) {
     Invoke-Checked "prisma generate de $pkg" { npm run prisma:generate -w $pkg --silent }
     Invoke-Checked "build de $pkg" { npm run build -w $pkg --silent }
   }
+  Invoke-Checked 'build del esb' { npm run build -w '@flight-platform/esb-service' --silent }
   Invoke-Checked 'build del gateway' { npm run build -w '@flight-platform/api-gateway' --silent }
   Write-Host 'Construcción terminada.'
 }
 foreach ($svc in $script:Services) { if (-not (Test-Path -LiteralPath (Join-Path $svc.Dir 'dist/main.js'))) { throw "Falta $($svc.Dir)/dist/main.js: ejecuta sin -SkipBuild." } }
+if (-not (Test-Path -LiteralPath (Join-Path $script:Esb.Dir 'dist/main.js'))) { throw "Falta $($script:Esb.Dir)/dist/main.js: ejecuta sin -SkipBuild." }
 if (-not (Test-Path -LiteralPath 'platform/api-gateway/dist/src/main.js')) { throw 'Falta platform/api-gateway/dist/src/main.js: ejecuta sin -SkipBuild.' }
 
 # 6. Procesos. Los servicios se llaman entre sí por 127.0.0.1 (en Windows `localhost` puede resolver a ::1 y ellos escuchan en IPv4).
@@ -88,8 +94,15 @@ try {
     $process = Start-LocalProcess $svc.Name (Join-Path $script:Repo $svc.Dir) @('dist/main.js') $vars
     $started += $svc.Name; Write-Host ("  {0,-12} 127.0.0.1:{1} (pid {2})" -f $svc.Name, $svc.Port, $process.Id)
   }
+  $esbVars = @{}
+  foreach ($key in $grpcUrls.Keys) { $esbVars[$key] = $grpcUrls[$key] }
+  $esbVars['INTEGRATION_LOCAL'] = 'true'; $esbVars['NODE_ENV'] = 'development'; $esbVars['PORT'] = [string]$script:Esb.Port
+  # OJO: PowerShell no distingue mayúsculas; el proceso no puede llamarse $esb (pisaría a $script:Esb).
+  $esbProcess = Start-LocalProcess $script:Esb.Name (Join-Path $script:Repo $script:Esb.Dir) @('dist/main.js') $esbVars
+  $started += $script:Esb.Name; Write-Host ("  {0,-12} 127.0.0.1:{1} (pid {2})" -f 'esb', $script:Esb.Port, $esbProcess.Id)
   $gatewayVars = Select-Profile $script:GatewayPass
   foreach ($key in $grpcUrls.Keys) { $gatewayVars[$key] = $grpcUrls[$key] }
+  $gatewayVars['GATEWAY_TRANSPORT'] = $Transport; $gatewayVars['ESB_URL'] = "http://127.0.0.1:$($script:Esb.Port)"
   $gatewayVars['INTEGRATION_LOCAL'] = 'true'; $gatewayVars['NODE_ENV'] = 'development'; $gatewayVars['PORT'] = [string]$GatewayPort
   $gatewayVars['DEV_AUTH_PRIVATE_KEY_FILE'] = $keyFile
   if (-not $gatewayVars.ContainsKey('SCHEDULER_ENABLED')) { $gatewayVars['SCHEDULER_ENABLED'] = 'true' }
@@ -108,7 +121,7 @@ try {
 }
 
 # 7. Health de todos al final
-& node (Join-Path $PSScriptRoot 'health.cjs') --url "http://127.0.0.1:$GatewayPort" --wait $HealthTimeoutSec
+& node (Join-Path $PSScriptRoot 'health.cjs') --url "http://127.0.0.1:$GatewayPort" --esb "http://127.0.0.1:$($script:Esb.Port)" --wait $HealthTimeoutSec
 if ($LASTEXITCODE -ne 0) { Write-Host 'La plataforma no quedó sana. Revisa .local/logs/. Para detener: scripts/local-platform/down.ps1'; exit 1 }
 Write-Host ''
 Write-Host "Listo. URL pública declarada: $($cfg['PUBLIC_BASE_URL'])"

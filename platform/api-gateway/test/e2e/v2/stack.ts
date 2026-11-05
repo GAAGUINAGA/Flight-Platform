@@ -45,6 +45,7 @@ import { DEFAULT_DOMESTIC_AIRPORTS } from '../../../src/v2/rules';
 import { PrismaSchedulerStore } from '../../../src/scheduler-store';
 import { DevAuthService, type DevAuthClientStore } from '../../../src/v2/dev-auth';
 import { registerClient, type TestClient } from './support';
+import { startTestEsb } from '../esb-harness';
 
 const INTERNAL = 'gateway-real-internal-key-for-local-testing';
 const WEBHOOK_KEY = 'BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=';
@@ -121,6 +122,7 @@ export async function startStack(env: Record<string, string | undefined> = {}): 
   await start(await createOperationsServer({ url: `127.0.0.1:${ports.operations}`, internalApiKey: INTERNAL, runtime: operationsRuntime.runtime }));
   // El lease durable del scheduler se verifica en scheduler.spec.ts; aquí se sustituye solo para invocar la tarea real.
   const acquire = jest.spyOn(PrismaSchedulerStore.prototype, 'acquire').mockResolvedValue(true); const release = jest.spyOn(PrismaSchedulerStore.prototype, 'release').mockResolvedValue(undefined);
+  const esb = await startTestEsb(INTERNAL);
   const gateway = await createGatewayApp(loadConfig({ NODE_ENV: 'test', INTERNAL_API_KEY: INTERNAL, VALIDATE_RESPONSES: 'true', SCHEDULER_ENABLED: 'false', PUBLIC_BASE_URL: 'http://gateway.test', JWT_ISSUERS: JSON.stringify([{ iss: 'unused', aud: 'authenticated', jwksUri: 'http://127.0.0.1:9/jwks.json' }]), RATE_LIMIT_PUBLIC_PER_MIN: '1000', RATE_LIMIT_AUTH_PER_MIN: '1000', ...env }));
   await gateway.listen(0, '127.0.0.1');
   const clients = gateway.get(DEV_AUTH_STORE) as DevAuthClientStore; const scheduler = gateway.get(GatewayScheduler);
@@ -168,7 +170,7 @@ export async function startStack(env: Record<string, string | undefined> = {}): 
     // La suscripción se inserta directo: la política de URL de Webhooks (con razón) rechaza cualquier receptor local; las entregas se verifican en sus filas.
     async subscribe(ownerId, events, secret = `secret-${randomUUID()}`, apiVersion = '2') { const id = randomUUID(); await webhooks.subscription.create({ data: { id, ownerId, url: 'https://hooks.example.test/booking', events, encryptedSecret: new AesGcmCipher(WEBHOOK_KEY).encrypt(secret), active: true, apiVersion } }); return { id, secret }; },
     async close() {
-      await gateway.close(); operationsRuntime.close(); acquire.mockRestore(); release.mockRestore();
+      await gateway.close(); await esb.close(); operationsRuntime.close(); acquire.mockRestore(); release.mockRestore();
       await Promise.allSettled(apps.reverse().map((app) => app.close())); await Promise.allSettled(channels.map(async (channel) => channel.close())); await Promise.allSettled(databases.map((db) => db.$disconnect()));
       await payments.stop();
       for (const [name, value] of prior) { if (value === undefined) delete process.env[name]; else process.env[name] = value; }

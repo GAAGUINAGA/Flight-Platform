@@ -61,15 +61,20 @@ function cli(...cliArgs) {
 const passenger = (id) => ({ passengerId: id, passengerType: 'ADULT', firstName: 'Maria', lastName: 'Andrade', documentType: 'PASSPORT', documentNumber: 'JNY12345', nationality: 'EC', documentExpiryDate: '2035-01-01', birthDate: '1990-01-01', gender: 'F', contact: { email: 'maria@example.invalid', phone: '+593999999999' }, assignedSeats: [], extraBaggage: [] });
 
 async function main() {
+  // La base debe ser la local (127.0.0.1/localhost + flight_platform): el recorrido crea y borra clientes. Si no, aborta sin hacer nada.
+  const local = cli('check-local');
+  if (!local.ok) { process.stdout.write(`Recorrido abortado: ${local.message}\n`); process.exit(1); }
   const simulator = await startPaymentSimulator();
   // BOOKING_EVENTS_CLIENT_ID es obligatorio con BOOKING_EVENTS_SECRET (ADR-F12a2-03): si el perfil usa un id que empieza por "journey", el recorrido crea ese cliente y firma los eventos con él.
-  const fixedId = /^journey[A-Za-z0-9_-]*$/.test(profile.BOOKING_EVENTS_CLIENT_ID ?? '') ? profile.BOOKING_EVENTS_CLIENT_ID : undefined;
+  const fixedId = /^journey-[A-Za-z0-9_-]*$/.test(profile.BOOKING_EVENTS_CLIENT_ID ?? '') ? profile.BOOKING_EVENTS_CLIENT_ID : undefined;
   const clientId = fixedId ?? `journey-${Date.now().toString(36)}`; const secretFile = join(repo, '.local', `${clientId}.secret`); mkdirSync(join(repo, '.local'), { recursive: true });
-  let created = false;
+  const dropClient = () => cli('delete', '--client-id', clientId, '--yes');
   try {
+    // Si una corrida interrumpida dejó el cliente, se elimina antes de empezar (repetible sobre la misma base).
+    const stale = dropClient(); if (!stale.ok) { process.stdout.write(`Recorrido abortado: no se pudo limpiar el cliente previo (${stale.message})\n`); return; }
     const health = await api('GET', '/api/v2/vuelos/health');
     check('health del gateway responde HEALTHY con los 7 servicios UP', health.status === 200 && health.body?.status === 'HEALTHY' && health.body.dependencias?.length >= 7 && health.body.dependencias.every((d) => d.status === 'UP'), JSON.stringify(health.body?.dependencias?.filter((d) => d.status !== 'UP')));
-    const made = cli('create', '--client-id', clientId, '--out', secretFile); created = made.ok;
+    const made = cli('create', '--client-id', clientId, '--out', secretFile);
     if (!check('alta del cliente client_credentials de prueba (secreto solo en .local/)', made.ok, made.message)) return;
     const secret = /client_secret=(.+)/.exec(readFileSync(secretFile, 'utf8'))[1].trim();
     const tokenResponse = await api('POST', '/api/v2/oauth2/token', { form: { grant_type: 'client_credentials', client_id: clientId, client_secret: secret } });
@@ -156,7 +161,7 @@ async function main() {
   } finally {
     await simulator.stop();
     if (existsSync(secretFile)) rmSync(secretFile, { force: true });
-    if (created) { const off = cli('disable', '--client-id', clientId); process.stdout.write(`cliente de prueba ${clientId}: ${off.ok ? 'desactivado' : 'NO se pudo desactivar'}\n`); }
+    const removed = dropClient(); process.stdout.write(`cliente de prueba ${clientId}: ${removed.ok ? 'eliminado' : 'NO se pudo eliminar'}\n`);
   }
 }
 main().then(() => { const failed = results.filter((ok) => !ok).length; process.stdout.write(`\nRecorrido: ${results.length - failed}/${results.length} comprobaciones OK\n`); process.exit(failed === 0 && results.length > 0 ? 0 : 1); }).catch((error) => { process.stdout.write(`Recorrido interrumpido: ${error instanceof Error ? error.message : 'error'}\n`); process.exit(1); });

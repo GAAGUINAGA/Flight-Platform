@@ -14,6 +14,7 @@ import { loadConfig } from '../../../src/config';
 import { createGatewayApp, DEV_AUTH_STORE } from '../../../src/app';
 import { DevAuthService, generateClientSecret, hashClientSecret, type DevAuthClientStore } from '../../../src/v2/dev-auth';
 import { openApiV2SpecPath } from '../../../src/openapi-path';
+import { startTestEsb } from '../esb-harness';
 
 export const INTERNAL_KEY = 'gateway-v2-internal-key-for-local-testing';
 
@@ -86,16 +87,24 @@ export async function startTestGateway(env: Record<string, string | undefined> =
   const { mkdtempSync, writeFileSync, rmSync } = await import('node:fs');
   const { tmpdir } = await import('node:os'); const { join } = await import('node:path');
   const dir = mkdtempSync(join(tmpdir(), 'gateway-v2-')); const publicKeyFile = join(dir, 'public.pem'); writeFileSync(publicKeyFile, external.publicKey);
-  const config = loadConfig({
-    NODE_ENV: 'test', INTERNAL_API_KEY: INTERNAL_KEY, VALIDATE_RESPONSES: 'true', SCHEDULER_ENABLED: 'false', PUBLIC_BASE_URL: 'http://gateway.test', DEV_AUTH_PRIVATE_KEY: pair.privateKey,
-    JWT_ISSUERS: JSON.stringify([{ iss: 'flight-platform-dev', aud: 'flight-platform', publicKeyFile }]), ...env
-  });
-  const app = await createGatewayApp(config);
-  await app.listen(0, '127.0.0.1');
+  const esb = await startTestEsb(INTERNAL_KEY);
+  let app: INestApplication;
+  try {
+    const config = loadConfig({
+      NODE_ENV: 'test', INTERNAL_API_KEY: INTERNAL_KEY, VALIDATE_RESPONSES: 'true', SCHEDULER_ENABLED: 'false', PUBLIC_BASE_URL: 'http://gateway.test', DEV_AUTH_PRIVATE_KEY: pair.privateKey,
+      JWT_ISSUERS: JSON.stringify([{ iss: 'flight-platform-dev', aud: 'flight-platform', publicKeyFile }]), ...env
+    });
+    app = await createGatewayApp(config);
+    await app.listen(0, '127.0.0.1');
+  } catch (error) {
+    // Si el gateway no arranca (p. ej. configuración inválida) el ESB de la prueba no puede quedar vivo.
+    await esb.close(); rmSync(dir, { recursive: true, force: true });
+    throw error;
+  }
   return {
     app, server: app.getHttpServer(), devAuth: app.get(DevAuthService), store: app.get(DEV_AUTH_STORE), devKeyPem: pair.privateKey,
     customerToken: (sub, scope) => createDevToken(external.privateKey, { sub, app_role: 'customer', scope }),
-    close: async () => { await app.close(); rmSync(dir, { recursive: true, force: true }); }
+    close: async () => { await app.close(); await esb.close(); rmSync(dir, { recursive: true, force: true }); }
   };
 }
 

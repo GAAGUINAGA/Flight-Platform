@@ -9,7 +9,14 @@ const args = process.argv.slice(2);
 const option = (name, fallback) => { const index = args.indexOf(`--${name}`); return index >= 0 ? args[index + 1] : fallback; };
 const base = (option('url', 'http://127.0.0.1:3000')).replace(/\/+$/, '');
 const waitSeconds = Number(option('wait', '0'));
+const esbBase = option('esb', '').replace(/\/+$/, '');
 const EXPECTED = 7;
+
+/** El ESB (F12b-1) debe estar vivo: con GATEWAY_TRANSPORT=esb el health del Gateway ya pasa por él, esto solo lo hace explícito. */
+async function esbAlive() {
+  if (!esbBase) return true;
+  try { const response = await fetch(`${esbBase}/health`, { signal: AbortSignal.timeout(3000) }); return response.ok; } catch { return false; }
+}
 
 async function probe() {
   try {
@@ -31,7 +38,9 @@ async function main() {
   const { body } = result;
   process.stdout.write(`Gateway ${base}: ${body.status} (HTTP ${result.httpStatus}) nodo=${body.nodo_id} proveedor=${body.nombre_proveedor}\n`);
   for (const item of body.dependencias ?? []) process.stdout.write(`  ${item.status === 'UP' ? 'OK  ' : 'FALLA'} ${String(item.nombre).padEnd(22)} ${item.status} ${item.latencia_ms} ms\n`);
-  if (!healthy(result)) { process.stdout.write('La plataforma NO está sana.\n'); process.exit(1); }
-  process.stdout.write('La plataforma está sana: el Gateway y los siete servicios responden.\n');
+  const esbOk = await esbAlive();
+  if (esbBase) process.stdout.write(`  ${esbOk ? 'OK  ' : 'FALLA'} esb ${esbBase}\n`);
+  if (!healthy(result) || !esbOk) { process.stdout.write('La plataforma NO está sana.\n'); process.exit(1); }
+  process.stdout.write(`La plataforma está sana: el Gateway${esbBase ? ', el ESB' : ''} y los siete servicios responden.\n`);
 }
 void main();

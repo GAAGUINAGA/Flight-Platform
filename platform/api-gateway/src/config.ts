@@ -24,6 +24,12 @@ export interface GatewayConfig {
   schedulerBatchSize: number;
   schedulerLockLeaseMs: number;
   grpcTls: boolean;
+  /** Cómo llega el Gateway a los microservicios (ADR-F12b-03): por el ESB (por defecto) o directo por gRPC (vuelta atrás hasta F12b-3). */
+  transport: 'esb' | 'grpc';
+  /** URL base del ESB, sin barra final. */
+  esbUrl: string;
+  /** `true` si ESB_URL vino explícita; `main.ts` la exige en producción con transporte esb. */
+  esbUrlConfigured: boolean;
   v2?: V2Config;
 }
 
@@ -99,7 +105,14 @@ export function loadConfig(env: Environment = process.env): GatewayConfig {
     bookingEvents: { secret: env.BOOKING_EVENTS_SECRET || undefined, signatureHeader: (env.BOOKING_EVENTS_SIGNATURE_HEADER ?? 'x-webhook-signature').toLowerCase(), signaturePrefix: env.BOOKING_EVENTS_SIGNATURE_PREFIX ?? 'sha256=', clientId: env.BOOKING_EVENTS_CLIENT_ID || undefined },
     stateStore: env.V2_STATE_STORE === 'memory' || (env.NODE_ENV === 'test' && env.V2_STATE_STORE !== 'prisma') ? 'memory' : 'prisma'
   };
+  // Las suites pasan un entorno explícito que no copia process.env: sin este respaldo no podrían elegir el transporte desde la línea de comandos.
+  // En producción `env` es process.env, así que el respaldo no cambia nada.
+  const transport = env.GATEWAY_TRANSPORT ?? process.env.GATEWAY_TRANSPORT ?? 'esb';
+  if (transport !== 'esb' && transport !== 'grpc') throw new Error('GATEWAY_TRANSPORT must be esb or grpc');
+  const esbUrl = (env.ESB_URL ?? process.env.ESB_URL ?? '').trim().replace(/\/+$/, '');
+  if (esbUrl && !/^https?:\/\/[^\s/]+$/.test(esbUrl)) throw new Error('ESB_URL must be an origin without path');
   return {
+    transport, esbUrl: esbUrl || 'http://localhost:3100', esbUrlConfigured: Boolean(esbUrl),
     v2, port, internalApiKey: required(env.INTERNAL_API_KEY, 'INTERNAL_API_KEY'), jwtIssuers,
     corsOrigins: (env.CORS_ORIGINS ?? '').split(',').map((x: string) => x.trim()).filter(Boolean),
     publicLimit: Number(env.RATE_LIMIT_PUBLIC_PER_MIN ?? 60), authLimit: Number(env.RATE_LIMIT_AUTH_PER_MIN ?? 120),

@@ -1,5 +1,6 @@
 ﻿# Backlog
 
+- F12b-1: los demas servicios (y el Gateway, que usa --env-file) no toleran un BOM UTF-8 al inicio del .env (Set-Content -Encoding utf8 de Windows PowerShell 5.1 lo agrega y la primera variable no se lee). El ESB ya lo tolera (src/load-env.ts, ESB-ENV-01..04) y su error distingue "archivo cargado pero falta la variable". Replicar en los servicios con el mismo helper en una entrega propia.
 - Antes del cierre de F11: migrar coordinadamente todos los servicios, Gateway y `packages/shared` de Zod 3 a Zod 4; retirar la excepción temporal `GHSA-mrhx-c7xc-m3w5` de `security/npm-audit-exceptions.json`.
 
 - Cada servicio y `packages/shared` debe exponer su propio script `test`, ejecutar sus pruebas de manera aislada y cargar Ãºnicamente su `.env`, para que un `DATABASE_URL` de otro workspace no contamine la ejecuciÃ³n global de Jest.

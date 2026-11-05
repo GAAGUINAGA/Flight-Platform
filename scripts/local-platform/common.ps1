@@ -18,6 +18,8 @@ $script:Services = @(
   @{ Name = 'webhooks';    Dir = 'microservices/webhooks-service';    Port = 50057; Pass = '^WEBHOOK_' },
   @{ Name = 'reservation'; Dir = 'microservices/reservation-service'; Port = 50054; Pass = '^BOOKING_PAYMENTS_' }
 )
+# ESB (F12b-1): se levanta después de los siete servicios y antes del Gateway. Lee su propio .env (INTERNAL_API_KEY); las URLs gRPC se le pasan por entorno.
+$script:Esb = @{ Name = 'esb'; Dir = 'microservices/esb-service'; Port = 3100 }
 # Variables del perfil que recibe el Gateway (el resto del perfil no se le pasa).
 $script:GatewayPass = '^(PUBLIC_BASE_URL|NODE_ID|PROVIDER_NAME|BOOKING_EVENTS_|BOOKING_STOCK_|STOCK_SYNC_|AIRPORT_TIMEZONES|SAGA_|DEV_AUTH_|WEBHOOK_SOURCE_CODE|HEALTH_|SCHEDULER_|RATE_LIMIT_|DOMESTIC_AIRPORTS|CORS_ORIGINS)'
 

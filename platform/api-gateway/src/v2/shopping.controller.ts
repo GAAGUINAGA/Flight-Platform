@@ -1,7 +1,6 @@
 import type { Request } from 'express';
-import { status } from '@grpc/grpc-js';
 import type { GatewayConfig } from '../config';
-import { callGatewayGrpc } from '../grpc-clients';
+import { callGatewayGrpc, fetchSeatMap } from '../grpc-clients';
 import { GatewayProblemError } from '../web-errors';
 import { isUuid } from './ids';
 import { assertBreakdown, normalizeBreakdown } from './rules';
@@ -25,9 +24,9 @@ export class V2ShoppingController {
 
   async seatmap(req: Request, offerId: string, segmentId: string): Promise<Json> {
     if (!isUuid(offerId) || !isUuid(segmentId)) throw new GatewayProblemError(404, 'NOT_FOUND', 'Oferta o segmento no encontrado');
-    try { await callGatewayGrpc(this.config, 'pricing', 'resolveSegment', { segmentId }, correlation(req)); }
-    catch (error) { if (typeof error === 'object' && error !== null && 'code' in error && error.code === status.NOT_FOUND) throw new GatewayProblemError(404, 'NOT_FOUND', 'Oferta o segmento no encontrado'); throw error; }
-    const map = await callGatewayGrpc(this.config, 'ancillaries', 'getSeatMapForOffer', { offerId, segmentId }, correlation(req)) as { segmentId?: string; cabins?: Array<{ rows?: Array<{ seats?: Array<{ isAvailable?: boolean; characteristics?: unknown }> }> }> };
+    const fetched = await fetchSeatMap(this.config, offerId, segmentId, correlation(req));
+    if (fetched === undefined) throw new GatewayProblemError(404, 'NOT_FOUND', 'Oferta o segmento no encontrado');
+    const map = fetched as { segmentId?: string; cabins?: Array<{ rows?: Array<{ seats?: Array<{ isAvailable?: boolean; characteristics?: unknown }> }> }> };
     // Solo hay dos estados calculables hoy (disponible y ocupado); HELD por asiento y BOARDED llegan con F12b.
     return { ...map, cabins: (map.cabins ?? []).map((cabin) => ({ ...cabin, rows: (cabin.rows ?? []).map((row) => ({ ...row, seats: (row.seats ?? []).map((seat) => ({ ...seat, characteristics: v2SeatCharacteristics(seat.characteristics), status: seat.isAvailable ? 'AVAILABLE' : 'BOOKED' })) })) })) };
   }

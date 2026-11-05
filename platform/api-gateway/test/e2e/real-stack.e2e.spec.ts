@@ -49,6 +49,7 @@ import { callGatewayGrpc } from '../../src/grpc-clients';
 import type { GatewayConfig } from '../../src/config';
 import { loadConfig } from '../../src/config';
 import { createGatewayApp } from '../../src/app';
+import { startTestEsb, type TestEsb } from './esb-harness';
 import { GatewayScheduler } from '../../src/scheduler';
 import { PrismaSchedulerStore } from '../../src/scheduler-store';
 import { createDevToken } from '../../../../infra/scripts/dev-token';
@@ -78,6 +79,7 @@ describeReal('Gateway: composición gRPC real en proceso', () => {
   const ports = {} as Record<Name, number>;
   const prior = new Map<string, string | undefined>();
   let gateway: INestApplication | undefined;
+  let esb: TestEsb | undefined;
   let keyDir: string | undefined;
   let token: (scope: string, owner?: string, role?: string) => string;
   let inventoryDb: InventoryPrisma;
@@ -160,6 +162,7 @@ describeReal('Gateway: composición gRPC real en proceso', () => {
     // El lease durable se verifica en scheduler.spec.ts y aqui se sustituye solo para invocar la tarea real.
     jest.spyOn(PrismaSchedulerStore.prototype, 'acquire').mockResolvedValue(true);
     jest.spyOn(PrismaSchedulerStore.prototype, 'release').mockResolvedValue(undefined);
+    esb = await startTestEsb(key);
     gateway = await createGatewayApp(loadConfig({ NODE_ENV: 'test', INTERNAL_API_KEY: key, JWT_ISSUERS: JSON.stringify([{ iss: 'flight-platform-dev', aud: 'flight-platform', publicKeyFile: publicKey }]), RATE_LIMIT_PUBLIC_PER_MIN: '1', VALIDATE_RESPONSES: 'true', SCHEDULER_ENABLED: 'false' }));
     scheduler = gateway.get(GatewayScheduler);
     await gateway.listen(0, '127.0.0.1');
@@ -167,6 +170,7 @@ describeReal('Gateway: composición gRPC real en proceso', () => {
 
   afterAll(async () => {
     await gateway?.close();
+    await esb?.close();
     restoreGatewayOutput?.();
     operationsRuntime?.close();
     if (keyDir) rmSync(keyDir, { recursive: true, force: true });

@@ -1,0 +1,69 @@
+name: Deploy ESB service
+
+# El ESB habla HTTP/1.1 (no gRPC): no puede usar deploy-service.yml, que despliega con --use-http2 (h2c).
+# Mismos pasos de verificación que los demás servicios: lint, build, pruebas unitarias del servicio y política de auditoría.
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/deploy-esb.yml'
+      - 'microservices/esb-service/**'
+      - 'packages/shared/**'
+      - 'contracts/proto/**'
+      - 'package-lock.json'
+      - 'tsconfig.base.json'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/deploy-esb.yml'
+      - 'microservices/esb-service/**'
+      - 'packages/shared/**'
+      - 'contracts/proto/**'
+      - 'package-lock.json'
+      - 'tsconfig.base.json'
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  PROJECT_ID: project-a1d2e3ba-f6ff-469e-854
+  REGION: us-east1
+  CLOUD_RUN_SERVICE: esb-service
+  IMAGE: us-east1-docker.pkg.dev/project-a1d2e3ba-f6ff-469e-854/flight-platform/esb-service:${{ github.sha }}
+  RUNTIME_SERVICE_ACCOUNT: esb-service-runtime@project-a1d2e3ba-f6ff-469e-854.iam.gserviceaccount.com
+
+jobs:
+  verify-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version-file: '.nvmrc', cache: npm }
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run build -w @flight-platform/shared
+      - run: npm run build -w @flight-platform/contracts
+      - run: npm run build -w @flight-platform/esb-service
+      - run: npx jest microservices/esb-service/test/unit --runInBand
+      - run: npm audit --audit-level=high
+      - run: npm run audit:policy
+      - uses: google-github-actions/auth@v2
+        if: github.ref == 'refs/heads/main'
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_DEPLOY_SA }}
+      - uses: google-github-actions/setup-gcloud@v2
+        if: github.ref == 'refs/heads/main'
+      - name: Build and deploy
+        if: github.ref == 'refs/heads/main'
+        run: |
+          gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
+          docker build -f microservices/esb-service/Dockerfile -t "${IMAGE}" .
+          docker push "${IMAGE}"
+          # Variables no secretas con valor por defecto en el código: los plazos y la TLS hacia los servicios.
+          gcloud run deploy "${CLOUD_RUN_SERVICE}" \
+            --project "${PROJECT_ID}" --region "${REGION}" \
+            --image "${IMAGE}" --service-account "${RUNTIME_SERVICE_ACCOUNT}" \
+            --set-secrets "INTERNAL_API_KEY=internal-api-key:latest" \
+            --update-env-vars "GRPC_TLS=true" \
+            --allow-unauthenticated --port 8080 --quiet
