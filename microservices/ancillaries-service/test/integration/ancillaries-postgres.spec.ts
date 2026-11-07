@@ -6,6 +6,7 @@ import { PrismaSeatMapStore } from '../../src/infrastructure/persistence/prisma-
 import { PrismaSeatAssignmentStore } from '../../src/infrastructure/persistence/prisma-seat-assignments';
 import { PrismaBaggageStore } from '../../src/infrastructure/persistence/prisma-baggage';
 import { PrismaBookingOwnershipStore } from '../../src/infrastructure/persistence/prisma-booking-ownership';
+import { table } from '../../src/infrastructure/persistence/schema';
 import { SeatAssignments } from '../../src/application/seat-assignments';
 import { Baggage } from '../../src/application/baggage';
 import { credentials, loadPackageDefinition, Metadata, ServiceError } from '@grpc/grpc-js';
@@ -44,12 +45,12 @@ describe('ANC-02/03/06/07/09: integración PostgreSQL', () => {
   });
   afterAll(async () => {
     try { client?.close(); await app?.close(); }
-    finally { try { if (prisma) { await prisma.seatAssignment.deleteMany({ where: { bookingId: { in: [ids.bookingId, ids.foreignBookingId] } } }); await prisma.baggageItem.deleteMany({ where: { bookingId: { in: [ids.baggageBookingId, ids.foreignBookingId] } } }); await prisma.$executeRaw`DELETE FROM "booking_owners" WHERE "booking_id" IN (${ids.bookingId}::uuid, ${ids.baggageBookingId}::uuid, ${ids.foreignBookingId}::uuid)`; } } finally { await prisma?.$disconnect(); } }
+    finally { try { if (prisma) { await prisma.seatAssignment.deleteMany({ where: { bookingId: { in: [ids.bookingId, ids.foreignBookingId] } } }); await prisma.baggageItem.deleteMany({ where: { bookingId: { in: [ids.baggageBookingId, ids.foreignBookingId] } } }); await prisma.$executeRaw`DELETE FROM ${table('booking_owners')} WHERE "booking_id" IN (${ids.bookingId}::uuid, ${ids.baggageBookingId}::uuid, ${ids.foreignBookingId}::uuid)`; } } finally { await prisma?.$disconnect(); } }
   });
 
   it('ANC-02/03 / I: existen tablas ancillaries y plantilla E190 sembrada', async () => {
     expect(await prisma.seatLayout.count({ where: { aircraft: 'E190' } })).toBeGreaterThan(0);
-    expect(await prisma.$queryRaw<Array<{ indexname: string }>>`SELECT indexname FROM pg_indexes WHERE schemaname = 'ancillaries' AND indexname = 'seat_assignments_active_flight_seat_key'`).toHaveLength(1);
+    expect(await prisma.$queryRaw<Array<{ indexname: string }>>`SELECT indexname FROM pg_catalog.pg_indexes WHERE schemaname = 'ancillaries' AND indexname = 'seat_assignments_active_flight_seat_key'`).toHaveLength(1);
   });
 
   it('ANC-06/07 / I: la colisión se rechaza y check-in conserva una asignación existente', async () => {
@@ -83,7 +84,7 @@ describe('ANC-02/03/06/07/09: integración PostgreSQL', () => {
   const expectForeignOwnerDenied = async (operation: () => Promise<unknown>) => {
     await prisma.seatAssignment.deleteMany({ where: { bookingId: ids.foreignBookingId } });
     await prisma.baggageItem.deleteMany({ where: { bookingId: ids.foreignBookingId } });
-    await prisma.$executeRaw`DELETE FROM "booking_owners" WHERE "booking_id" = ${ids.foreignBookingId}::uuid`;
+    await prisma.$executeRaw`DELETE FROM ${table('booking_owners')} WHERE "booking_id" = ${ids.foreignBookingId}::uuid`;
     await baggage.reserve({ bookingId: ids.foreignBookingId, ownerId: 'owner-A', baggage: [{ itineraryId: ids.itineraryId, quantity: 1 }] });
     const before = await foreignSnapshot();
     await expect(operation()).rejects.toMatchObject({ code: 5, details: 'NOT_FOUND' });

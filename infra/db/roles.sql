@@ -15,6 +15,7 @@ BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'svc_' || service_name) THEN
       EXECUTE format('CREATE ROLE %I LOGIN', 'svc_' || service_name);
     END IF;
+    EXECUTE format('ALTER ROLE %I SET search_path = %I, public', 'svc_' || service_name, service_name);
   END LOOP;
 END $$;
 

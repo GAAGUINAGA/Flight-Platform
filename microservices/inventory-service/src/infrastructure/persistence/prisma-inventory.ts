@@ -8,14 +8,15 @@ import { HoldStatus, InventoryHold } from '../../domain/inventory-hold';
 import {
   FlightReader, HoldSummary, InventoryTx, ListFlightsQuery, ReservedRow, UnitOfWork
 } from '../../application/ports';
+import { table } from './schema';
 
-// D-03: el esquema es fijo por servicio; las consultas crudas lo califican expl?citamente.
+// D-03 / ADR-F12b1-fix-01: las consultas crudas califican el esquema desde un único lugar (schema.ts).
 const T = {
-  flights: Prisma.raw('"inventory"."flight_instances"'),
-  cabins: Prisma.raw('"inventory"."cabin_inventory"'),
-  holds: Prisma.raw('"inventory"."holds"'),
-  lines: Prisma.raw('"inventory"."hold_lines"'),
-  reserved: Prisma.raw('"inventory"."reserved_inventory"')
+  flights: table('flight_instances'),
+  cabins: table('cabin_inventory'),
+  holds: table('holds'),
+  lines: table('hold_lines'),
+  reserved: table('reserved_inventory')
 };
 
 type FlightRow = Prisma.FlightInstanceGetPayload<{ include: { cabins: true } }>;

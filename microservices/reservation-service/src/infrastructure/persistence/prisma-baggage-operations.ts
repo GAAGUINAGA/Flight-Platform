@@ -1,6 +1,10 @@
 import { decimalToMinor, DomainError, minorToDecimal } from '@flight-platform/shared';
 import { BaggageOperation, BaggageOperations, BaggageResult } from '../../application/baggage-operations';
 import { PrismaClient } from './prisma-client/client';
+import { table } from './schema';
+
+const BAGGAGE_PURCHASES = table('baggage_purchases');
+const RESERVATIONS = table('reservations');
 
 const map = (row: { id: string; bookingId: string; ownerId: string; idempotencyKey: string; requestHash: string; paymentReference: string; amountMinor: number; status: string; response: unknown }): BaggageOperation => ({ ...row, response: row.response as BaggageResult | undefined });
 export class PrismaBaggageOperations implements BaggageOperations {
@@ -25,11 +29,11 @@ export class PrismaBaggageOperations implements BaggageOperations {
   }
   async complete(operation: BaggageOperation, changedAt: Date, action: () => Promise<BaggageResult>): Promise<BaggageResult> {
     return this.prisma.$transaction(async (tx) => {
-      await tx.$queryRaw`SELECT "id" FROM "baggage_purchases" WHERE "id" = ${operation.id}::uuid AND "owner_id" = ${operation.ownerId} FOR UPDATE`;
+      await tx.$queryRaw`SELECT "id" FROM ${BAGGAGE_PURCHASES} WHERE "id" = ${operation.id}::uuid AND "owner_id" = ${operation.ownerId} FOR UPDATE`;
       const row = await tx.baggagePurchase.findFirst({ where: { id: operation.id, ownerId: operation.ownerId, bookingId: operation.bookingId } });
       if (!row) throw new DomainError('NOT_FOUND');
       if (row.status === 'COMPLETED') return row.response as unknown as BaggageResult;
-      await tx.$queryRaw`SELECT "id" FROM "reservations" WHERE "id" = ${operation.bookingId}::uuid AND "owner_id" = ${operation.ownerId} FOR UPDATE`;
+      await tx.$queryRaw`SELECT "id" FROM ${RESERVATIONS} WHERE "id" = ${operation.bookingId}::uuid AND "owner_id" = ${operation.ownerId} FOR UPDATE`;
       const reservation = await tx.reservation.findFirst({ where: { id: operation.bookingId, ownerId: operation.ownerId } });
       if (!reservation) throw new DomainError('NOT_FOUND');
       if (reservation.status !== 'CONFIRMED') throw new DomainError('BOOKING_NOT_CONFIRMED');

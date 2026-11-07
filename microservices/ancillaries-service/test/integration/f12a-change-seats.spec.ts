@@ -5,6 +5,7 @@ import { PrismaClient } from '../../src/infrastructure/persistence/prisma-client
 import { PrismaSeatMapStore } from '../../src/infrastructure/persistence/prisma-seat-map';
 import { PrismaSeatAssignmentStore } from '../../src/infrastructure/persistence/prisma-seat-assignments';
 import { PrismaBookingOwnershipStore } from '../../src/infrastructure/persistence/prisma-booking-ownership';
+import { table } from '../../src/infrastructure/persistence/schema';
 import { SeatAssignments } from '../../src/application/seat-assignments';
 
 // `validate` de shared lanza una RpcException (INVALID_ARGUMENT / VALIDATION_FAILED); las reglas del dominio lanzan DomainError: ambas son VALIDATION_FAILED.
@@ -23,7 +24,7 @@ describe('F12a CHG: ChangeSeats atómico contra PostgreSQL', () => {
   // Cada caso parte de un vuelo sin asientos ocupados por los casos anteriores.
   beforeEach(async () => { await prisma.seatAssignment.deleteMany({ where: { flightInstanceId: flightId } }); });
   afterAll(async () => {
-    try { if (prisma) { await prisma.seatAssignment.deleteMany({ where: { bookingId: { in: bookings } } }); await prisma.$executeRaw`DELETE FROM "booking_owners" WHERE "booking_id" = ANY(${bookings}::uuid[])`; await prisma.seatLayout.deleteMany({ where: { aircraft } }); } } finally { await prisma?.$disconnect(); }
+    try { if (prisma) { await prisma.seatAssignment.deleteMany({ where: { bookingId: { in: bookings } } }); await prisma.$executeRaw`DELETE FROM ${table('booking_owners')} WHERE "booking_id" = ANY(${bookings}::uuid[])`; await prisma.seatLayout.deleteMany({ where: { aircraft } }); } } finally { await prisma?.$disconnect(); }
   });
 
   const booking = async (assignments: Array<{ seat: string; type?: 'ADULT' | 'INFANT' | 'CHILD'; cabin?: string }>, ownerId = owner) => {

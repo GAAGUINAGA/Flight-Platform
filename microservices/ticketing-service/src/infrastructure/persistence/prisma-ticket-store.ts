@@ -2,6 +2,9 @@ import { Prisma, PrismaClient } from './prisma-client/client';
 import { DomainError } from '@flight-platform/shared';
 import { Ticket, TicketProps } from '../../domain/ticket';
 import { TicketStore } from '../../application/ports';
+import { table } from './schema';
+
+const SEQUENCES = table('ticket_sequences');
 
 type Db = PrismaClient | Prisma.TransactionClient;
 type Row = Prisma.TicketGetPayload<{ include: { coupons: true } }>;
@@ -25,7 +28,7 @@ export class PrismaTicketStore implements TicketStore {
           if (!ticket) ticket = await tx.ticket.create({ data: { bookingId, ownerId, passengerId: p.passengerId, status: 'PENDING', coupons: { create: segmentIds.map((segmentId) => ({ segmentId, status: 'PENDING' })) } } });
           if (ticket.status === 'ISSUED') throw new DomainError('TICKET_ALREADY_ISSUED');
           if (failed) { await tx.ticket.update({ where: { id: ticket.id }, data: { status: 'FAILED', failureReason: 'TICKET_ISSUANCE_FAILED', coupons: { updateMany: { where: {}, data: { status: 'FAILED' } } } } }); continue; }
-          const sequence = await tx.$queryRaw<{ value: bigint }[]>`INSERT INTO ticketing.ticket_sequences (prefix, value) VALUES (${prefix}, 1) ON CONFLICT (prefix) DO UPDATE SET value = ticketing.ticket_sequences.value + 1 RETURNING value`;
+          const sequence = await tx.$queryRaw<{ value: bigint }[]>`INSERT INTO ${SEQUENCES} (prefix, value) VALUES (${prefix}, 1) ON CONFLICT (prefix) DO UPDATE SET value = ${SEQUENCES}.value + 1 RETURNING value`;
           const number = `${prefix}${String(sequence[0].value).padStart(10, '0')}`;
           await tx.ticket.update({ where: { id: ticket.id }, data: { status: 'ISSUED', eTicketNumber: number, issuedAt: now, failureReason: null, coupons: { updateMany: { where: {}, data: { status: 'ISSUED' } } } } });
           const coupons = await tx.ticketCoupon.findMany({ where: { ticketId: ticket.id }, orderBy: { segmentId: 'asc' } });
@@ -48,7 +51,7 @@ export class PrismaTicketStore implements TicketStore {
       if (action === 'reissue') {
         if (!segmentIds?.length) throw new DomainError('VALIDATION_FAILED');
         for (const old of current) {
-          const sequence = await tx.$queryRaw<{ value: bigint }[]>`INSERT INTO ticketing.ticket_sequences (prefix, value) VALUES (${prefix}, 1) ON CONFLICT (prefix) DO UPDATE SET value = ticketing.ticket_sequences.value + 1 RETURNING value`;
+          const sequence = await tx.$queryRaw<{ value: bigint }[]>`INSERT INTO ${SEQUENCES} (prefix, value) VALUES (${prefix}, 1) ON CONFLICT (prefix) DO UPDATE SET value = ${SEQUENCES}.value + 1 RETURNING value`;
           const number = `${prefix}${String(sequence[0].value).padStart(10, '0')}`;
           await tx.ticket.create({ data: { bookingId, ownerId, passengerId: old.passengerId, status: 'ISSUED', eTicketNumber: number, issuedAt: now, coupons: { create: segmentIds.map((segmentId, index) => ({ segmentId, status: 'ISSUED', couponNumber: `${number}-${index + 1}` })) } } });
         }

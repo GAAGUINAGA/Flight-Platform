@@ -5,6 +5,8 @@ import { afterAll, beforeAll, describe, expect, it } from '@jest/globals';
 import { expectV2Response } from './support';
 import { startStack, type Scenario, type Stack } from './stack';
 import { book, headers } from './flow';
+import { Cleanup } from './cleanup';
+import { assertUtcDay, utcDay } from './schedule';
 
 const describeReal = process.env.RUN_GATEWAY_REAL === 'true' ? describe : describe.skip;
 type Cabin = { cabinClass: 'ECONOMY' | 'BUSINESS'; sellable: number };
@@ -17,18 +19,24 @@ describeReal('F12a-2 C · búsqueda con varias ofertas (contra servicios reales)
   const previousLimit = process.env.SEARCH_MAX_OFFERS;
   beforeAll(async () => { process.env.SEARCH_MAX_OFFERS = '4'; stack = await startStack(); }, 180_000);
   afterAll(async () => {
+    // Un borrado que falla queda en stderr y hace fallar la suite; también falla si quedan vuelos, tarifas o vuelos operativos de la prueba.
+    const cleanup = new Cleanup();
     try {
-      for (const value of scenarios) await value.cleanup().catch(() => undefined);
-      await stack?.db.pricing.offer.deleteMany({ where: { id: { in: offerIds } } }).catch(() => undefined);
-      await stack?.db.pricing.fare.deleteMany({ where: { flightInstanceId: { in: extraFlights } } }).catch(() => undefined);
-      await stack?.db.operations.operationalFlight.deleteMany({ where: { flightInstanceId: { in: extraFlights } } }).catch(() => undefined);
-      await stack?.db.inventory.flightInstance.deleteMany({ where: { id: { in: extraFlights } } }).catch(() => undefined);
+      for (const [index, value] of scenarios.entries()) await cleanup.step(`escenario ${index + 1}`, () => value.cleanup());
+      await cleanup.step('ofertas', () => stack?.db.pricing.offer.deleteMany({ where: { id: { in: offerIds } } }));
+      await cleanup.step('tarifas', () => stack?.db.pricing.fare.deleteMany({ where: { flightInstanceId: { in: extraFlights } } }));
+      await cleanup.step('vuelos operativos', () => stack?.db.operations.operationalFlight.deleteMany({ where: { flightInstanceId: { in: extraFlights } } }));
+      await cleanup.step('vuelos', () => stack?.db.inventory.flightInstance.deleteMany({ where: { id: { in: extraFlights } } }));
+      await cleanup.leftovers(stack, [...extraFlights, ...scenarios.map((value) => value.flightId)]);
     } finally { await stack?.close(); if (previousLimit === undefined) delete process.env.SEARCH_MAX_OFFERS; else process.env.SEARCH_MAX_OFFERS = previousLimit; }
+    cleanup.verify();
   }, 120_000);
 
   const scenario = async () => { const value = await stack.scenario(); scenarios.push(value); return value; };
   /** Otro vuelo de la ruta (o de la ruta inversa) con sus cabinas y tarifas; la prueba lo limpia en afterAll. */
-  const addFlight = async (s: Scenario, options: { reverse?: boolean; departure: Date; cabins?: Cabin[]; fares: Fare[] }) => {
+  const addFlight = async (s: Scenario, options: { reverse?: boolean; departure: Date; cabins?: Cabin[]; fares: Fare[]; date?: string }) => {
+    // Inventory busca por día UTC: el vuelo debe quedar en el día que la prueba va a buscar (el del escenario salvo que se indique otro).
+    assertUtcDay(options.departure, options.date ?? s.date, 'addFlight');
     const id = randomUUID(); let flightNumber = '';
     for (let attempt = 0; attempt < 50; attempt += 1) { flightNumber = `FP${randomInt(1000, 10000)}`; if (await stack.db.inventory.flightInstance.count({ where: { flightNumber } }) === 0 && await stack.db.operations.operationalFlight.count({ where: { flightNumber } }) === 0) break; }
     const origin = options.reverse ? s.destination : s.origin; const destination = options.reverse ? s.origin : s.destination; const arrival = new Date(options.departure.getTime() + 3_600_000);
@@ -87,8 +95,8 @@ describeReal('F12a-2 C · búsqueda con varias ofertas (contra servicios reales)
   it('V2-C-05 / I: ida y vuelta combina los vuelos, ordena por precio total y respeta el límite configurado', async () => {
     const s = await scenario(); const returnDate = new Date(s.departure.getTime() + 7 * 86_400_000);
     const cheapOut = await addFlight(s, { departure: new Date(s.departure.getTime() - 3 * 3_600_000), fares: [{ cabinClass: 'ECONOMY', brand: 'BASIC', baseFareMinor: 8000 }] });
-    const r1 = await addFlight(s, { reverse: true, departure: returnDate, fares: [{ cabinClass: 'ECONOMY', brand: 'BASIC', baseFareMinor: 9000 }] });
-    const r2 = await addFlight(s, { reverse: true, departure: new Date(returnDate.getTime() + 4 * 3_600_000), fares: [{ cabinClass: 'ECONOMY', brand: 'BASIC', baseFareMinor: 6000 }] });
+    const r1 = await addFlight(s, { reverse: true, date: utcDay(returnDate), departure: returnDate, fares: [{ cabinClass: 'ECONOMY', brand: 'BASIC', baseFareMinor: 9000 }] });
+    const r2 = await addFlight(s, { reverse: true, date: utcDay(returnDate), departure: new Date(returnDate.getTime() + 4 * 3_600_000), fares: [{ cabinClass: 'ECONOMY', brand: 'BASIC', baseFareMinor: 6000 }] });
     const res = await search([route(s), back(s, returnDate.toISOString().slice(0, 10))]);
     expect(res.status).toBe(200); expectV2Response('POST', '/vuelos/search', 200, res.body);
     // 2 ida × 2 vuelta = 4 combinaciones; el límite de la prueba es 4.
@@ -117,7 +125,7 @@ describeReal('F12a-2 C · búsqueda con varias ofertas (contra servicios reales)
 
   it('V2-C-07 / I: una oferta de ida y vuelta se retiene y se reserva completa', async () => {
     const s = await scenario(); const returnDate = new Date(s.departure.getTime() + 7 * 86_400_000);
-    const r1 = await addFlight(s, { reverse: true, departure: returnDate, fares: [{ cabinClass: 'ECONOMY', brand: 'BASIC', baseFareMinor: 9000 }] });
+    const r1 = await addFlight(s, { reverse: true, date: utcDay(returnDate), departure: returnDate, fares: [{ cabinClass: 'ECONOMY', brand: 'BASIC', baseFareMinor: 9000 }] });
     const res = await search([route(s), back(s, returnDate.toISOString().slice(0, 10))]); const offers = res.body.offers as Offer[];
     expect(offers).toHaveLength(1); expect(flightsOf(offers[0])).toEqual([s.flightNumber, r1.flightNumber]);
     const held = await holdOffer(s, offers[0], [{ cabinClass: 'ECONOMY', fareBrand: 'CLASSIC' }, { cabinClass: 'ECONOMY', fareBrand: 'BASIC' }], 'user-round');

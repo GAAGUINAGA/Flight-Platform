@@ -16,6 +16,7 @@ import { PrismaClient as TicketingPrisma } from '../../../../../microservices/ti
 import { PrismaClient as WebhooksPrisma } from '../../../../../microservices/webhooks-service/src/infrastructure/persistence/prisma-client/client';
 import { PrismaClient as ReservationPrisma } from '../../../../../microservices/reservation-service/src/infrastructure/persistence/prisma-client/client';
 import { PrismaClient as OperationsPrisma } from '../../../../../microservices/operations-service/src/infrastructure/persistence/prisma-client/client';
+import { scenarioDeparture, utcDay } from './schedule';
 import { createOperationsRuntime } from '../../../../../microservices/operations-service/src/main';
 import { createOperationsServer } from '../../../../../microservices/operations-service/src/infrastructure/grpc/server';
 import { createInventoryServer } from '../../../../../microservices/inventory-service/src/infrastructure/grpc/server';
@@ -135,7 +136,8 @@ export async function startStack(env: Record<string, string | undefined> = {}): 
     // El número es FP + 4 dígitos (patrón del contrato); se descartan los que otro escenario o una corrida anterior dejó en Inventory u Operations.
     let flightNumber = ''; for (let attempt = 0; attempt < 50; attempt += 1) { flightNumber = `FP${randomInt(1000, 10000)}`; if (await inventory.flightInstance.count({ where: { flightNumber } }) === 0 && await operations.operationalFlight.count({ where: { flightNumber } }) === 0) break; }
     const aircraft = `T${randomUUID().replace(/-/g, '').slice(0, 20)}`;
-    const departure = new Date(Date.now() + (options.hoursAhead ?? 5 * 24) * 3_600_000); const date = departure.toISOString().slice(0, 10); const seats = ['1A', '1B', '1C'];
+    // Sin hoursAhead la salida es a las 14:00 UTC (schedule.ts): así los vuelos que las pruebas agregan unas horas antes o después siguen en el mismo día UTC a cualquier hora del reloj.
+    const departure = scenarioDeparture(new Date(), options.hoursAhead); const date = utcDay(departure); const seats = ['1A', '1B', '1C'];
     const offerIds: string[] = []; const clientIds = [client.clientId];
     await inventory.flightInstance.create({ data: { id: flightId, flightNumber, departureIata: origin, arrivalIata: destination, departureAt: departure, arrivalAt: new Date(departure.getTime() + 3_600_000), aircraft, cabins: { create: { cabinClass: 'ECONOMY', sellable: options.sellable ?? 5 } } } });
     await operations.operationalFlight.create({ data: { flightInstanceId: flightId, flightNumber, date, marketingCarrier: 'FP', operatingCarrier: 'FP', departureIata: origin, arrivalIata: destination, scheduledDepartureAt: departure, scheduledArrivalAt: new Date(departure.getTime() + 3_600_000), aircraft, status: 'SCHEDULED' } });
