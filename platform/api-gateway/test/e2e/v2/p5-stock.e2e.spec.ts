@@ -7,7 +7,6 @@ import { loadPackageDefinition, Server, ServerCredentials, status, type ServerUn
 import { loadSync } from '@grpc/proto-loader';
 import type { InMemoryStockOutbox } from '../../../src/v2/stock/outbox';
 import { localSlot, type StockSync, type StockUpdate } from '../../../src/v2/stock/stock-sync';
-import type { GatewayConfig } from '../../../src/config';
 import { startStack, type Scenario, type Stack } from './stack';
 import { book, headers, hold } from './flow';
 
@@ -48,8 +47,7 @@ describeReal('F12a P5 · stock hacia Booking por gRPC (contra servicios reales)'
   it('V2-P5-01 un hold baja la disponibilidad enviada: item, fecha local, hora y x-api-key/x-correlation-id', async () => {
     const s = await scenario({ sellable: 5 }); await hold(stack, s, s.client, 'u1');
     const updates = await until(() => simulator.forFlight(s.flightNumber), (list) => list.length >= 1); const last = updates[updates.length - 1];
-    const zones = stack.gateway.get<GatewayConfig>('GATEWAY_CONFIG').v2!.stock.timezones;
-    const slot = localSlot(s.departure.toISOString(), s.origin, zones); expect(last).toMatchObject({ service_id: 'NODE_VUE_GABATAIR', item_id: `${s.flightNumber}-ECONOMY`, date: slot.date, time_slot: slot.time, available_units: 4 }); expect(last.timestamp).toBeGreaterThan(0);
+    const slot = localSlot(s.departure.toISOString(), s.origin); expect(last).toMatchObject({ service_id: 'NODE_VUE_GABATAIR', item_id: `${s.flightNumber}-ECONOMY`, date: slot.date, time_slot: slot.time, available_units: 4 }); expect(last.timestamp).toBeGreaterThan(0);
     const call = simulator.calls.find((c) => c.update.item_id === `${s.flightNumber}-ECONOMY`); expect(call?.apiKey).toBe(API_KEY); expect(call?.correlationId).toBeTruthy();
   }, 120_000);
   it('V2-P5-02 liberar el hold devuelve el asiento a la disponibilidad enviada', async () => {

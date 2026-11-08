@@ -1,10 +1,10 @@
-import { DomainError, validate } from '@flight-platform/shared';
+import { DomainError, flightLocalDay, validate } from '@flight-platform/shared';
 import { OperationalFlight } from '../domain/operational-flight'; import { EventPublisher, FlightStore, InventoryFlight, InventoryGateway, ReservationGateway } from './ports'; import { getFlightStatusSchema, updateSchema } from './schemas';
 export class FlightStatusUseCases {
  constructor(private readonly store:FlightStore,private readonly inventory:InventoryGateway,private readonly reservations:ReservationGateway,private readonly events:EventPublisher,private readonly delayThresholdMinutes:number,private readonly warn:(message:string)=>void=()=>{}) {}
  async get(input:unknown):Promise<OperationalFlight>{ const q=validate(getFlightStatusSchema,input); const existing=await this.store.find(q.flightNumber,q.date); if(existing)return existing; let f; try { f=await this.inventory.findFlight({flightNumber:q.flightNumber,date:q.date}); } catch (error) { if (error instanceof DomainError && error.code==='NOT_FOUND') throw new DomainError('FLIGHT_STATUS_NOT_AVAILABLE'); throw error; } return this.materialize(f,q.date); }
  private async materialize(f:InventoryFlight,date:string):Promise<OperationalFlight>{ const v=new OperationalFlight({id:'',flightInstanceId:f.flightInstanceId,flightNumber:f.flightNumber,date,marketingCarrier:f.marketingCarrier,operatingCarrier:f.operatingCarrier,departureIata:f.departure.iataCode,arrivalIata:f.arrival.iataCode,scheduledDepartureAt:new Date(f.departure.at),scheduledArrivalAt:new Date(f.arrival.at),aircraft:f.aircraft,status:'SCHEDULED'}); try { await this.store.save(v); } catch (error) { const raced=await this.store.findByInstance(f.flightInstanceId); if(raced)return raced; throw error; } return v; }
- private async forInstance(id:string):Promise<OperationalFlight>{ const existing=await this.store.findByInstance(id); if(existing)return existing; const f=await this.inventory.getFlight(id); return this.materialize(f,f.departure.at.slice(0,10)); }
+ private async forInstance(id:string):Promise<OperationalFlight>{ const existing=await this.store.findByInstance(id); if(existing)return existing; const f=await this.inventory.getFlight(id); return this.materialize(f,flightLocalDay(f.departure.at,f.departure.iataCode,'updateFlightStatus')); }
  async update(input:unknown):Promise<OperationalFlight>{
    const q=validate(updateSchema,input); const f=await this.forInstance(q.flightInstanceId);
    f.transition(q.status);

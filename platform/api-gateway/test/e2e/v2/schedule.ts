@@ -1,6 +1,7 @@
 /**
- * Horario de los vuelos de las pruebas v2. Inventory busca por día UTC (flight-queries.ts), así que cualquier vuelo que una prueba
- * agregue "al mismo día" del escenario debe seguir en ese día UTC sin importar la hora del reloj de la máquina.
+ * Horario de los vuelos de las pruebas v2. Inventory busca por el día LOCAL del aeropuerto de origen (ADR-F12b1fix-02); los escenarios usan
+ * orígenes aleatorios sin zona (se leen en UTC) y UIO/GYE con salida a las 14:00 UTC (09:00 locales), de modo que el día UTC y el local
+ * coinciden y cualquier vuelo agregado "al mismo día" sigue en él sin importar la hora del reloj de la máquina.
  * Función pura: recibe el instante actual para poder probarla con un reloj simulado (schedule.spec.ts).
  */
 export const SCENARIO_HOUR_UTC = 14;

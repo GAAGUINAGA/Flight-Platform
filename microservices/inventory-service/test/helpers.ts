@@ -44,7 +44,7 @@ export const INTERNAL_KEY = 'k'.repeat(40);
 // Cada archivo de prueba usa sus propios prefijos para poder correr en paralelo sin borrarse datos.
 const RUN = randomUUID().slice(0, 8);
 const OWNER_PREFIX = `test-owner-${RUN}-`;
-const SUITES: [string, string][] = [['flights', 'Z1'], ['holds', 'Z2'], ['concurrency', 'Z3'], ['security', 'Z4']];
+const SUITES: [string, string][] = [['flights', 'Z1'], ['holds', 'Z2'], ['concurrency', 'Z3'], ['security', 'Z4'], ['local-day', 'Z5']];
 const flightPrefix = (): string => {
   const path = expect.getState().testPath ?? '';
   return SUITES.find(([name]) => path.includes(name))?.[1] ?? 'Z9';

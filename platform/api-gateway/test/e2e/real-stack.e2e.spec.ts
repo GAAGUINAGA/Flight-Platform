@@ -54,7 +54,7 @@ import { GatewayScheduler } from '../../src/scheduler';
 import { PrismaSchedulerStore } from '../../src/scheduler-store';
 import { createDevToken } from '../../../../infra/scripts/dev-token';
 import { openApiSpecPath } from '../../src/openapi-path';
-import { cleanupOwnerData, registerAuthorizationMatrix } from './authz-matrix';
+import { adminOrigin, cleanupOwnerData, registerAuthorizationMatrix } from './authz-matrix';
 
 type SigningKey = Awaited<ReturnType<typeof generateKeyPair>>['privateKey'];
 const describeReal = process.env.RUN_GATEWAY_REAL === 'true' ? describe : describe.skip;
@@ -885,8 +885,9 @@ describeReal('Gateway: composición gRPC real en proceso', () => {
     const admin = (owner = `admin-${randomUUID()}`) => token('flights:admin', owner, 'admin');
     const flightIds: string[] = [];
     const flightBody = (overrides: Record<string, unknown> = {}) => {
-      const { origin, destination } = randomRoute(); const departure = new Date(Date.now() + 9 * 86_400_000); departure.setUTCHours(10, 0, 0, 0);
-      return { flightNumber: `FP${randomInt(1000, 10000)}`, departureIata: origin, arrivalIata: destination, departureAt: departure.toISOString(), arrivalAt: new Date(departure.getTime() + 3_600_000).toISOString(), cabins: [{ cabinClass: 'ECONOMY', capacity: 20 }], ...overrides };
+      const { destination } = randomRoute(); const departure = new Date(Date.now() + 9 * 86_400_000); departure.setUTCHours(10, 0, 0, 0);
+      // Upsert exige un origen con zona (ADR-F12b1fix-02): se usa uno de la tabla; las salidas son a las 10:00Z (día local = día UTC).
+      return { flightNumber: `FP${randomInt(1000, 10000)}`, departureIata: adminOrigin(), arrivalIata: destination, departureAt: departure.toISOString(), arrivalAt: new Date(departure.getTime() + 3_600_000).toISOString(), cabins: [{ cabinClass: 'ECONOMY', capacity: 20 }], ...overrides };
     };
     const createFlight = async (body = flightBody()) => {
       const response = await request(gateway!.getHttpServer()).post('/flights/v1/admin/flights').set('Authorization', admin()).send(body);

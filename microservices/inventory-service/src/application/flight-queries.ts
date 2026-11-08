@@ -1,4 +1,4 @@
-import { RequestContext, validate } from '@flight-platform/shared';
+import { dayWindows, originDayRange, RequestContext, validate } from '@flight-platform/shared';
 import { Clock } from '@flight-platform/shared';
 import { FlightInstance } from '../domain/flight-instance';
 import { InventoryError } from '../domain/errors';
@@ -8,11 +8,6 @@ import { availabilityRequest, findRequest, idRequest, isValidAvailability, listR
 import { publishExpired } from './publish-expired';
 
 export interface AvailableFlightView { flight: FlightInstance; cabinClass: string; availableSeats: number }
-
-const dayRange = (date: string): [Date, Date] => {
-  const from = new Date(`${date}T00:00:00Z`);
-  return [from, new Date(from.getTime() + 86_400_000)];
-};
 
 export class FlightQueries {
   constructor(
@@ -31,8 +26,8 @@ export class FlightQueries {
 
   async find(_ctx: RequestContext, input: unknown): Promise<FlightInstance> {
     const { flightNumber, departureDate } = validate(findRequest, input);
-    const [from, to] = dayRange(departureDate);
-    const flight = await this.reader.find(flightNumber, from, to);
+    // NFR-TI-01: la fecha es la local del aeropuerto de origen de cada vuelo.
+    const flight = await this.reader.find(flightNumber, dayWindows(departureDate));
     if (!flight) throw new InventoryError('NOT_FOUND');
     return flight;
   }
@@ -40,8 +35,7 @@ export class FlightQueries {
   async list(_ctx: RequestContext, input: unknown): Promise<{ items: FlightInstance[]; nextCursor?: string }> {
     const req = validate(listRequest, input);
     const limit = req.page?.limit || 50;
-    const [from, to] = req.date ? dayRange(req.date) : [undefined, undefined];
-    const rows = await this.reader.list({ from, to, cursor: req.page?.cursor, limit: limit + 1 });
+    const rows = await this.reader.list({ windows: req.date ? dayWindows(req.date) : undefined, cursor: req.page?.cursor, limit: limit + 1 });
     const items = rows.slice(0, limit);
     return { items, nextCursor: rows.length > limit ? items[items.length - 1].id : undefined };
   }
@@ -58,7 +52,7 @@ export class FlightQueries {
     const req = validate(availabilityRequest, input);
     if (!isValidAvailability(req)) throw new InventoryError('VALIDATION_FAILED');
     const now = this.clock.now();
-    const [from, to] = dayRange(req.departureDate);
+    const [from, to] = originDayRange(req.departureDate, req.origin, 'queryAvailability');
     let flights = await this.reader.search(req.origin, req.destination, from, to);
     flights = flights.filter((f) => f.isSellable(now));
     if (flights.length > 0) {

@@ -1,4 +1,5 @@
 import { describe, expect, it, jest } from '@jest/globals';
+import { Logger } from '@nestjs/common';
 import { loadConfig } from '../../config';
 import { InMemoryStockOutbox } from './outbox';
 import { localSlot, StockSync, type StockPusher, type StockUpdate } from './stock-sync';
@@ -19,14 +20,23 @@ describe('F12a P5 · configuración y utilidades del stock a Booking', () => {
     expect(() => loadConfig({ ...base, BOOKING_STOCK_TLS: 'false' })).toThrow('INTEGRATION_LOCAL');
     expect(loadConfig({ ...base, INTEGRATION_LOCAL: 'true', BOOKING_STOCK_TLS: 'false' }).v2!.stock.tls).toBe(false);
   });
-  it('V2-STK-04 AIRPORT_TIMEZONES inválido falla al arrancar y uno válido se suma a los de Ecuador', () => {
-    expect(() => loadConfig({ ...base, AIRPORT_TIMEZONES: '{no' })).toThrow('AIRPORT_TIMEZONES');
-    expect(loadConfig({ ...base, AIRPORT_TIMEZONES: '{"BOG":"America/Bogota"}' }).v2!.stock.timezones).toMatchObject({ BOG: 'America/Bogota', UIO: 'America/Guayaquil' });
+  it('V2-STK-04 AIRPORT_TIMEZONES está obsoleta: se ignora con aviso (inválida o válida) y no altera las zonas de shared', () => {
+    const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    try {
+      expect(() => loadConfig({ ...base, AIRPORT_TIMEZONES: '{no' })).not.toThrow();
+      expect(loadConfig({ ...base, AIRPORT_TIMEZONES: '{"UIO":"Asia/Tokyo"}' }).v2!.stock).not.toHaveProperty('timezones');
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('AIRPORT_TIMEZONES está obsoleta'));
+      expect(localSlot('2026-11-02T03:30:00.000Z', 'UIO')).toEqual({ date: '2026-11-01', time: '22:30' });
+      warn.mockClear(); loadConfig(base); expect(warn).not.toHaveBeenCalled();
+    } finally { warn.mockRestore(); }
   });
-  it('V2-STK-05 localSlot da fecha y hora locales del aeropuerto, incluso cuando cambia el día; sin zona usa UTC', () => {
-    expect(localSlot('2026-11-02T03:30:00.000Z', 'UIO', { UIO: 'America/Guayaquil' })).toEqual({ date: '2026-11-01', time: '22:30' });
-    expect(localSlot('2026-11-02T03:30:00.000Z', 'XXX', {})).toEqual({ date: '2026-11-02', time: '03:30' });
-    expect(localSlot('2026-11-02T03:30:00.000Z', 'UIO', { UIO: 'No/Existe' })).toEqual({ date: '2026-11-02', time: '03:30' });
+  it('V2-STK-05 localSlot da fecha y hora locales del aeropuerto, incluso cuando cambia el día, también BOG/LIM/MIA/MAD; sin zona usa UTC', () => {
+    expect(localSlot('2026-11-02T03:30:00.000Z', 'UIO')).toEqual({ date: '2026-11-01', time: '22:30' });
+    expect(localSlot('2026-11-02T03:30:00.000Z', 'LIM')).toEqual({ date: '2026-11-01', time: '22:30' });
+    expect(localSlot('2026-11-02T03:30:00.000Z', 'BOG')).toEqual({ date: '2026-11-01', time: '22:30' });
+    expect(localSlot('2026-11-02T03:30:00.000Z', 'MIA')).toEqual({ date: '2026-11-01', time: '22:30' }); // EST desde el 1 de noviembre
+    expect(localSlot('2026-11-02T03:30:00.000Z', 'MAD')).toEqual({ date: '2026-11-02', time: '04:30' });
+    expect(localSlot('2026-11-02T03:30:00.000Z', 'XXX')).toEqual({ date: '2026-11-02', time: '03:30' });
   });
   it('V2-STK-06 flightsOf lee los vuelos de un hold o de una reserva y no falla con datos vacíos', () => {
     const sync = new StockSync(loadConfig(base), new InMemoryStockOutbox(), new Recorder());

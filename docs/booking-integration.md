@@ -13,6 +13,15 @@ Esta guía describe cómo se comporta el despliegue frente a ese contrato; no lo
 Todo el tráfico es HTTPS. Una petición con `X-Forwarded-Proto: http` recibe 400, y las respuestas llevan HSTS.
 Los cuerpos de petición admiten hasta 100 kB (413 si se excede). Las fechas siguen RFC 3339.
 
+### Fecha de vuelo = fecha local del aeropuerto de origen (NFR-TI-01)
+
+Los campos de fecha sin hora (`departureDate` en la búsqueda, `newDepartureDate` en el cambio de fecha, `date` en `GET /flights/{flightNumber}/status`, `departureDate` en el resumen de reservas) son **la fecha local del aeropuerto de origen del tramo**, no el día UTC. Los instantes (`departure.at`, `arrival.at`) siguen en UTC.
+- Un vuelo UIO→GYE que sale el 10 a las 19:00 de Ecuador (11 a las 00:00Z) se busca con `2030-06-10`. Un LIM→MAD que sale el 10 a las 22:30 de Lima (11 a las 03:30Z) también.
+- Es un cambio de comportamiento sin cambio de contrato (el OpenAPI no cambió: sigue siendo `format: date`). Antes la fecha se interpretaba como día UTC; los vuelos cuya salida local y UTC caen en días distintos no aparecían al buscar su fecha local.
+- Las zonas se toman de una tabla de aeropuertos de la plataforma (Ecuador, BOG, MDE, LIM, MAD, MIA). Un aeropuerto fuera de la tabla se interpreta en UTC.
+
+**Stock hacia Booking (`PushStockUpdate`).** `date` y `time_slot` de cada ranura son la fecha y la hora **locales del aeropuerto de origen** (`AAAA-MM-DD` y `HH:mm`). Antes, para los orígenes fuera de Ecuador (BOG, LIM, MIA, MAD) se enviaban en UTC. Las ranuras en UTC recibidas antes de este cambio (p. ej., en la prueba local) ya no se actualizan y pueden descartarse; las nuevas llegan con la fecha local la próxima vez que cambie la capacidad del vuelo o se reencole el stock.
+
 ## 2. Autenticación, emisores, roles y scopes
 
 Todas las operaciones salvo `/search`, `/offers/{offerId}/seatmap`, `/flights/{flightNumber}/status` y `/health` exigen

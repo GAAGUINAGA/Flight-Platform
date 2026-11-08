@@ -9,7 +9,7 @@ export interface CheckInSegment {
   segmentId: string;
   flightInstanceId: string;
   flightNumber: string;
-  departure: { at: string };
+  departure: { at: string; iataCode?: string };
   status?: string;
 }
 export interface CheckInSnapshot {

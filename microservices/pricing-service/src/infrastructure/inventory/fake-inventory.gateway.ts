@@ -1,5 +1,6 @@
 import { AvailableFlight, InventoryGateway, InventoryHold } from '../../application/ports';
 import { randomUUID } from 'node:crypto';
+import { flightLocalDay } from '@flight-platform/shared';
 
 /** Adaptador determinista para pruebas de Pricing antes de levantar Inventory. */
 export class FakeInventoryGateway implements InventoryGateway {
@@ -10,7 +11,8 @@ export class FakeInventoryGateway implements InventoryGateway {
     return this.flights.filter((flight) =>
       flight.segment.departure.iataCode === request.origin &&
       flight.segment.arrival.iataCode === request.destination &&
-      flight.segment.departure.at.slice(0, 10) === request.departureDate
+      // Misma regla que Inventory (NFR-TI-01): la fecha es la local del aeropuerto de origen.
+      flightLocalDay(flight.segment.departure.at, flight.segment.departure.iataCode, 'fakeInventory') === request.departureDate
     );
   }
 

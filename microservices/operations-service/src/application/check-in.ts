@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { DomainError, validate } from '@flight-platform/shared';
+import { DomainError, flightLocalDay, validate } from '@flight-platform/shared';
 import { z } from 'zod';
 import { completedStatus } from '../domain/check-in';
 import { EventPublisher, FlightStore } from './ports';
@@ -66,7 +66,7 @@ export class CheckInUseCase {
         if (previous && previous.status !== 'NOT_CHECKED_IN') { results.push(previous); continue; }
         if (!eligible.has(segment.segmentId)) { results.push({ segmentId: segment.segmentId, status: 'NOT_CHECKED_IN' }); continue; }
         const coupon = coupons.find((value) => value.passengerId === passenger.passengerId && value.segmentId === segment.segmentId && value.status === 'ISSUED');
-        const expiryInvalid = passenger.documentType === 'PASSPORT' && (!passenger.documentExpiryDate || passenger.documentExpiryDate < segment.departure.at.slice(0, 10));
+        const expiryInvalid = passenger.documentType === 'PASSPORT' && (!passenger.documentExpiryDate || passenger.documentExpiryDate < (segment.departure.iataCode ? flightLocalDay(segment.departure.at, segment.departure.iataCode, 'checkIn') : segment.departure.at.slice(0, 10)));
         const cabin = pricingOptions.length === 1 ? pricingOptions.find(() => true)?.cabinClass : undefined;
         if (!coupon || expiryInvalid || !cabin) { results.push({ segmentId: segment.segmentId, status: 'FAILED' }); continue; }
         if (passenger.passengerType === 'INFANT') {

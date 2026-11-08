@@ -9,6 +9,7 @@
     "start": "node dist/src/main.js"
   },
   "dependencies": {
+    "@flight-platform/shared": "0.1.0",
     "@nestjs/common": "^11.0.0",
     "@nestjs/core": "^11.0.0",
     "@nestjs/platform-express": "^11.0.0",

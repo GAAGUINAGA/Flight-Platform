@@ -1,4 +1,5 @@
 import process from 'node:process';
+import { Logger } from '@nestjs/common';
 type Environment = Record<string, string | undefined>;
 
 export interface JwtIssuer {
@@ -51,7 +52,7 @@ export interface V2Config {
   /** Ventana, desde que se creó la reserva, en la que una SAGA_COMPENSATION no paga penalidad (D5). Fuera de ella aplica la de la tarifa. */
   sagaWaiverMinutes: number;
   /** Envío de stock a Booking por gRPC. Sin `apiKey` queda apagado. TLS solo se desactiva con INTEGRATION_LOCAL=true. */
-  stock: { enabled: boolean; url?: string; tls: boolean; caFile?: string; apiKey?: string; timeoutMs: number; timezones: Record<string, string>; store: 'prisma' | 'memory' };
+  stock: { enabled: boolean; url?: string; tls: boolean; caFile?: string; apiKey?: string; timeoutMs: number; store: 'prisma' | 'memory' };
   /** POST /api/v2/vuelos/booking-events: HMAC-SHA256 del cuerpo con un secreto compartido. Sin secreto el endpoint rechaza todo. */
   bookingEvents: { secret?: string; signatureHeader: string; signaturePrefix: string; clientId?: string };
 }
@@ -78,8 +79,8 @@ export function loadConfig(env: Environment = process.env): GatewayConfig {
   if (env.PUBLIC_BASE_URL && !/^https?:\/\/[^\s/]+$/.test(publicBaseUrl)) throw new Error('PUBLIC_BASE_URL must be an origin without path');
   const stockTls = env.BOOKING_STOCK_TLS !== 'false';
   if (!stockTls && !integrationLocal) throw new Error('BOOKING_STOCK_TLS=false requires INTEGRATION_LOCAL=true');
-  let timezones: Record<string, string> = { UIO: 'America/Guayaquil', GYE: 'America/Guayaquil', CUE: 'America/Guayaquil', LTX: 'America/Guayaquil', MEC: 'America/Guayaquil', ESM: 'America/Guayaquil', TUA: 'America/Guayaquil', LOH: 'America/Guayaquil', PVO: 'America/Guayaquil', OCC: 'America/Guayaquil', TPC: 'America/Guayaquil', XMS: 'America/Guayaquil', GPS: 'Pacific/Galapagos', SCY: 'Pacific/Galapagos' };
-  if (env.AIRPORT_TIMEZONES) { try { timezones = { ...timezones, ...(JSON.parse(env.AIRPORT_TIMEZONES) as Record<string, string>) }; } catch { throw new Error('AIRPORT_TIMEZONES must be a JSON object of IATA code to time zone'); } }
+  // ADR-F12b1fix-02: las zonas de los aeropuertos salen de `@flight-platform/shared` (AIRPORT_ZONES); la variable quedó obsoleta.
+  if (env.AIRPORT_TIMEZONES) new Logger('Config').warn('AIRPORT_TIMEZONES está obsoleta y se ignora: las zonas horarias están en @flight-platform/shared (AIRPORT_ZONES)');
   // Con booking-events habilitado (secreto configurado) el evento solo puede tocar reservas de un cliente: sin BOOKING_EVENTS_CLIENT_ID se negaría el aislamiento. Las suites con NODE_ENV=test crean un cliente por escenario y quedan fuera.
   if (env.BOOKING_EVENTS_SECRET && !env.BOOKING_EVENTS_CLIENT_ID && env.NODE_ENV !== 'test') throw new Error('BOOKING_EVENTS_CLIENT_ID is required when BOOKING_EVENTS_SECRET is configured');
   // Ninguna dirección ni clave de Booking va en el código: sin URL y clave el stock queda apagado (el TLS es obligatorio en producción: BOOKING_STOCK_TLS=false exige INTEGRATION_LOCAL, prohibido allí).
@@ -100,7 +101,7 @@ export function loadConfig(env: Environment = process.env): GatewayConfig {
       failureLimit: Number(env.DEV_AUTH_FAILURE_LIMIT_PER_MIN ?? 10)
     },
     healthTimeoutMs: Number(env.HEALTH_TIMEOUT_MS ?? 800), healthCacheMs: Number(env.HEALTH_CACHE_MS ?? 5000),
-    stock: { enabled: Boolean(stockApiKey) && Boolean(stockUrl) && env.STOCK_SYNC_ENABLED !== 'false', url: stockUrl, tls: stockTls, caFile: env.BOOKING_STOCK_TLS_CA_FILE || undefined, apiKey: stockApiKey, timeoutMs: Number(env.BOOKING_STOCK_TIMEOUT_MS ?? 3000), timezones, store: env.V2_STATE_STORE === 'memory' || (env.NODE_ENV === 'test' && env.V2_STATE_STORE !== 'prisma') ? 'memory' : 'prisma' },
+    stock: { enabled: Boolean(stockApiKey) && Boolean(stockUrl) && env.STOCK_SYNC_ENABLED !== 'false', url: stockUrl, tls: stockTls, caFile: env.BOOKING_STOCK_TLS_CA_FILE || undefined, apiKey: stockApiKey, timeoutMs: Number(env.BOOKING_STOCK_TIMEOUT_MS ?? 3000), store: env.V2_STATE_STORE === 'memory' || (env.NODE_ENV === 'test' && env.V2_STATE_STORE !== 'prisma') ? 'memory' : 'prisma' },
     sourceCode: env.WEBHOOK_SOURCE_CODE ?? 'gabatair', sagaWaiverMinutes: Number(env.SAGA_PENALTY_WAIVER_MINUTES ?? 120),
     bookingEvents: { secret: env.BOOKING_EVENTS_SECRET || undefined, signatureHeader: (env.BOOKING_EVENTS_SIGNATURE_HEADER ?? 'x-webhook-signature').toLowerCase(), signaturePrefix: env.BOOKING_EVENTS_SIGNATURE_PREFIX ?? 'sha256=', clientId: env.BOOKING_EVENTS_CLIENT_ID || undefined },
     stateStore: env.V2_STATE_STORE === 'memory' || (env.NODE_ENV === 'test' && env.V2_STATE_STORE !== 'prisma') ? 'memory' : 'prisma'

@@ -1,5 +1,6 @@
 import { afterAll, beforeAll } from '@jest/globals';
 import { randomUUID } from 'node:crypto';
+import { localDay } from '@flight-platform/shared';
 import { seed } from '../../prisma/seed';
 import { ADMIN, cleanup, createFlight, Harness, startHarness } from '../helpers';
 
@@ -13,7 +14,8 @@ describe('INV-02/03/05/06 vuelos: migraci?n, seed, consultas y administraci?n', 
     try { await cleanup(h.prisma); } finally { await h.close(); }
   });
 
-  const tomorrow = () => new Date(Date.now() + 86_400_000).toISOString().slice(0, 10);
+  // NFR-TI-01: la fecha de búsqueda es la local del aeropuerto de origen (UIO, America/Guayaquil).
+  const tomorrow = () => localDay(new Date(Date.now() + 86_400_000), 'America/Guayaquil');
   const mix = (adults: number, infants = 0) => ({ adults, youths: 0, children: 0, infants });
   const cabinKey = (flightInstanceId: string, cabinClass = 'ECONOMY') => ({ flightInstanceId_cabinClass: { flightInstanceId, cabinClass } });
 
@@ -73,7 +75,7 @@ describe('INV-02/03/05/06 vuelos: migraci?n, seed, consultas y administraci?n', 
     );
     expect(got.cabins).toEqual([{ cabinClass: 'ECONOMY', capacity: 7 }, { cabinClass: 'BUSINESS', capacity: 3 }]);
     const found = await h.call<{ flightInstanceId: string }>('FindFlightInstance', {
-      flightNumber: got.segment.flightNumber, departureDate: got.segment.departure.at.slice(0, 10)
+      flightNumber: got.segment.flightNumber, departureDate: localDay(got.segment.departure.at, 'America/Guayaquil')
     });
     expect(found.flightInstanceId).toBe(id);
     await seed(h.prisma);
@@ -104,7 +106,7 @@ describe('INV-02/03/05/06 vuelos: migraci?n, seed, consultas y administraci?n', 
   it('INV-06: una instancia cerrada no ofrece disponibilidad', async () => {
     const id = await createFlight(h, 5);
     const flight = await h.call<{ segment: { departure: { at: string } } }>('GetFlightInstance', { flightInstanceId: id });
-    const date = flight.segment.departure.at.slice(0, 10);
+    const date = localDay(flight.segment.departure.at, 'America/Guayaquil');
     const query = () => h.call<{ flights: { segment: { flightInstanceId: string } }[] }>('QueryAvailability', {
       origin: 'UIO', destination: 'GYE', departureDate: date, passengers: mix(1)
     });

@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { Logger } from '@nestjs/common';
+import { flightLocalDay, flightLocalTime } from '@flight-platform/shared';
 import { credentials, loadPackageDefinition, Metadata, type ChannelCredentials } from '@grpc/grpc-js';
 import { loadSync } from '@grpc/proto-loader';
 import type { GatewayConfig } from '../../config';
@@ -43,14 +44,9 @@ export class GrpcStockPusher implements StockPusher {
   close(): void { this.client?.close(); this.client = undefined; }
 }
 
-/** Hora y fecha locales del aeropuerto de salida (HH:mm y YYYY-MM-DD) a partir de un instante ISO. */
-export function localSlot(isoInstant: string, iata: string, zones: Record<string, string>): { date: string; time: string } {
-  const instant = new Date(isoInstant); const timeZone = zones[iata] ?? 'UTC';
-  let parts: Intl.DateTimeFormatPart[];
-  try { parts = new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(instant); }
-  catch { parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'UTC', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(instant); }
-  const value = (type: string) => parts.find((part) => part.type === type)?.value ?? '00';
-  return { date: `${value('year')}-${value('month')}-${value('day')}`, time: `${value('hour')}:${value('minute')}` };
+/** Hora y fecha locales del aeropuerto de salida (HH:mm y YYYY-MM-DD) a partir de un instante ISO; zonas de `@flight-platform/shared` (sin zona: UTC con aviso). */
+export function localSlot(isoInstant: string, iata: string): { date: string; time: string } {
+  return { date: flightLocalDay(isoInstant, iata, 'stockSync'), time: flightLocalTime(isoInstant, iata, 'stockSync') };
 }
 
 const BACKOFF_MINUTES = [1, 2, 5, 15, 30, 60, 120, 360];
@@ -109,9 +105,8 @@ export class StockSync {
   async snapshot(flightInstanceId: string, correlationId: string): Promise<StockUpdate[]> {
     const flight = await callGatewayGrpc(this.config, 'inventory', 'getFlightInstance', { flightInstanceId }, correlationId, system) as FlightSnapshot;
     const segment = flight.segment; const departure = segment?.departure; if (!segment?.flightNumber || !departure?.iataCode || !departure.at || !segment.arrival?.iataCode) return [];
-    const utcDate = new Date(departure.at).toISOString().slice(0, 10);
-    const availability = await callGatewayGrpc(this.config, 'inventory', 'queryAvailability', { origin: departure.iataCode, destination: segment.arrival.iataCode, departureDate: utcDate, passengers: { adults: 1, youths: 0, children: 0, infants: 0 } }, correlationId, system) as Availability;
-    const local = localSlot(departure.at, departure.iataCode, this.config.v2!.stock.timezones);
+    const local = localSlot(departure.at, departure.iataCode);
+    const availability = await callGatewayGrpc(this.config, 'inventory', 'queryAvailability', { origin: departure.iataCode, destination: segment.arrival.iataCode, departureDate: local.date, passengers: { adults: 1, youths: 0, children: 0, infants: 0 } }, correlationId, system) as Availability;
     return (flight.cabins ?? []).map((cabin) => {
       const match = (availability.flights ?? []).find((item) => item.segment?.flightNumber === segment.flightNumber && item.cabinClass === cabin.cabinClass);
       return { service_id: this.config.v2!.nodeId, item_id: `${segment.flightNumber}-${cabin.cabinClass}`, date: local.date, time_slot: local.time, available_units: flight.closed ? 0 : match?.availableSeats ?? 0, timestamp: this.clock().getTime() };

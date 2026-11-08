@@ -13,7 +13,6 @@ REPOSITORY='flight-platform'
 POOL='github-actions'
 PROVIDER='flight-platform'
 DEPLOY_ACCOUNT="flight-platform-deployer@${PROJECT_ID}.iam.gserviceaccount.com"
-HELLO_ACCOUNT="hello-service-runtime@${PROJECT_ID}.iam.gserviceaccount.com"
 SECRET='internal-api-key'
 
 gcloud services enable \
@@ -34,10 +33,6 @@ fi
 if ! gcloud iam service-accounts describe "$DEPLOY_ACCOUNT" --project="$PROJECT_ID" >/dev/null 2>&1; then
   gcloud iam service-accounts create flight-platform-deployer \
     --display-name='Flight Platform GitHub deployment' --project="$PROJECT_ID" --quiet
-fi
-if ! gcloud iam service-accounts describe "$HELLO_ACCOUNT" --project="$PROJECT_ID" >/dev/null 2>&1; then
-  gcloud iam service-accounts create hello-service-runtime \
-    --display-name='Flight Platform hello runtime' --project="$PROJECT_ID" --quiet
 fi
 
 if ! gcloud iam workload-identity-pools describe "$POOL" --location=global --project="$PROJECT_ID" >/dev/null 2>&1; then
@@ -64,9 +59,6 @@ gcloud artifacts repositories add-iam-policy-binding "$REPOSITORY" \
 gcloud projects add-iam-policy-binding "$PROJECT_ID" \
   --member="serviceAccount:${DEPLOY_ACCOUNT}" --role='roles/run.admin' \
   --quiet >/dev/null
-gcloud iam service-accounts add-iam-policy-binding "$HELLO_ACCOUNT" \
-  --member="serviceAccount:${DEPLOY_ACCOUNT}" --role='roles/iam.serviceAccountUser' \
-  --project="$PROJECT_ID" --quiet >/dev/null
 
 if ! gcloud secrets describe "$SECRET" --project="$PROJECT_ID" >/dev/null 2>&1; then
   gcloud secrets create "$SECRET" --replication-policy=automatic \
@@ -87,9 +79,6 @@ if ! gcloud secrets versions describe latest --secret="$SECRET" --project="$PROJ
     --data-file=- --project="$PROJECT_ID" --quiet >/dev/null
   unset production_key local_key
 fi
-gcloud secrets add-iam-policy-binding "$SECRET" \
-  --member="serviceAccount:${HELLO_ACCOUNT}" --role='roles/secretmanager.secretAccessor' \
-  --project="$PROJECT_ID" --quiet >/dev/null
 
 for service in inventory pricing ancillaries reservation ticketing operations webhooks; do
   runtime_account="${service}-service-runtime@${PROJECT_ID}.iam.gserviceaccount.com"

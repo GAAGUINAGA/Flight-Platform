@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import process from 'node:process';
 import type { Request } from 'express';
+import { flightLocalDay } from '@flight-platform/shared';
 import type { AuthContext } from '../auth';
 import type { GatewayConfig } from '../config';
 import { callGatewayGrpc } from '../grpc-clients';
@@ -85,7 +86,7 @@ export class V2OperationsController {
       all.push(...(result.items ?? [])); cursor = result.page?.nextCursor || undefined; if (!cursor) break;
     }
     let flights = all.filter((item) => (!query.origin || item.segment.departure.iataCode === query.origin) && (!query.destination || item.segment.arrival.iataCode === query.destination));
-    const statusOf = async (item: Occupancy): Promise<OpsFlight | undefined> => this.call(req, 'operations', 'getFlightStatus', { flightNumber: item.segment.flightNumber, date: item.segment.departure.at.slice(0, 10) }).catch(() => undefined) as Promise<OpsFlight | undefined>;
+    const statusOf = async (item: Occupancy): Promise<OpsFlight | undefined> => this.call(req, 'operations', 'getFlightStatus', { flightNumber: item.segment.flightNumber, date: flightLocalDay(item.segment.departure.at, item.segment.departure.iataCode, 'opsPanel') }).catch(() => undefined) as Promise<OpsFlight | undefined>;
     const known = new Map<string, OpsFlight | undefined>();
     if (query.status) { await Promise.all(flights.map(async (item) => known.set(item.flightInstanceId, await statusOf(item)))); flights = flights.filter((item) => known.get(item.flightInstanceId)?.status === query.status); }
 
@@ -115,7 +116,7 @@ export class V2OperationsController {
       if (status === 'DELAYED') alerts.push({ code: 'DELAYED', severity: 'WARNING', message: `Vuelo demorado ${operational ? delayOf(operational) : 0} minutos.` });
       if (checkInOpen) alerts.push({ code: 'CHECKIN_OPEN', severity: 'INFO', message: 'El check-in está abierto.' });
       for (const cabin of cabins) { const free = cabin.seatsByStatus.AVAILABLE as number; if (cabin.totalSeats > 0 && free < LOW_AVAILABILITY) alerts.push({ code: 'LOW_AVAILABILITY', severity: free === 0 ? 'CRITICAL' : 'WARNING', message: `Quedan ${free} asientos en ${cabin.cabinClass}.` }); }
-      return { flightNumber: item.segment.flightNumber, date: item.segment.departure.at.slice(0, 10), origin: item.segment.departure.iataCode, destination: item.segment.arrival.iataCode, departureAt: item.segment.departure.at, status, ...(item.segment.aircraft ? { aircraft: item.segment.aircraft } : {}), totalSeats, loadFactor: totalSeats > 0 ? Math.round((taken / totalSeats) * 1000) / 10 : 0, cabins, activeHolds: item.activeHolds, nextHoldExpiryAt: item.nextHoldExpiryAt ?? null, checkInOpen, alerts };
+      return { flightNumber: item.segment.flightNumber, date: flightLocalDay(item.segment.departure.at, item.segment.departure.iataCode, 'opsPanel'), origin: item.segment.departure.iataCode, destination: item.segment.arrival.iataCode, departureAt: item.segment.departure.at, status, ...(item.segment.aircraft ? { aircraft: item.segment.aircraft } : {}), totalSeats, loadFactor: totalSeats > 0 ? Math.round((taken / totalSeats) * 1000) / 10 : 0, cabins, activeHolds: item.activeHolds, nextHoldExpiryAt: item.nextHoldExpiryAt ?? null, checkInOpen, alerts };
     });
     return { date: query.date, totalFlights: flights.length, nextCursor: start + limit < flights.length && slice.length > 0 ? slice[slice.length - 1].flightInstanceId : null, items };
   }

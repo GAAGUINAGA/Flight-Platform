@@ -1,22 +1,19 @@
-# ADR-F12b1fix-02 — Búsqueda por día local del aeropuerto de salida
-- Estado: **Propuesto** (no implementado) · Fecha: 2026-11-06 · Fase/Tarea: fix/sql-esquema-explicito (hallazgo lateral) · Requisito: NFR-TI-01
+# ADR-F12b1fix-02 — Fecha de vuelo en hora local del aeropuerto de origen
+- Estado: **Aceptado** (diseño aprobado por el humano el 2026-11-07; implementado en la rama fix/busqueda-dia-local) · Fecha: 2026-11-07 (actualiza la propuesta del 2026-11-06) · Fase/Tarea: F12b1 / fix/busqueda-dia-local · Requisito: NFR-TI-01, GAP-029
+- Diseño completo: `docs/dev/diseno-busqueda-dia-local.md`
 ## Contexto
-NFR-TI-01 (investigacion-base.md §NFR): marcas de tiempo en UTC y fechas de vuelo en hora local del aeropuerto con zona IANA. Hoy `dayRange(date)` de inventory-service (`src/application/flight-queries.ts`) interpreta la fecha como día UTC: `[dateT00:00Z, +24 h)`. Lo usan `find`, `list` y `queryAvailability`. El día de la búsqueda coincide con el día local solo en UTC.
-Caso LIM→MAD: salida 2026-11-10 22:30 en Lima (UTC-5) = 2026-11-11T03:30Z. Buscar `2026-11-10` no lo encuentra (cae en el día UTC 11) y buscar `2026-11-11` lo devuelve con una fecha que el pasajero no reconoce. El mismo desfase afecta a cualquier salida entre las 00:00 locales y el desfase de la zona.
-Descubierto al hacer que las pruebas del gateway no dependan de la hora del reloj (se cruzaba el día UTC entre las 21:00 y las 24:00 de Lima); esa corrección solo toca pruebas.
-## Puntos afectados
-| Versión | Punto | Uso actual |
-|---|---|---|
-| v1 y v2 | inventory `flight-queries.ts` `dayRange` (find, list, queryAvailability) | día UTC |
-| v2 | gateway `stock/stock-sync.ts:112` | `utcDate` de la salida hacia `queryAvailability` |
-| v2 | gateway `operations.controller.ts:88`; operations `flight-status.ts:7` | `departure.at.slice(0, 10)` como `date` de `getFlightStatus` y `operational_flights.date` |
-| v1 y v2 | reservation `queries.ts:10` | `departureDate` del resumen con `slice(0, 10)` |
-| v2 | operations `check-in.ts:69` | caducidad de pasaporte contra `slice(0, 10)` de la salida |
-| pruebas | pricing `fake-inventory.gateway.ts:13` | el falso debe reproducir la regla real |
-## Decisión propuesta
-1. Inventory guarda (o resuelve) la zona IANA del aeropuerto de salida; `dayRange(date, zona)` calcula `[00:00 local, 00:00 local del día siguiente)` convertido a UTC (24 h no siempre: cambios de horario).
-2. Un único helper en `packages/shared` (`localDay(instantUtc, zona)` y `localDayRange(fecha, zona)`) que usen todos los puntos de la tabla; ninguno vuelve a cortar con `slice(0, 10)`.
-3. Sin cambio de contrato OpenAPI: `departureDate` ya es una fecha; solo cambia su interpretación (local). Cualquier campo nuevo en proto: aditivo, con su ADR.
-4. Pruebas: tabla por zona (LIM, MAD, UTC+14, cambio de horario) con reloj simulado.
+NFR-TI-01 dice que las fechas de vuelo son la hora local del aeropuerto con zona IANA. Desde F1, `dayRange(date)` de inventory (`flight-queries.ts`) interpreta la fecha como día UTC `[dateT00:00Z, +24 h)`, y lo usan `find`, `list` y `queryAvailability`. Un vuelo con salida local después de las 19:00 en Ecuador, o LIM→MAD el 10 a las 22:30 en Lima (= 11 a las 03:30Z), no aparece al buscar su fecha local. El mismo criterio se repite con `slice(0, 10)` en operations, reservation, el gateway y el falso de pricing.
+## Decisión
+1. `departureDate`, `newDepartureDate` y el `date` de estado de vuelo (v1 y v2) son la fecha local del aeropuerto de **origen** del tramo. Su ventana UTC es `[00:00 local de D, 00:00 local de D+1)`, con el día siguiente calculado por calendario (los días con cambio de horario duran 23 o 25 h).
+2. Fuente única: `packages/shared/src/airport-time.ts` con la tabla IATA→zona IANA (Ecuador, que hoy está en el gateway, más BOG, LIM, MAD y MIA) y las funciones `localDay`, `localTime`, `localDayRange` y `dayWindows`. Inventory convierte fecha→ventana por zona de origen (`find` y `list` usan una ventana por zona porque no reciben el origen). Los demás servicios convierten instante→fecha con la misma función. Se retira el mapa del gateway; `AIRPORT_TIMEZONES` queda obsoleta (se ignora con aviso).
+3. Aeropuerto sin zona: la escritura (`upsertFlightInstance`) se rechaza con `VALIDATION_FAILED`; la lectura usa UTC con un `warn` por IATA, sin fallar.
+4. Sin cambios en OpenAPI, `.proto` ni esquema de base de datos. El seed conserva sus instantes (reinterpretarlos duplicaría vuelos por el `stableId`).
+5. Datos: solo `operational_flights.date` de vuelos cuyo día local difiere del UTC requiere corrección, con un script idempotente que ejecuta el humano. Booking requiere reencolar el stock de BOG, LIM, MIA y MAD, hoy enviado en UTC.
+6. Pruebas con reloj simulado: nocturnos de Ecuador, caso Lima, madrugada, bordes exactos, cambios de horario, y contratos v1/v2 con Ajv.
+## Cambio de comportamiento sin cambio de contrato
+Con esta decisión, v1 y v2 buscan por la **fecha local del aeropuerto de origen** y no por el día UTC. Fundamento: NFR-TI-01 (fechas de vuelo en hora local del aeropuerto con zona IANA) y GAP-029 (la `date` del estado es la fecha local de salida). El contrato OpenAPI no cambia (`departureDate`, `newDepartureDate` y `date` ya son `format: date`), pero un cliente que buscaba con el día UTC de un vuelo nocturno verá ahora el vuelo en su fecha local. Está documentado para Booking en `docs/booking-integration.md`, incluido que las ranuras de stock (`date`, `time_slot`) usan la fecha y hora locales del origen y que las ranuras en UTC de la prueba local pueden descartarse.
+## Alternativas descartadas
+- Tabla `airports` en base de datos: exige migración aplicada por el humano y consulta gRPC desde cada servicio.
+- Campo aditivo en proto con la fecha local: las reservas guardadas no lo tienen y arriesga el contrato público.
 ## Consecuencias
-Cambio coordinado de inventory, operations, reservation, gateway y pricing (falso), con auditoría y redespliegue. Mientras tanto la regla vigente es el día UTC; se registra en BACKLOG.md con PRIORIDAD ALTA.
+Cambio coordinado de inventory, operations, reservation, gateway y el falso de pricing, con auditoría y redespliegue conjunto (con `STOCK_SYNC_ENABLED=false` durante la ventana). Algunas fechas mostradas cambian de forma observable pero correcta: el resumen de reserva y el `date` de FP500 pasan al día local de Lima. Agregar un aeropuerto requiere un cambio en `shared` y reconstruir imágenes (tabla en base de datos: BACKLOG). Queda abierta la depuración en Booking de las ranuras con fecha UTC antigua.

@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { RequestContext, requireRole, validate } from '@flight-platform/shared';
+import { RequestContext, requireRole, validate, zoneOf } from '@flight-platform/shared';
 import { CabinCapacity } from '../domain/cabin-capacity';
 import { InventoryError } from '../domain/errors';
 import { FlightInstance } from '../domain/flight-instance';
@@ -13,6 +13,8 @@ export class FlightAdmin {
   async upsert(ctx: RequestContext, input: unknown): Promise<FlightInstance> {
     requireRole(ctx, 'admin');
     const req = validate(upsertRequest, input);
+    // ADR-F12b1fix-02: sin zona conocida el vuelo no podría buscarse por su fecha local.
+    if (!zoneOf(req.departureIata)) throw new InventoryError('VALIDATION_FAILED');
     const departureAt = new Date(req.departureAt);
     // Falla r?pido, antes de tocar la base, si el vuelo es incoherente.
     if (new Date(req.arrivalAt) <= departureAt || req.departureIata === req.arrivalIata) {

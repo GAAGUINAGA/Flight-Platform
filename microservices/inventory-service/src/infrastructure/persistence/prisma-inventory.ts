@@ -1,4 +1,5 @@
 import { setTimeout } from 'node:timers';
+import type { DayWindow } from '@flight-platform/shared';
 import { Prisma, PrismaClient } from '@prisma/client';
 import { CabinClass } from '../../domain/cabin';
 import { CabinCapacity } from '../../domain/cabin-capacity';
@@ -25,6 +26,16 @@ type Db = PrismaClient | Prisma.TransactionClient;
 
 const CABIN_ORDER: CabinClass[] = ['ECONOMY', 'PREMIUM_ECONOMY', 'BUSINESS', 'FIRST'];
 
+/** Una rama por zona: cada vuelo se compara con la ventana del día local de SU aeropuerto de origen. */
+function windowsWhere(windows: DayWindow[]): Prisma.FlightInstanceWhereInput {
+  return {
+    OR: windows.map((w) => ({
+      departureIata: w.exclude ? { notIn: w.iatas } : { in: w.iatas },
+      departureAt: { gte: w.from, lt: w.to }
+    }))
+  };
+}
+
 export function toFlight(row: FlightRow): FlightInstance {
   const cabins = [...row.cabins]
     .sort((a, b) => CABIN_ORDER.indexOf(a.cabinClass as CabinClass) - CABIN_ORDER.indexOf(b.cabinClass as CabinClass))
@@ -47,7 +58,7 @@ export class PrismaFlightReader implements FlightReader {
   constructor(private readonly db: Db) {}
 
   private async one(where: Prisma.FlightInstanceWhereInput): Promise<FlightInstance | null> {
-    const row = await this.db.flightInstance.findFirst({ where, include: { cabins: true } });
+    const row = await this.db.flightInstance.findFirst({ where, include: { cabins: true }, orderBy: [{ departureAt: 'asc' }, { id: 'asc' }] });
     return row ? toFlight(row) : null;
   }
 
@@ -55,8 +66,8 @@ export class PrismaFlightReader implements FlightReader {
     return this.one({ id });
   }
 
-  find(flightNumber: string, from: Date, to: Date): Promise<FlightInstance | null> {
-    return this.one({ flightNumber, departureAt: { gte: from, lt: to } });
+  find(flightNumber: string, windows: DayWindow[]): Promise<FlightInstance | null> {
+    return this.one({ flightNumber, ...windowsWhere(windows) });
   }
 
   findByNumberAndDeparture(flightNumber: string, departureAt: Date): Promise<FlightInstance | null> {
@@ -65,7 +76,7 @@ export class PrismaFlightReader implements FlightReader {
 
   async list(q: ListFlightsQuery): Promise<FlightInstance[]> {
     const rows = await this.db.flightInstance.findMany({
-      where: q.from && q.to ? { departureAt: { gte: q.from, lt: q.to } } : undefined,
+      where: q.windows ? windowsWhere(q.windows) : undefined,
       include: { cabins: true },
       orderBy: [{ departureAt: 'asc' }, { id: 'asc' }],
       take: q.limit,

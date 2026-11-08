@@ -1,3 +1,4 @@
+import type { DayWindow } from '@flight-platform/shared';
 import { CabinClass } from '../domain/cabin';
 import { FlightInstance } from '../domain/flight-instance';
 import { HoldStatus, InventoryHold } from '../domain/inventory-hold';
@@ -21,8 +22,8 @@ export type CapacityChange = 'hold' | 'release' | 'consume' | 'releaseSold';
 export interface ExpiredHold { holdId: string; ownerId: string }
 
 export interface ListFlightsQuery {
-  from?: Date;
-  to?: Date;
+  /** Ventanas del día local por zona de origen (ADR-F12b1fix-02); sin ellas no se filtra por fecha. */
+  windows?: DayWindow[];
   cursor?: string;
   limit: number;
 }
@@ -30,7 +31,8 @@ export interface ListFlightsQuery {
 /** Lecturas de vuelos (sin bloqueo). */
 export interface FlightReader {
   get(id: string): Promise<FlightInstance | null>;
-  find(flightNumber: string, from: Date, to: Date): Promise<FlightInstance | null>;
+  /** Primer vuelo (por salida) del número cuyo instante cae en la ventana de su propio aeropuerto de origen. */
+  find(flightNumber: string, windows: DayWindow[]): Promise<FlightInstance | null>;
   list(query: ListFlightsQuery): Promise<FlightInstance[]>;
   search(origin: string, destination: string, from: Date, to: Date): Promise<FlightInstance[]>;
   findByNumberAndDeparture(flightNumber: string, departureAt: Date): Promise<FlightInstance | null>;

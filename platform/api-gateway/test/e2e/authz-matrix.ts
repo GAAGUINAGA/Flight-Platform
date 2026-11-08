@@ -40,6 +40,13 @@ const scopesOf: Record<Actor, string> = {
 };
 const victimOf: Record<Actor, Actor> = { customer: 'partner', partner: 'admin', admin: 'customer' };
 
+/**
+ * Origen de los vuelos que se crean por la API de admin (Upsert rechaza un aeropuerto sin zona, ADR-F12b1fix-02). Son aeropuertos de la tabla de
+ * zonas que no usa el seed; las salidas de estas pruebas son a las 10:00Z (05:00 locales), así que el día local y el UTC coinciden.
+ */
+const ADMIN_ORIGINS = ['CUE', 'LTX', 'MEC', 'ESM', 'TUA', 'LOH', 'PVO', 'OCC', 'TPC', 'XMS'];
+export const adminOrigin = (): string => ADMIN_ORIGINS[randomInt(0, ADMIN_ORIGINS.length)];
+
 interface Ctx { sub: string; bearer: string; passengerId: string; holdRead: string; holdBook: string; bookingId: string; checkInBookingId: string; ticketId: string; changeOfferId: string; quoteId: string; webhookId: string; adminFlightId: string }
 interface Pick { offerId: string; itineraryId: string; segmentId: string; cabinClass: string; fareBrand: string }
 interface Op {
@@ -90,7 +97,7 @@ export function registerAuthorizationMatrix(harness: MatrixHarness): void {
     const holdBody = (pick: Pick) => ({ offerId: pick.offerId, itinerarySelections: [{ itineraryId: pick.itineraryId, cabinClass: pick.cabinClass, fareBrand: pick.fareBrand }], passengersBreakdown: { adults: 1 } });
     const bookingBody = (c: Ctx, holdId: string, pick: Pick, seat?: string) => ({ holdId, passengers: [passenger(c.passengerId, pick.segmentId, seat)], payment: { paymentReference: `pay_ok_${randomUUID()}` } });
     const fareBody = (flightInstanceId: string) => ({ flightInstanceId, cabinClass: 'ECONOMY', fareBrand: 'FLEX', price: { currency: 'USD', baseFare: '100.00', taxes: '20.00', total: '120.00' }, fareRules: { isRefundable: true, isChangeable: false }, baggageAllowance: { personalItemIncluded: true, carryOnIncluded: 1, checkedBaggageIncluded: 0 }, extraCheckedBaggagePrice: { currency: 'USD', total: '50.00' } });
-    const adminFlightBody = () => { const departure = new Date(Date.now() + 9 * 86_400_000); departure.setUTCHours(10, 0, 0, 0); return { flightNumber: `FP${randomInt(1000, 10000)}`, departureIata: origin, arrivalIata: destination, departureAt: departure.toISOString(), arrivalAt: new Date(departure.getTime() + 3_600_000).toISOString(), cabins: [{ cabinClass: 'ECONOMY', capacity: 20 }] }; };
+    const adminFlightBody = () => { const departure = new Date(Date.now() + 9 * 86_400_000); departure.setUTCHours(10, 0, 0, 0); return { flightNumber: `FP${randomInt(1000, 10000)}`, departureIata: adminOrigin(), arrivalIata: destination, departureAt: departure.toISOString(), arrivalAt: new Date(departure.getTime() + 3_600_000).toISOString(), cabins: [{ cabinClass: 'ECONOMY', capacity: 20 }] }; };
     const webhookBody = () => ({ url: 'https://93.184.216.34/matrix', events: ['booking.confirmed'], secret: `matrix-${randomUUID()}` });
     const searchBody = (date: string) => ({ itineraries: [{ origin, destination, departureDate: date }], passengers: { adults: 1 } });
 
