@@ -2,6 +2,7 @@
  * Único lugar donde se traducen los estados y campos de la API de pagos de Booking a los tres resultados que usa la saga.
  * El formato real de `GET /pagos/{paymentReference}` se confirma en la reunión: cambiarlo es solo configuración
  * (`BOOKING_PAYMENTS_STATUS_MAP`, `BOOKING_PAYMENTS_FIELDS`), sin tocar el adaptador.
+ * Booking confirma con `CAPTURED` (verificado en producción el 08-11-2026).
  */
 export type PaymentOutcome = 'CONFIRMED' | 'PENDING' | 'FAILED';
 
@@ -9,7 +10,7 @@ export interface PaymentFields { status: string[]; amount: string[]; currency: s
 export type StatusMap = Record<PaymentOutcome, string[]>;
 
 export const DEFAULT_STATUS_MAP: StatusMap = {
-  CONFIRMED: ['CONFIRMED', 'CONFIRMADO', 'CONFIRMADA', 'PAID', 'PAGADO', 'APPROVED', 'APROBADO', 'SUCCESS', 'SUCCEEDED', 'COMPLETED', 'COMPLETADO'],
+  CONFIRMED: ['CONFIRMED', 'CONFIRMADO', 'CONFIRMADA', 'PAID', 'PAGADO', 'APPROVED', 'APROBADO', 'SUCCESS', 'SUCCEEDED', 'COMPLETED', 'COMPLETADO', 'CAPTURED', 'CAPTURADO'],
   PENDING: ['PENDING', 'PENDIENTE', 'PROCESSING', 'EN_PROCESO', 'AUTHORIZED_PENDING', 'IN_PROGRESS'],
   FAILED: ['FAILED', 'FALLIDO', 'FALLIDA', 'REJECTED', 'RECHAZADO', 'DECLINED', 'DENIED', 'CANCELLED', 'CANCELED', 'CANCELADO', 'EXPIRED', 'EXPIRADO', 'REFUNDED', 'REEMBOLSADO', 'ERROR']
 };

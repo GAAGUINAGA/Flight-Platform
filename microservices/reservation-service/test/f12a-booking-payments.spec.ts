@@ -114,4 +114,41 @@ describe('F12a verificador de pagos de Booking (D4)', () => {
     let seen = ''; await new BookingPaymentVerifier({ ...config, fetchImpl: (async (url: string) => { seen = url; return new Response(JSON.stringify({ estado: 'PENDIENTE' })); }) as unknown as typeof fetch }).verify(input);
     expect(seen).toBe('http://100.64.1.2:9000/v2/payments/PAY-BKP-001/status/'.replace(/\/$/, ''));
   });
+  // ADR-F12c-01: el pago de Booking incluye su servicio; basta con que cubra el total (630 nuestros + 63 de Booking = 693).
+  const BOOKING_REAL = { payment_reference: 'PAY-BKP-20261108-226306', status: 'CAPTURED', amount: 693, refunded_amount: 0, currency: 'USD', captured_at: '2026-11-08T22:18:22.600Z', auth_code: 'AUTH-PAG-BE3D6520', bookings: [] };
+  const reservation630 = { paymentReference: 'PAY-BKP-20261108-226306', currency: 'USD', total: '630.00' };
+  it('PAY-31: la respuesta real de Booking (CAPTURED, 693) cubre una reserva de 630 y se acepta', async () => {
+    await expect(make(reply(BOOKING_REAL) as never).verify(reservation630)).resolves.toBe('AUTHORIZED');
+  });
+  it('PAY-32: la misma respuesta real con REFUNDED se rechaza como no autorizada', async () => {
+    await expect(make(reply({ ...BOOKING_REAL, status: 'REFUNDED', refunded_amount: 693 }) as never).verify(reservation630)).rejects.toMatchObject({ code: 'PAYMENT_NOT_AUTHORIZED' });
+  });
+  it('PAY-33: monto igual y mayor autorizan; menor (incluso por un centavo) es AMOUNT_MISMATCH', async () => {
+    await expect(make(reply({ status: 'CAPTURED', amount: 630, currency: 'USD' }) as never).verify(reservation630)).resolves.toBe('AUTHORIZED');
+    await expect(make(reply({ status: 'CAPTURED', amount: 630.01, currency: 'USD' }) as never).verify(reservation630)).resolves.toBe('AUTHORIZED');
+    await expect(make(reply({ status: 'CAPTURED', amount: 629.99, currency: 'USD' }) as never).verify(reservation630)).rejects.toMatchObject({ code: 'AMOUNT_MISMATCH' });
+    await expect(make(reply({ status: 'CAPTURED', amount: 63, currency: 'USD' }) as never).verify(reservation630)).rejects.toMatchObject({ code: 'AMOUNT_MISMATCH' });
+  });
+  it('PAY-34: monto mayor pero en otra moneda sigue siendo AMOUNT_MISMATCH', async () => {
+    await expect(make(reply({ status: 'CAPTURED', amount: 693, currency: 'EUR' }) as never).verify(reservation630)).rejects.toMatchObject({ code: 'AMOUNT_MISMATCH' });
+  });
+  it('PAY-35: CAPTURED y CAPTURADO se reconocen como confirmados; PENDING y un estado desconocido no autorizan', async () => {
+    expect(classifyStatus('CAPTURED')).toBe('CONFIRMED'); expect(classifyStatus('captured')).toBe('CONFIRMED'); expect(classifyStatus('Capturado')).toBe('CONFIRMED');
+    await expect(make(reply({ status: 'PENDING', amount: 693, currency: 'USD' }) as never).verify(reservation630)).resolves.toBe('PENDING');
+    await expect(make(reply({ status: 'CHARGEBACK', amount: 693, currency: 'USD' }) as never).verify(reservation630)).rejects.toMatchObject({ code: 'PAYMENT_NOT_AUTHORIZED' });
+  });
+  it('PAY-36: con monto mayor se registra la diferencia en unidades menores, sin referencia, pnr ni credencial', async () => {
+    const log = jest.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
+    try {
+      await make(reply(BOOKING_REAL) as never).verify(reservation630);
+      const messages = log.mock.calls.map((call) => String(call[0])); expect(messages).toHaveLength(1);
+      expect(messages[0]).toContain('exceeds the reservation total by 6300 minor units'); expect(messages[0]).not.toMatch(/PAY-BKP|AUTH-PAG|Bearer|\b693\b|\b630\b/);
+      await make(reply({ status: 'CAPTURED', amount: 630, currency: 'USD' }) as never).verify(reservation630); expect(log).toHaveBeenCalledTimes(1);
+    } finally { log.mockRestore(); }
+  });
+  it('PAY-37: BOOKING_PAYMENTS_FIELDS permite tomar nuestro monto de otro campo (p. ej. bookings[] aplanado como our_amount)', async () => {
+    const fields = parseFields(JSON.stringify({ amount: ['our_amount'] }));
+    await expect(make(reply({ ...BOOKING_REAL, our_amount: '630.00' }) as never, { fields }).verify(reservation630)).resolves.toBe('AUTHORIZED');
+    await expect(make(reply({ ...BOOKING_REAL, our_amount: '600.00' }) as never, { fields }).verify(reservation630)).rejects.toMatchObject({ code: 'AMOUNT_MISMATCH' });
+  });
 });

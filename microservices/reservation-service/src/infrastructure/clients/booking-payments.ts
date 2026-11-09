@@ -55,7 +55,7 @@ const minorOf = (raw: unknown): number | undefined => {
 };
 
 /**
- * Verifica el pago consultando a Booking (D4): confirmado con monto y moneda iguales continúa; monto distinto → AMOUNT_MISMATCH;
+ * Verifica el pago consultando a Booking (D4): confirmado, en la misma moneda y con monto MAYOR O IGUAL al total de la reserva continúa (ADR-F12c-01); monto menor → AMOUNT_MISMATCH;
  * pendiente → PENDING (la reserva queda en PENDING_PAYMENT y el scheduler reverifica); fallido o inexistente → PAYMENT_NOT_AUTHORIZED;
  * sin respuesta en el plazo → proveedor no disponible (503). `void`/`refund` no hacen nada: Booking ejecuta los reembolsos.
  */
@@ -80,8 +80,11 @@ export class BookingPaymentVerifier implements PaymentVerifier {
     if (outcome === 'FAILED') throw new DomainError('PAYMENT_NOT_AUTHORIZED');
     if (outcome === 'PENDING') return 'PENDING';
     const amount = minorOf(pickField(body, this.config.fields.amount)); const currency = pickField(body, this.config.fields.currency);
-    if (amount === undefined || amount !== decimalToMinor(input.total)) throw new DomainError('AMOUNT_MISMATCH');
+    const total = decimalToMinor(input.total);
+    // ADR-F12c-01 (modifica D4): el pago de Booking incluye su servicio (y en paquetes, otros proveedores): basta con que cubra el total de la reserva.
+    if (amount === undefined || amount < total) throw new DomainError('AMOUNT_MISMATCH');
     if (typeof currency === 'string' && currency.trim().toUpperCase() !== input.currency.toUpperCase()) throw new DomainError('AMOUNT_MISMATCH');
+    if (amount > total) logger.log(`payment amount exceeds the reservation total by ${amount - total} minor units (currency=${input.currency.toUpperCase()})`);
     return 'AUTHORIZED';
   }
   async void(): Promise<void> { /* Booking administra su cobro */ }

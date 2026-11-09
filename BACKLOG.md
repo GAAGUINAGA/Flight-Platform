@@ -88,25 +88,25 @@
 - Arranques en frío de Cloud Run: la primera llamada de cada flujo (createReservation en F11a, checkIn en F11b) puede responder 503 por plazo agotado. Antes de PLT-J3, decidir entre min-instances=1 en los servicios críticos (con su costo) o un precalentamiento de los servicios antes de ejecutar los recorridos.
 
 ## Observaciones de docs/audit/audits/F11/audit-6.md
-- FECHA L�MITE 2026-11-23: vence la excepci�n de zod en scripts/audit-policy.cjs; desde ese d�a el CI falla y no se puede desplegar. Migrar a zod 4 en todos los servicios antes de esa fecha.
-- FECHA L�MITE inicios de diciembre de 2026: el seed de vuelos en Supabase deja de tener vuelos futuros; regenerarlo antes.
-- webhooks: payloadData pas� de .strict() a .passthrough() para aceptar holdId; restringirlo a los campos conocidos del contrato m�s holdId.
-- PLAN �1.3 (GAP-025) describe hold.expired como { status: "EXPIRED" }; actualizarlo con holdId (ADR-F11-13).
-- Faltan pruebas: PrismaSchedulerStore contra Postgres, y la rama de reversi�n de RecoverCheckIns (markBlocked) con almac�n real.
+- FECHA L MITE 2026-11-23: vence la excepci n de zod en scripts/audit-policy.cjs; desde ese d a el CI falla y no se puede desplegar. Migrar a zod 4 en todos los servicios antes de esa fecha.
+- FECHA L MITE inicios de diciembre de 2026: el seed de vuelos en Supabase deja de tener vuelos futuros; regenerarlo antes.
+- webhooks: payloadData pas  de .strict() a .passthrough() para aceptar holdId; restringirlo a los campos conocidos del contrato m s holdId.
+- PLAN  1.3 (GAP-025) describe hold.expired como { status: "EXPIRED" }; actualizarlo con holdId (ADR-F11-13).
+- Faltan pruebas: PrismaSchedulerStore contra Postgres, y la rama de reversi n de RecoverCheckIns (markBlocked) con almac n real.
 - SCHEDULER_BATCH_SIZE solo acota resumePending y recoverCheckIns; expireHolds y dispatchPending usan lotes fijos de 500 y 100.
 
-- operations: al retrasar o cancelar un vuelo, tambi�n se notifica a las reservas ya canceladas; filtrar por estado. La notificaci�n fallida solo se reintenta si un admin repite la actualizaci�n; considerar reintento desde el scheduler.
-- webhooks: webhook-security.spec.ts est� en test/security y no corre en CI (el workflow solo ejecuta test/unit); moverla o ampliar el comando de CI.
+- operations: al retrasar o cancelar un vuelo, tambi n se notifica a las reservas ya canceladas; filtrar por estado. La notificaci n fallida solo se reintenta si un admin repite la actualizaci n; considerar reintento desde el scheduler.
+- webhooks: webhook-security.spec.ts est  en test/security y no corre en CI (el workflow solo ejecuta test/unit); moverla o ampliar el comando de CI.
 
-- Seed de Supabase renovado el 2026-10-25 (inventory y luego pricing, ambos idempotentes con skipDuplicates). Cubre 60 d�as desde esa fecha; renovarlo antes de que se agoten los vuelos futuros. Documentar el procedimiento en F11d-1.
+- Seed de Supabase renovado el 2026-10-25 (inventory y luego pricing, ambos idempotentes con skipDuplicates). Cubre 60 d as desde esa fecha; renovarlo antes de que se agoten los vuelos futuros. Documentar el procedimiento en F11d-1.
 
-- deploy-hello.yml fallar�a si un push a main toca platform/hello: deploy-service.yml ejecuta prisma:generate y hello no define ese script. Corregirlo o retirar hello del despliegue. RESUELTO: hello retirado (rama fix/busqueda-dia-local).
+- deploy-hello.yml fallar a si un push a main toca platform/hello: deploy-service.yml ejecuta prisma:generate y hello no define ese script. Corregirlo o retirar hello del despliegue. RESUELTO: hello retirado (rama fix/busqueda-dia-local).
 
 - gateway-ci.yml no incluye packages/contracts/** en sus paths (hoy no afecta: el gateway no importa contracts).
 
 ## Observaciones de docs/audit/audits/F11/audit-14.md
-- render-journeys.cjs solo comprueba CORS con origen permitido si existe SMOKE_CORS_ALLOWED_ORIGIN; hacerlo obligatorio o tomarlo de la configuraci�n.
-- Matriz PLT-SEC-03: las celdas de �xito de OP-05, OP-10, OP-12, OP-14 y OP-17 no releen el estado guardado, y las celdas 401 y 403 no comprueban ausencia de efectos (la prueba de recurso ajeno s�).
+- render-journeys.cjs solo comprueba CORS con origen permitido si existe SMOKE_CORS_ALLOWED_ORIGIN; hacerlo obligatorio o tomarlo de la configuraci n.
+- Matriz PLT-SEC-03: las celdas de  xito de OP-05, OP-10, OP-12, OP-14 y OP-17 no releen el estado guardado, y las celdas 401 y 403 no comprueban ausencia de efectos (la prueba de recurso ajeno s ).
 - La negativa de ticketing a arrancar con TICKETING_FAIL_MODE depende de que NODE_ENV sea exactamente "production" (lo fija el Dockerfile).
 
 ## Observaciones de docs/audit/audits/F11/audit-15.md
@@ -119,8 +119,8 @@
 - F12b (panel de operaciones, P6): `CHECKED_IN` puede calcularse con los check-ins de operations por vuelo (hoy sale 0); junto con `HELD` por asiento y `BOARDED` (sin proceso de abordaje todavía). `BOOKED` sigue en 0 mientras la emisión v2 sea inmediata (ADR-F12-10).
 
 ## Observaciones de docs/audit/audits/F12/audit-1.md (antes del despliegue en la nube)
-- La redacci�n de logs no incluye las cabeceras x-webhook-signature, x-api-key, x-user-id ni x-device-fingerprint; agregarlas y una prueba de logs v2.
-- booking-events sin BOOKING_EVENTS_CLIENT_ID permite apuntar a reservas de cualquier cliente: hacerlo obligatorio (negarse a arrancar sin �l cuando booking-events est� habilitado).
+- La redacci n de logs no incluye las cabeceras x-webhook-signature, x-api-key, x-user-id ni x-device-fingerprint; agregarlas y una prueba de logs v2.
+- booking-events sin BOOKING_EVENTS_CLIENT_ID permite apuntar a reservas de cualquier cliente: hacerlo obligatorio (negarse a arrancar sin  l cuando booking-events est  habilitado).
 - (F12a-2) Rotar la contraseña de svc_gateway que estuvo en platform/api-gateway/.env.supabase.example (commit 00a0a30).
 - (F12a-2) Relleno opcional de boarding_passes.cabin_class para check-ins anteriores a la migración 20261027220000 (ADR-F12a2-02).
 
@@ -129,9 +129,9 @@
 - PRC-12 (pricing-service, inventory-real.spec.ts): al ejecutarla sola con -t, Jest no termina el proceso (queda un recurso abierto, probablemente el cliente gRPC hacia inventory). Cerrar el recurso en el teardown.
 
 ## Observaciones de docs/audit/audits/F12/audit-2.md
-- PRIORIDAD: la b�squeda aplica SEARCH_MAX_OFFERS por tramo antes de combinar; en multidestino el mismo d�a con un l�mite bajo puede devolver cero ofertas aunque exista una combinaci�n v�lida. Aplicar el l�mite despu�s de combinar (o combinar con un tope por tramo mayor que el l�mite final).
+- PRIORIDAD: la b squeda aplica SEARCH_MAX_OFFERS por tramo antes de combinar; en multidestino el mismo d a con un l mite bajo puede devolver cero ofertas aunque exista una combinaci n v lida. Aplicar el l mite despu s de combinar (o combinar con un tope por tramo mayor que el l mite final).
 - CHECKED_IN del panel: excluir a los infantes sin asiento propio.
-- Una prueba del gateway fall� una vez en el clon limpio (no identificada; no se repiti� en cuatro corridas). Vigilar.
+- Una prueba del gateway fall  una vez en el clon limpio (no identificada; no se repiti  en cuatro corridas). Vigilar.
 
 
 
@@ -141,3 +141,7 @@
 - Las pruebas de la excepción NODE_ENV=test de BOOKING_EVENTS_CLIENT_ID no fijan explícitamente el caso test.
 
 - infra/scripts/gcp-setup.sh no incluye el ESB en el bucle de cuentas de servicio (la cuenta esb-service-runtime y sus permisos se crearon a mano en F12b-1). Agregar esb al bucle para que el script pueda recrear el proyecto completo.
+
+##Observaciones en F12-c1
+- La segunda corrida completa del Gateway tuvo 1 fallo intermitente en `p1-security.e2e.spec.ts`, sin `ENOBUFS`; el archivo pasó aislado (49/49) y las dos corridas completas siguientes pasaron (868/868, 1 `todo`).
+- Conviene renombrar `ADR-F12c-01-pago-booking-cubre-tarifa.md`: el prefijo F12c corresponde a GraphQL/UI y puede confundirse con esa entrega.
