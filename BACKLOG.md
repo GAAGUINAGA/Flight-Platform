@@ -145,3 +145,5 @@
 ##Observaciones en F12-c1
 - La segunda corrida completa del Gateway tuvo 1 fallo intermitente en `p1-security.e2e.spec.ts`, sin `ENOBUFS`; el archivo pasó aislado (49/49) y las dos corridas completas siguientes pasaron (868/868, 1 `todo`).
 - Conviene renombrar `ADR-F12c-01-pago-booking-cubre-tarifa.md`: el prefijo F12c corresponde a GraphQL/UI y puede confundirse con esa entrega.
+
+- v1 POST /bookings con un passengerId que no es UUID (por ejemplo, PAX-1234) responde 500 (Reservation, prisma P2023) en lugar de 400 VALIDATION_FAILED: falta validar el formato en la entrada. Detectado el 09-11-2026 en producción con un script de prueba.
