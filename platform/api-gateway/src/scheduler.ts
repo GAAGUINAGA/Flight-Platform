@@ -1,5 +1,8 @@
 import { Logger, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';
 import type { GatewayConfig } from './config';
+import type { AuthContext } from './auth';
+import { callEsbOperation, deadlineFor } from './esb-client';
+import { ESB_PUBLISH_EVENTS } from './esb-operations';
 import * as grpc from './grpc-clients';
 import type { SchedulerStore } from './scheduler-store';
 
@@ -11,6 +14,13 @@ export class GatewayScheduler implements OnModuleInit, OnModuleDestroy {
   private get tasks(): Task[] { return this.stock?.enabled ? ['expire-holds', 'resume-pending', 'dispatch-pending', 'recover-check-ins', 'stock-sync'] : ['expire-holds', 'resume-pending', 'dispatch-pending', 'recover-check-ins']; }
   async onModuleInit(): Promise<void> { if (!this.config.schedulerEnabled) return; await this.runAll(); for (const task of this.tasks) this.timers.push(globalThis.setInterval(() => void this.run(task), this.config.schedulerEveryMs)); this.timers.push(globalThis.setInterval(() => void this.run('purge-idempotency'), this.config.schedulerPurgeEveryMs)); }
   onModuleDestroy(): void { for (const timer of this.timers) globalThis.clearInterval(timer); this.timers.length = 0; }
+  /** Un fallo al publicar no impide despachar lo que ya estaba pendiente; los eventos esperan en la outbox del ESB. */
+  private async publishEvents(auth: AuthContext): Promise<void> {
+    try { await callEsbOperation(this.config, { operation: ESB_PUBLISH_EVENTS, input: {}, correlationId: 'gateway-scheduler', auth, deadlineMs: deadlineFor('webhooks', 'dispatchPending') }); } catch (error) {
+      const code = typeof error === 'object' && error !== null && 'code' in error ? String(error.code) : 'UNKNOWN';
+      this.logger.warn(JSON.stringify({ task: 'dispatch-pending', dependency: 'esb-bus', code }));
+    }
+  }
   async runAll(): Promise<void> { await Promise.all([...this.tasks, 'purge-idempotency' as Task].map((task) => this.run(task))); }
   async run(task: Task): Promise<void> {
     const now = this.clock(); if (!await this.store.acquire(task, now, new Date(now.getTime() + this.config.schedulerLockLeaseMs))) return;
@@ -20,7 +30,11 @@ export class GatewayScheduler implements OnModuleInit, OnModuleDestroy {
       const auth = { ownerId: 'gateway-scheduler', role: 'system', scopes: new Set<string>() };
       if (task === 'expire-holds') await grpc.callGatewayGrpc(this.config, 'inventory', 'expireHolds', {}, 'gateway-scheduler', auth);
       if (task === 'resume-pending') await grpc.callGatewayGrpc(this.config, 'reservation', 'resumePending', { limit: this.config.schedulerBatchSize }, 'gateway-scheduler', auth);
-      if (task === 'dispatch-pending') await grpc.callGatewayGrpc(this.config, 'webhooks', 'dispatchPending', {}, 'gateway-scheduler', auth);
+      if (task === 'dispatch-pending') {
+        // F12b-2 (ADR-F12b-04): primero se publica la outbox al bus y después Webhooks retira el lote y entrega, en el mismo tick y bajo el mismo bloqueo.
+        if (this.config.transport === 'esb') await this.publishEvents(auth);
+        await grpc.callGatewayGrpc(this.config, 'webhooks', 'dispatchPending', {}, 'gateway-scheduler', auth);
+      }
       if (task === 'recover-check-ins') await grpc.callGatewayGrpc(this.config, 'operations', 'recoverCheckIns', { limit: this.config.schedulerBatchSize }, 'gateway-scheduler', auth);
     } catch (error) { const code = typeof error === 'object' && error !== null && 'code' in error ? String(error.code) : 'UNKNOWN'; this.logger.warn(JSON.stringify({ task, dependency: task === 'purge-idempotency' ? 'gateway-db' : 'grpc', code })); }
     finally { await this.store.release(task); }

@@ -3,7 +3,8 @@ import { grpcBindUrl } from './bind-host';
 import 'reflect-metadata';
 import { join } from 'node:path';
 import process from 'node:process';
-import { createGrpcClient, withGrpcCallContext } from '@flight-platform/shared';
+import { from } from 'rxjs';
+import { createGrpcClient, esbEventClientFromEnv, warnIfEventBusBypassed, withGrpcCallContext, type EsbEventInput } from '@flight-platform/shared';
 import { PrismaClient } from './infrastructure/persistence/prisma-client/client';
 import { GrpcEventPublisher, GrpcInventoryGateway, GrpcReservationGateway } from './infrastructure/adapters/grpc-adapters';
 import { GrpcCheckInReservation, GrpcCheckInSeats, GrpcCheckInTicketing } from './infrastructure/adapters/check-in-grpc';
@@ -24,17 +25,20 @@ export function createOperationsRuntime(internalApiKey: string, prisma: PrismaCl
   const ticketingOptions = { ...clientOptions, url: process.env.TICKETING_GRPC_URL ?? 'localhost:50055', packageName: 'flightplatform.ticketing.v1', protoPath: join(root, 'flightplatform', 'ticketing', 'v1', 'ticketing.proto'), serviceName: 'TicketingService' };
   const seatsOptions = { ...clientOptions, url: process.env.ANCILLARIES_GRPC_URL ?? 'localhost:50053', packageName: 'flightplatform.ancillaries.v1', protoPath: join(root, 'flightplatform', 'ancillaries', 'v1', 'ancillaries.proto'), serviceName: 'AncillariesService' };
   const inventoryClient = createGrpcClient(inventoryOptions);
-  const eventsClient = createGrpcClient(eventsOptions);
+  // F12b-2 (ADR-F12b-04, ADR-F12b2-01): con ESB_URL los eventos van al ESB (outbox → bus); sin ella se conserva la ruta gRPC a Webhooks.
+  warnIfEventBusBypassed(process.env, 'operations-service');
+  const esb = process.env.ESB_URL ? esbEventClientFromEnv(process.env, internalApiKey, 'operations-service') : undefined;
+  const eventsClient = esb ? undefined : createGrpcClient(eventsOptions);
   const reservationClient = createGrpcClient(reservationOptions);
   const ticketingClient = createGrpcClient(ticketingOptions);
   const seatsClient = createGrpcClient(seatsOptions);
   const inventory = new GrpcInventoryGateway(withGrpcCallContext(inventoryClient.getService(inventoryOptions.serviceName), inventoryOptions));
-  const events = new GrpcEventPublisher(withGrpcCallContext(eventsClient.getService(eventsOptions.serviceName), eventsOptions));
+  const events = new GrpcEventPublisher(esb ? { publishEvent: (input) => from(esb.publish(input as EsbEventInput)) } : withGrpcCallContext(eventsClient!.getService(eventsOptions.serviceName), eventsOptions));
   const reservations = new GrpcReservationGateway(withGrpcCallContext(reservationClient.getService(reservationOptions.serviceName), { ...reservationOptions, role: 'system' }));
   const checkInReservation = new GrpcCheckInReservation(reservationClient.getService(reservationOptions.serviceName), reservationOptions);
   const checkInTicketing = new GrpcCheckInTicketing(ticketingClient.getService(ticketingOptions.serviceName), ticketingOptions);
   const checkInSeats = new GrpcCheckInSeats(seatsClient.getService(seatsOptions.serviceName), seatsOptions);
-  return { runtime: { prisma, inventory, reservations, events, checkInReservation, checkInTicketing, checkInSeats }, close: () => { for (const client of [inventoryClient, eventsClient, reservationClient, ticketingClient, seatsClient]) (client as unknown as { close(): void }).close(); } };
+  return { runtime: { prisma, inventory, reservations, events, checkInReservation, checkInTicketing, checkInSeats }, close: () => { for (const client of [inventoryClient, eventsClient, reservationClient, ticketingClient, seatsClient]) if (client) (client as unknown as { close(): void }).close(); } };
 }
 
 async function bootstrap() {

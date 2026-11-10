@@ -10,10 +10,12 @@ import { GRPC, httpStatusFor, operationError } from './domain/errors';
 import { GrpcServiceInvoker } from './infrastructure/grpc/grpc-invoker';
 import { GrpcHealthProbe } from './infrastructure/grpc/health-probe';
 import { JsonOperationLogger } from './infrastructure/logging/operation-logger';
-import { EXECUTE_OPERATION, OperationsController } from './infrastructure/http/operations.controller';
+import { BUS_HEALTH, EXECUTE_OPERATION, OperationsController } from './infrastructure/http/operations.controller';
+import type { EventOperations } from './application/event-ports';
+import { buildEventRuntime, type BusHealth } from './infrastructure/events/runtime';
 
 /** Piezas sustituibles en pruebas. Sin ellas se usan los adaptadores reales (gRPC, sondeo gRPC, log JSON a stdout). */
-export interface EsbOverrides { invoker?: ServiceInvoker; probe?: HealthProbe; logger?: OperationLogger }
+export interface EsbOverrides { invoker?: ServiceInvoker; probe?: HealthProbe; logger?: OperationLogger; events?: EventOperations; busHealth?: () => Promise<BusHealth> }
 
 const sameSecret = (actual: string | undefined, expected: string): boolean => {
   if (!actual) return false;
@@ -23,11 +25,16 @@ const CORRELATION = /^[\x21-\x7e]{1,128}$/;
 
 export async function createEsbApp(config: EsbConfig, overrides: EsbOverrides = {}) {
   const invoker = overrides.invoker ?? new GrpcServiceInvoker(config);
+  // Bus de eventos (F12b-2): con ESB_EVENTS_MODE=outbox se componen la outbox y RabbitMQ; en modo grpc no se abre nada.
+  const runtime = !overrides.events && config.events.mode === 'outbox' ? buildEventRuntime(config) : undefined;
+  const eventOperations = overrides.events ?? runtime?.operations;
+  const busHealth = overrides.busHealth ?? runtime?.health;
   const providers = [
     { provide: 'ESB_INVOKER', useValue: invoker },
-    { provide: EXECUTE_OPERATION, useValue: new ExecuteOperation(invoker, overrides.probe ?? new GrpcHealthProbe(config), overrides.logger ?? new JsonOperationLogger(), config.deadlines) },
-    // Los clientes gRPC se cierran al apagar (onModuleDestroy) para que las suites terminen solas.
-    { provide: 'ESB_SHUTDOWN', useFactory: () => ({ onModuleDestroy: () => invoker.close() }) }
+    { provide: EXECUTE_OPERATION, useValue: new ExecuteOperation(invoker, overrides.probe ?? new GrpcHealthProbe(config), overrides.logger ?? new JsonOperationLogger(), config.deadlines, Date.now, eventOperations ? { operations: eventOperations, mode: config.events.mode } : undefined) },
+    { provide: BUS_HEALTH, useValue: busHealth },
+    // Los clientes gRPC y la conexión a la BD se cierran al apagar (onModuleDestroy) para que las suites terminen solas.
+    { provide: 'ESB_SHUTDOWN', useFactory: () => ({ onModuleDestroy: async () => { await invoker.close(); await runtime?.close(); } }) }
   ];
   class EsbModule {}
   Module({ controllers: [OperationsController], providers })(EsbModule);

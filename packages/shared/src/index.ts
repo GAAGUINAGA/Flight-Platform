@@ -1,6 +1,7 @@
 export * from './airport-time.js';
 export * from './clock.js';
 export * from './errors.js';
+export * from './esb-event-client.js';
 export * from './grpc-client.js';
 export * from './health.js';
 export * from './logger.js';

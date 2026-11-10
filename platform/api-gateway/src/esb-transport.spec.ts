@@ -193,7 +193,7 @@ describe('F12b-1 el Gateway por HTTP con el ESB', () => {
     const store = { acquire: async () => true, release: async () => undefined, purgeIdempotency: async () => undefined };
     const scheduler = new GatewayScheduler(config({ SCHEDULER_ENABLED: 'true' }), store as never);
     await scheduler.run('expire-holds'); await scheduler.run('resume-pending'); await scheduler.run('dispatch-pending'); await scheduler.run('recover-check-ins');
-    expect(seen.map((s) => s.url.replace('/internal/v1/operations/', ''))).toEqual(['sistema.expirar-holds', 'sistema.reanudar-pendientes', 'sistema.despachar-webhooks', 'sistema.recuperar-check-ins']);
+    expect(seen.map((s) => s.url.replace('/internal/v1/operations/', ''))).toEqual(['sistema.expirar-holds', 'sistema.reanudar-pendientes', 'sistema.publicar-eventos', 'sistema.despachar-webhooks', 'sistema.recuperar-check-ins']);
     expect(seen.every((s) => s.headers['x-role'] === 'system' && s.headers['x-owner-id'] === 'gateway-scheduler')).toBe(true);
   });
 });

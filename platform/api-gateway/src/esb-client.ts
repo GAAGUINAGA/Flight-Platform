@@ -14,7 +14,9 @@ const ABORT_MARGIN_MS = 1_000;
 
 export function deadlineFor(service: string, method: string, env: Record<string, string | undefined> = process.env): number {
   const configured = Number(env.GATEWAY_ORCHESTRATION_DEADLINE_MS ?? 30_000);
-  return service === 'reservation' && ORCHESTRATED.has(method) && Number.isFinite(configured) && configured > 0 ? configured : DEFAULT_DEADLINE_MS;
+  // `webhooks.dispatchPending` (F12b-2) retira un lote del bus y entrega: puede superar los 5 s de una llamada simple.
+  const long = (service === 'reservation' && ORCHESTRATED.has(method)) || (service === 'webhooks' && method === 'dispatchPending');
+  return long && Number.isFinite(configured) && configured > 0 ? configured : DEFAULT_DEADLINE_MS;
 }
 
 /** Error con la misma forma que el de un cliente gRPC (`code` numérico y `details` = código del catálogo): `asProblem` no cambia (ADR-F12b-02). */

@@ -3,6 +3,7 @@
  *   node scripts/local-platform/health.cjs [--url http://127.0.0.1:3000] [--wait 90]
  * Sale con 0 solo si el estado es HEALTHY y los siete servicios están UP. No imprime secretos. */
 /* global fetch, AbortSignal */
+const net = require('node:net');
 const process = require('node:process');
 const { setTimeout } = require('node:timers');
 const args = process.argv.slice(2);
@@ -10,7 +11,19 @@ const option = (name, fallback) => { const index = args.indexOf(`--${name}`); re
 const base = (option('url', 'http://127.0.0.1:3000')).replace(/\/+$/, '');
 const waitSeconds = Number(option('wait', '0'));
 const esbBase = option('esb', '').replace(/\/+$/, '');
+const brokerAddress = option('broker', '');
 const EXPECTED = 7;
+
+/** RabbitMQ (F12b-2): solo se comprueba que el puerto responde; el estado de la outbox se ve en GET /health/deps del ESB (requiere la llave interna, que este script no lee). */
+function brokerAlive() {
+  if (!brokerAddress) return Promise.resolve(true);
+  const [host, port] = brokerAddress.split(':');
+  return new Promise((resolve) => {
+    const socket = net.connect({ host, port: Number(port) });
+    const done = (ok) => { socket.destroy(); resolve(ok); };
+    socket.setTimeout(3000); socket.once('connect', () => done(true)); socket.once('timeout', () => done(false)); socket.once('error', () => done(false));
+  });
+}
 
 /** El ESB (F12b-1) debe estar vivo: con GATEWAY_TRANSPORT=esb el health del Gateway ya pasa por él, esto solo lo hace explícito. */
 async function esbAlive() {
@@ -40,7 +53,9 @@ async function main() {
   for (const item of body.dependencias ?? []) process.stdout.write(`  ${item.status === 'UP' ? 'OK  ' : 'FALLA'} ${String(item.nombre).padEnd(22)} ${item.status} ${item.latencia_ms} ms\n`);
   const esbOk = await esbAlive();
   if (esbBase) process.stdout.write(`  ${esbOk ? 'OK  ' : 'FALLA'} esb ${esbBase}\n`);
-  if (!healthy(result) || !esbOk) { process.stdout.write('La plataforma NO está sana.\n'); process.exit(1); }
-  process.stdout.write(`La plataforma está sana: el Gateway${esbBase ? ', el ESB' : ''} y los siete servicios responden.\n`);
+  const brokerOk = await brokerAlive();
+  if (brokerAddress) process.stdout.write(`  ${brokerOk ? 'OK  ' : 'FALLA'} rabbitmq ${brokerAddress}\n`);
+  if (!healthy(result) || !esbOk || !brokerOk) { process.stdout.write('La plataforma NO está sana.\n'); process.exit(1); }
+  process.stdout.write(`La plataforma está sana: el Gateway${esbBase ? ', el ESB' : ''}${brokerAddress ? ', RabbitMQ' : ''} y los siete servicios responden.\n`);
 }
 void main();

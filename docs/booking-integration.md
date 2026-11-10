@@ -162,6 +162,7 @@ Cuerpo (`WebhookPayload`):
 - `booking.*` llevan `data.bookingId`, `pnr` y `status`; `booking.cancelled` añade `refundAmount`. `flight.*` y `booking.checked_in` identifican la reserva con `data.bookingId` y `pnr`.
 - **`hold.expired` lleva `data.holdId`** (ADR-F11-13): `{ "holdId": "<uuid>", "status": "EXPIRED" }`. Úsalo para relacionar la expiración con tu bloqueo.
 - `eventId` es estable: deduplica por él, porque un evento puede entregarse más de una vez.
+- **Latencia (desde F12b-2):** los eventos viajan por un bus con consumo por lotes que dispara el scheduler. Un evento puede tardar **hasta un tick del scheduler (60 s en la nube)** en entregarse por webhook y en aparecer en el feed `GET /vuelos/eventos`. Si necesitas inmediatez, consulta el recurso (`GET /reservas/{id}`) o espera el siguiente ciclo del feed con `after=<seq>`. El formato, la firma y el orden por `seq` no cambian.
 - Responde 2xx dentro de 5 s. Ante cualquier otra respuesta o un tiempo agotado se reintenta 6 veces, a 1, 5, 15, 60, 180 y 720 minutos.
 
 ### Verificación de la firma

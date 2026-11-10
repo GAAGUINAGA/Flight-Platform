@@ -1,0 +1,30 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/infrastructure/persistence/prisma-client"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+/// Outbox de eventos (ADR-F12b-04/06). Una fila por evento; `PUBLISHED` cuando el broker confirmó.
+model OutboxEvent {
+  seq         BigInt    @id @default(autoincrement())
+  eventId     String    @unique @map("event_id") @db.Uuid
+  routingKey  String    @map("routing_key") @db.VarChar(64)
+  ownerId     String    @map("owner_id") @db.VarChar(128)
+  envelope    Json
+  status      String    @default("PENDING") @db.VarChar(12)
+  attempts    Int       @default(0)
+  availableAt DateTime  @map("available_at") @db.Timestamptz(3)
+  lockedUntil DateTime? @map("locked_until") @db.Timestamptz(3)
+  lastError   String?   @map("last_error") @db.VarChar(32)
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  publishedAt DateTime? @map("published_at") @db.Timestamptz(3)
+
+  @@index([status, availableAt, seq])
+  @@index([status, publishedAt])
+  @@map("outbox_events")
+}

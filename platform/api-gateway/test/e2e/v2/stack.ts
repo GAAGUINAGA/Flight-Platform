@@ -46,7 +46,7 @@ import { DEFAULT_DOMESTIC_AIRPORTS } from '../../../src/v2/rules';
 import { PrismaSchedulerStore } from '../../../src/scheduler-store';
 import { DevAuthService, type DevAuthClientStore } from '../../../src/v2/dev-auth';
 import { registerClient, type TestClient } from './support';
-import { startTestEsb } from '../esb-harness';
+import { busModeEnabled, startTestEsb, testBusConsumer, testEsbEvents } from '../esb-harness';
 
 const INTERNAL = 'gateway-real-internal-key-for-local-testing';
 const WEBHOOK_KEY = 'BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=';
@@ -111,24 +111,26 @@ export async function startStack(env: Record<string, string | undefined> = {}): 
   const inventory = new InventoryPrisma({ datasources: { db: { url: database('inventory') } } }); const pricing = new PricingPrisma({ datasources: { db: { url: database('pricing') } } }); const ancillaries = new AncillariesPrisma({ datasources: { db: { url: database('ancillaries') } } });
   const ticketing = new TicketingPrisma({ datasources: { db: { url: database('ticketing') } } }); const webhooks = new WebhooksPrisma({ datasources: { db: { url: database('webhooks') } } }); const reservation = new ReservationPrisma({ datasources: { db: { url: database('reservation') } } }); const operations = new OperationsPrisma({ datasources: { db: { url: database('operations') } } });
   databases.push(inventory, pricing, ancillaries, ticketing, webhooks, reservation, operations);
-  await start(await createWebhooksServer({ url: `127.0.0.1:${ports.webhooks}`, internalApiKey: INTERNAL, encryptionKey: WEBHOOK_KEY, prisma: webhooks }));
-  await start(await createInventoryServer({ url: `127.0.0.1:${ports.inventory}`, internalApiKey: INTERNAL, runtime: { prisma: inventory, events: new InventoryEventPublisher(service('webhooks') as never) } }));
+  // Modo bus (GATEWAY_EVENT_BUS=true, opt-in): el ESB arranca antes para que los emisores publiquen por él; sin la variable nada de esto se usa.
+  const busEsb = busModeEnabled() ? await startTestEsb(INTERNAL) : undefined;
+  await start(await createWebhooksServer({ url: `127.0.0.1:${ports.webhooks}`, internalApiKey: INTERNAL, encryptionKey: WEBHOOK_KEY, prisma: webhooks, ...(busEsb ? { bus: testBusConsumer() } : {}) }));
+  await start(await createInventoryServer({ url: `127.0.0.1:${ports.inventory}`, internalApiKey: INTERNAL, runtime: { prisma: inventory, events: new InventoryEventPublisher((busEsb ? testEsbEvents(busEsb.url!, INTERNAL, 'inventory-service') : service('webhooks')) as never) } }));
   await start(await createPricingServer({ url: `127.0.0.1:${ports.pricing}`, internalApiKey: INTERNAL, runtime: { prisma: pricing, inventory: new PricingInventory(service('inventory') as never) } }));
   await start(await createAncillariesServer({ url: `127.0.0.1:${ports.ancillaries}`, internalApiKey: INTERNAL, runtime: { prisma: ancillaries, pricing: new AncillariesPricing(service('pricing') as never) } }));
   await start(await createTicketingServer({ url: `127.0.0.1:${ports.ticketing}`, internalApiKey: INTERNAL, prisma: ticketing }));
   const bookingVerifier = new BookingPaymentVerifier({ baseUrl: env.NO_BOOKING_PAYMENTS === 'true' ? undefined : `http://127.0.0.1:${payments.port}`, pathTemplate: '/pagos/{paymentReference}', authHeader: 'Authorization', authValue: 'Bearer simulator-credential', timeoutMs: 1500, statusMap: DEFAULT_STATUS_MAP, fields: DEFAULT_FIELDS, verify: 'on' });
-  const deps = composeReservation({ store: new PrismaReservationStore(reservation), pricing: new GrpcPricingGateway(factory('pricing')), payment: new RoutingPaymentVerifier(new FakePaymentVerifier(), { BOOKING: bookingVerifier }), ancillaries: new GrpcAncillariesGateway(factory('ancillaries')), inventory: new GrpcInventoryGateway(factory('inventory')), ticketing: new GrpcTicketingGateway(factory('ticketing')), events: new GrpcEventPublisher(factory('webhooks')), operations: new PrismaBaggageOperations(reservation), quotes: new PrismaCancellationQuotes(reservation), clock: new SystemClock(), cutoffHours: 4, holdTtlMinutes: 20, validateResponse: createResponseValidator() });
+  const deps = composeReservation({ store: new PrismaReservationStore(reservation), pricing: new GrpcPricingGateway(factory('pricing')), payment: new RoutingPaymentVerifier(new FakePaymentVerifier(), { BOOKING: bookingVerifier }), ancillaries: new GrpcAncillariesGateway(factory('ancillaries')), inventory: new GrpcInventoryGateway(factory('inventory')), ticketing: new GrpcTicketingGateway(factory('ticketing')), events: new GrpcEventPublisher(busEsb ? (() => testEsbEvents(busEsb.url!, INTERNAL, 'reservation-service') as never) : factory('webhooks')), operations: new PrismaBaggageOperations(reservation), quotes: new PrismaCancellationQuotes(reservation), clock: new SystemClock(), cutoffHours: 4, holdTtlMinutes: 20, validateResponse: createResponseValidator() });
   await start(await createReservationServer({ url: `127.0.0.1:${ports.reservation}`, internalApiKey: INTERNAL, deps }));
   const operationsRuntime = createOperationsRuntime(INTERNAL, operations);
   await start(await createOperationsServer({ url: `127.0.0.1:${ports.operations}`, internalApiKey: INTERNAL, runtime: operationsRuntime.runtime }));
   // El lease durable del scheduler se verifica en scheduler.spec.ts; aquí se sustituye solo para invocar la tarea real.
   const acquire = jest.spyOn(PrismaSchedulerStore.prototype, 'acquire').mockResolvedValue(true); const release = jest.spyOn(PrismaSchedulerStore.prototype, 'release').mockResolvedValue(undefined);
-  const esb = await startTestEsb(INTERNAL);
+  const esb = busEsb ?? await startTestEsb(INTERNAL);
   const gateway = await createGatewayApp(loadConfig({ NODE_ENV: 'test', INTERNAL_API_KEY: INTERNAL, VALIDATE_RESPONSES: 'true', SCHEDULER_ENABLED: 'false', PUBLIC_BASE_URL: 'http://gateway.test', JWT_ISSUERS: JSON.stringify([{ iss: 'unused', aud: 'authenticated', jwksUri: 'http://127.0.0.1:9/jwks.json' }]), RATE_LIMIT_PUBLIC_PER_MIN: '1000', RATE_LIMIT_AUTH_PER_MIN: '1000', ...env }));
   await gateway.listen(0, '127.0.0.1');
   const clients = gateway.get(DEV_AUTH_STORE) as DevAuthClientStore; const scheduler = gateway.get(GatewayScheduler);
   const ALL = ['flights:read', 'flights:hold', 'flights:book', 'flights:cancel', 'flights:webhooks', 'flights:ops', 'flights:admin'];
-  const dispatchWebhooks = async () => { const client = service('webhooks', undefined, 'system') as unknown as { dispatchPending(input: object): import('rxjs').Observable<{ dispatchedCount: number }> }; const { firstValueFrom } = await import('rxjs'); return (await firstValueFrom(client.dispatchPending({}))).dispatchedCount; };
+  const dispatchWebhooks = async () => { await esb.pump(); const client = service('webhooks', undefined, 'system') as unknown as { dispatchPending(input: object): import('rxjs').Observable<{ dispatchedCount: number }> }; const { firstValueFrom } = await import('rxjs'); return (await firstValueFrom(client.dispatchPending({}))).dispatchedCount; };
 
   const scenario: Stack['scenario'] = async (options = {}) => {
     const client = await registerClient(clients, ALL); const flightId = randomUUID(); const code = () => Array.from({ length: 3 }, () => String.fromCharCode(65 + randomInt(0, 26))).join('');

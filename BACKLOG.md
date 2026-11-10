@@ -1,4 +1,4 @@
-﻿# Backlog
+# Backlog
 
 ## PRIORIDAD ALTA
 - **[IMPLEMENTADO en fix/busqueda-dia-local; pendiente de auditoría y despliegue. Ver docs/dev/diseno-busqueda-dia-local.md. Quedan: el humano aplica el script de operational_flights.date; seed en hora local para entornos nuevos; tabla de aeropuertos en base de datos; edad del pasajero con fecha local (passengers.ts).]** Búsqueda de vuelos por día LOCAL del aeropuerto de salida (NFR-TI-01; ADR: docs/dev/adr/ADR-F12b1fix-02-busqueda-dia-local.md). Hoy el "día" de la búsqueda es el día UTC: `dayRange` de inventory-service (`flight-queries.ts`: `find`, `list`, `queryAvailability`) usa `[date T00:00Z, +24 h)`. Un vuelo que sale a las 22:00 en Lima (UTC-5, 03:00Z del día siguiente) no aparece al buscar su fecha local. Caso LIM→MAD: sale 2026-11-10 22:30 hora de Lima = 2026-11-11T03:30Z; la búsqueda "2026-11-10" no lo encuentra y "2026-11-11" lo devuelve con la fecha equivocada. Puntos afectados, v1 y v2: (1) inventory `dayRange` y los tres consumidores; (2) v2 `stock-sync.ts:112` (`utcDate` hacia `queryAvailability`); (3) v2 `operations.controller.ts:88` y operations `flight-status.ts:7` (`departure.at.slice(0, 10)` como fecha de `getFlightStatus` y de `operational_flights.date`); (4) reservation `queries.ts:10` (`departureDate` del resumen con `slice(0, 10)`); (5) validación de pasaporte en operations `check-in.ts:69`; (6) pricing `fake-inventory.gateway.ts:13` (el falso debe imitar la regla real). Requiere zona IANA por aeropuerto y un cambio coordinado auditado; las pruebas del gateway ya no dependen de la hora (reloj simulado en `e2e-schedule.spec.ts`).
@@ -142,7 +142,10 @@
 
 - infra/scripts/gcp-setup.sh no incluye el ESB en el bucle de cuentas de servicio (la cuenta esb-service-runtime y sus permisos se crearon a mano en F12b-1). Agregar esb al bucle para que el script pueda recrear el proyecto completo.
 
-##Observaciones en F12-c1
+## Observaciones de F12b-2 (bus de eventos)
+- `booking.ticket_issuing` está en la lista permitida y en los contratos v1/v2 (el v2 lo conserva "por compatibilidad con v1", no exige emitirlo), pero ningún servicio lo emite desde antes de F12b-2. No se resuelve en esta entrega; decidir en F12b-3 (emisión como paso separado, `BOOKED` frente a `TICKETED`).
+- Herramienta de reproceso de la cola de fallidos `q.webhooks.entrega.fallidos` (hoy manual desde la consola de RabbitMQ), con alarma por tamaño de la cola (ADR-F12b-05).
+## Observaciones de la verificación de pagos de Booking (audit-13)
 - La segunda corrida completa del Gateway tuvo 1 fallo intermitente en `p1-security.e2e.spec.ts`, sin `ENOBUFS`; el archivo pasó aislado (49/49) y las dos corridas completas siguientes pasaron (868/868, 1 `todo`).
 - Conviene renombrar `ADR-F12c-01-pago-booking-cubre-tarifa.md`: el prefijo F12c corresponde a GraphQL/UI y puede confundirse con esa entrega.
 

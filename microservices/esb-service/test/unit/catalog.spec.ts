@@ -19,6 +19,10 @@ describe('ESB-CAT: catálogo de operaciones con nombre', () => {
     expect(OPERATIONS.filter((operation) => operation.kind === 'health')).toHaveLength(1);
   });
 
+  it('ESB-CAT-06 (F12b-2): la única operación nativa es sistema.publicar-eventos, solo para el rol system', () => {
+    expect(OPERATIONS.filter((operation) => operation.kind === 'native')).toEqual([{ kind: 'native', name: 'sistema.publicar-eventos', handler: 'publishOutbox', roles: ['system'] }]);
+  });
+
   it('ESB-CAT-02: los nombres son únicos, en minúsculas con guiones y de un dominio del contrato', () => {
     const names = OPERATIONS.map((operation) => operation.name);
     expect(new Set(names).size).toBe(names.length);

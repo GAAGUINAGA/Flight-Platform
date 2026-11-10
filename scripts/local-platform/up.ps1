@@ -64,6 +64,12 @@ if (-not $SkipDocker) {
   while (-not (Test-PortOpen 15432)) { if ((Get-Date) -gt $deadline) { throw 'Postgres no responde en 127.0.0.1:15432.' }; Start-Sleep -Seconds 2 }
 } elseif (-not (Test-PortOpen 15432)) { throw 'Postgres no responde en 127.0.0.1:15432 (usaste -SkipDocker).' }
 Write-Host 'Postgres: 127.0.0.1:15432 responde.'
+# RabbitMQ (F12b-2): el contenedor lo administra el humano con infra/docker-compose.yml. Sin él el ESB no puede publicar eventos.
+if (-not $SkipDocker) {
+  $deadline = (Get-Date).AddSeconds(60)
+  while (-not (Test-PortOpen 5672)) { if ((Get-Date) -gt $deadline) { throw 'RabbitMQ no responde en 127.0.0.1:5672.' }; Start-Sleep -Seconds 2 }
+} elseif (-not (Test-PortOpen 5672)) { throw 'RabbitMQ no responde en 127.0.0.1:5672 (usaste -SkipDocker). Levanta el servicio rabbitmq de infra/docker-compose.yml.' }
+Write-Host 'RabbitMQ: 127.0.0.1:5672 responde.'
 
 # 5. Construcción (clientes Prisma, utilidades compartidas, servicios y Gateway)
 if (-not $SkipBuild) {
@@ -91,6 +97,8 @@ try {
     $vars = Select-Profile $svc.Pass
     foreach ($key in $grpcUrls.Keys) { $vars[$key] = $grpcUrls[$key] }
     $vars['INTEGRATION_LOCAL'] = 'true'; $vars['NODE_ENV'] = 'development'; $vars['PORT'] = [string]$svc.Port
+    # F12b-2: los emisores publican sus eventos por el ESB (outbox → bus). Webhooks los retira con su RABBITMQ_URL (de su .env).
+    if (@('inventory', 'reservation', 'operations') -contains $svc.Name) { $vars['ESB_URL'] = "http://127.0.0.1:$($script:Esb.Port)" }
     $process = Start-LocalProcess $svc.Name (Join-Path $script:Repo $svc.Dir) @('dist/main.js') $vars
     $started += $svc.Name; Write-Host ("  {0,-12} 127.0.0.1:{1} (pid {2})" -f $svc.Name, $svc.Port, $process.Id)
   }
@@ -121,7 +129,7 @@ try {
 }
 
 # 7. Health de todos al final
-& node (Join-Path $PSScriptRoot 'health.cjs') --url "http://127.0.0.1:$GatewayPort" --esb "http://127.0.0.1:$($script:Esb.Port)" --wait $HealthTimeoutSec
+& node (Join-Path $PSScriptRoot 'health.cjs') --url "http://127.0.0.1:$GatewayPort" --esb "http://127.0.0.1:$($script:Esb.Port)" --broker '127.0.0.1:5672' --wait $HealthTimeoutSec
 if ($LASTEXITCODE -ne 0) { Write-Host 'La plataforma no quedó sana. Revisa .local/logs/. Para detener: scripts/local-platform/down.ps1'; exit 1 }
 Write-Host ''
 Write-Host "Listo. URL pública declarada: $($cfg['PUBLIC_BASE_URL'])"

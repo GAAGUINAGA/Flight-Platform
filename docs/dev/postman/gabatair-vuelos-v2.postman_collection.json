@@ -203,7 +203,8 @@
                   "const b = pm.response.json(); pm.test('hay ofertas', function () { pm.expect(b.offers.length).to.be.above(0); });",
                   "const o = b.offers[0], i = o.itineraries[0], p = i.pricingOptions[0];",
                   "pm.environment.set('offerId', o.offerId); pm.environment.set('itineraryId', i.itineraryId); pm.environment.set('segmentId', i.segments[0].segmentId);",
-                  "pm.environment.set('flightNumber', i.segments[0].flightNumber); pm.environment.set('cabinClass', p.cabinClass); pm.environment.set('fareBrand', p.fareBrand);"
+                  "pm.environment.set('flightNumber', i.segments[0].flightNumber); pm.environment.set('cabinClass', p.cabinClass); pm.environment.set('fareBrand', p.fareBrand);",
+                  "const dep = i.segments[0].departure && i.segments[0].departure.at; if (dep) { pm.environment.set('estimatedDepartureAt', new Date(Date.parse(dep) + 90 * 60000).toISOString()); }"
                 ]
               }
             }
@@ -1512,6 +1513,16 @@
             }
           },
           "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.environment.get('departureDate')) { pm.environment.set('departureDate', new Date(Date.now() + 5 * 86400000).toISOString().slice(0, 10)); }",
+                  "if (!pm.environment.get('estimatedDepartureAt')) { pm.environment.set('estimatedDepartureAt', new Date(Date.parse(pm.environment.get('departureDate') + 'T14:00:00Z') + 90 * 60000).toISOString()); }"
+                ]
+              }
+            },
             {
               "listen": "test",
               "script": {

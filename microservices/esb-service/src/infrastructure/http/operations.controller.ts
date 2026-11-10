@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpCode, Inject, Param, Post, Req, Res } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Inject, Optional, Param, Post, Req, Res } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import type { ExecuteOperation, OperationResult } from '../../application/execute-operation';
 import { operationEnvelope, requestHeaders } from '../../application/schemas';
@@ -6,6 +6,7 @@ import { findOperation } from '../../domain/catalog';
 import { GRPC, httpStatusFor, operationError } from '../../domain/errors';
 
 export const EXECUTE_OPERATION = 'EXECUTE_OPERATION';
+export const BUS_HEALTH = 'ESB_BUS_HEALTH';
 const header = (req: Request, name: string): string | undefined => { const value = req.header(name); return value === undefined || value === '' ? undefined : value; };
 
 /** Envuelve el resultado en el sobre de respuesta (ADR-F12b-02) y fija el estado HTTP. */
@@ -16,7 +17,7 @@ export function sendOutcome(res: Response, correlationId: string, outcome: Opera
 
 /** `POST /internal/v1/operations/:operation`. La llave interna ya fue exigida por el middleware: aquí nunca llega una petición sin ella. */
 export class OperationsController {
-  constructor(private readonly execute: ExecuteOperation) {}
+  constructor(private readonly execute: ExecuteOperation, private readonly busHealth?: () => Promise<unknown>) {}
 
   async run(operation: string, body: unknown, req: Request, res: Response): Promise<void> {
     const correlationId = String(res.getHeader('X-Correlation-Id'));
@@ -37,11 +38,14 @@ export class OperationsController {
     const correlationId = String(res.getHeader('X-Correlation-Id'));
     const outcome = await this.execute.execute({ operation: 'sistema.salud', input: {}, context: { correlationId } });
     if (!outcome.ok) return sendOutcome(res, correlationId, outcome);
-    res.status((outcome.result as { status: string }).status === 'DOWN' ? 503 : 200).json({ ...(outcome.result as object), correlationId });
+    // El bloque `bus` va aparte: `sistema.salud` conserva sus siete dependencias y el cálculo HEALTHY/DEGRADED/DOWN del Gateway no cambia.
+    const bus = this.busHealth ? await this.busHealth().catch(() => ({ broker: 'DOWN', outboxPendientes: null })) : undefined;
+    res.status((outcome.result as { status: string }).status === 'DOWN' ? 503 : 200).json({ ...(outcome.result as object), ...(bus ? { bus } : {}), correlationId });
   }
 }
 Controller()(OperationsController);
 Inject(EXECUTE_OPERATION)(OperationsController, undefined, 0);
+Inject(BUS_HEALTH)(OperationsController, undefined, 1); Optional()(OperationsController, undefined, 1);
 const descriptor = (name: keyof OperationsController) => Object.getOwnPropertyDescriptor(OperationsController.prototype, name)!;
 const proto = OperationsController.prototype;
 Post('internal/v1/operations/:operation')(proto, 'run', descriptor('run')); HttpCode(200)(proto, 'run', descriptor('run'));

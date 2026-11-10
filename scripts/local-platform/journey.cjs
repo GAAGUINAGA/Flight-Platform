@@ -6,6 +6,7 @@
  * Cada comprobación imprime una línea con su ID (lista --verbose). Sale con 0 solo si todas pasan. No imprime secretos. */
 /* global fetch, AbortSignal, URLSearchParams, __dirname */
 const process = require('node:process');
+const { setTimeout } = require('node:timers');
 const { createHmac, randomUUID } = require('node:crypto');
 const { existsSync, mkdirSync, readFileSync, rmSync } = require('node:fs');
 const { createServer } = require('node:http');
@@ -153,8 +154,10 @@ async function main() {
     const second = await api('POST', '/api/v2/vuelos/offers/hold', { token, user, key: randomUUID(), body: { offerId: offer.offerId, itinerarySelections: [{ itineraryId: itinerary.itineraryId, cabinClass: option0.cabinClass, fareBrand: option0.fareBrand }], passengersBreakdown: { adults: 1 } } });
     check('un segundo hold se libera (compensación de la saga): DELETE responde 204', second.status === 201 && (await api('DELETE', `/api/v2/vuelos/offers/hold/${second.body.holdId}`, { token, user })).status === 204, String(second.status));
 
-    const feed = await api('GET', '/api/v2/vuelos/eventos?limit=50', { token });
-    check('el feed GET /vuelos/eventos trae los eventos de la aerolínea', feed.status === 200 && JSON.stringify(feed.body).includes('booking.cancelled'), String(feed.status));
+    // Desde F12b-2 los eventos viajan por la outbox y el bus y el scheduler los ingresa por lotes: el feed puede tardar hasta un tick (docs/booking-integration.md §8).
+    let feed = await api('GET', '/api/v2/vuelos/eventos?limit=50', { token });
+    for (const deadline = Date.now() + 45_000; !(feed.status === 200 && JSON.stringify(feed.body).includes('booking.cancelled')) && Date.now() < deadline;) { await new Promise((done) => setTimeout(done, 1000)); feed = await api('GET', '/api/v2/vuelos/eventos?limit=50', { token }); }
+    check('el feed GET /vuelos/eventos trae los eventos de la aerolínea (por el bus de eventos)', feed.status === 200 && JSON.stringify(feed.body).includes('booking.cancelled'), String(feed.status));
     const hook = await api('POST', '/api/v2/vuelos/webhooks', { token, key: randomUUID(), body: { url: 'http://100.64.0.1:9/webhooks/gabatair', events: ['booking.cancelled'], secret: `secreto-de-prueba-${randomUUID()}` } });
     check('registro de un webhook http://100.x (perfil local): 201', hook.status === 201, `${hook.status} ${hook.body?.code ?? ''}`);
     if (hook.status === 201) { check('el webhook figura en la lista del cliente', (await api('GET', '/api/v2/vuelos/webhooks', { token })).body?.items?.some?.((item) => item.id === hook.body.id) ?? JSON.stringify((await api('GET', '/api/v2/vuelos/webhooks', { token })).body).includes(hook.body.id)); check('DELETE del webhook responde 204', (await api('DELETE', `/api/v2/vuelos/webhooks/${hook.body.id}`, { token })).status === 204); }

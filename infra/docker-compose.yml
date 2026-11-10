@@ -13,6 +13,7 @@ services:
       ROLE_PASSWORD_OPERATIONS: ${ROLE_PASSWORD_OPERATIONS:?Set ROLE_PASSWORD_OPERATIONS in infra/.env}
       ROLE_PASSWORD_WEBHOOKS: ${ROLE_PASSWORD_WEBHOOKS:?Set ROLE_PASSWORD_WEBHOOKS in infra/.env}
       ROLE_PASSWORD_GATEWAY: ${ROLE_PASSWORD_GATEWAY:?Set ROLE_PASSWORD_GATEWAY in infra/.env}
+      ROLE_PASSWORD_ESB: ${ROLE_PASSWORD_ESB:?Set ROLE_PASSWORD_ESB in infra/.env}
     ports:
       - "127.0.0.1:15432:5432"
     healthcheck:
@@ -26,6 +27,22 @@ services:
       - ./db/02-role-passwords.sh:/docker-entrypoint-initdb.d/02-role-passwords.sh:ro
       - ./db/role-passwords.sql:/opt/flight/role-passwords.sql:ro
       - ./db/postgres-password.sql:/opt/flight/postgres-password.sql:ro
-
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-flight}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:?Set RABBITMQ_PASSWORD in infra/.env}
+      RABBITMQ_DEFAULT_VHOST: flight
+    ports:
+      - "127.0.0.1:5672:5672"
+      - "127.0.0.1:15672:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
 volumes:
   postgres-data:
+  rabbitmq-data:

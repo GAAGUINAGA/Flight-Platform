@@ -67,6 +67,9 @@ jobs:
           SERVICE: ${{ inputs.service }}
       - run: ${{ inputs.test_command }}
       - run: npm run audit:policy
+      # La imagen debe poder cargar el motor de Prisma (openssl): arranca con NODE_ENV=production y una base ficticia (un error de conexión no cuenta).
+      - name: Humo de arranque de la imagen
+        run: sh scripts/ci/image-startup-smoke.sh "${{ inputs.dockerfile }}" "smoke-${{ inputs.cloud_run_service }}"
       - uses: google-github-actions/auth@v2
         if: github.ref == 'refs/heads/main'
         with:

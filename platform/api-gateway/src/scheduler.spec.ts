@@ -1,5 +1,6 @@
 import { afterEach, jest } from '@jest/globals';
 import { Logger } from '@nestjs/common';
+import * as esbClient from './esb-client';
 import * as grpc from './grpc-clients';
 import { GatewayScheduler } from './scheduler';
 import type { GatewayConfig } from './config';
@@ -48,6 +49,31 @@ describe('PLT-H2 scheduler', () => {
     await scheduler.run('resume-pending');
     expect(call).toHaveBeenCalledWith(expect.anything(), 'reservation', 'resumePending', { limit: 7 }, 'gateway-scheduler', expect.objectContaining({ role: 'system' }));
     expect(store.released).toEqual(['resume-pending']);
+  });
+  it('BUS-GW-01: con transporte esb, dispatch-pending publica la outbox y después despacha, con rol system y plazo largo', async () => {
+    const order: string[] = []; const esb = jest.spyOn(esbClient, 'callEsbOperation').mockImplementation(async (_config, call) => { order.push(call.operation); return {}; });
+    jest.spyOn(grpc, 'callGatewayGrpc').mockImplementation(async (_config, service, method) => { order.push(`${service}.${method}`); return {}; });
+    await new GatewayScheduler({ ...config, transport: 'esb', esbUrl: 'http://127.0.0.1:3100' }, new Store()).run('dispatch-pending');
+    expect(order).toEqual(['sistema.publicar-eventos', 'webhooks.dispatchPending']);
+    expect(esb).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ operation: 'sistema.publicar-eventos', deadlineMs: 30_000, auth: expect.objectContaining({ role: 'system', ownerId: 'gateway-scheduler' }) }));
+  });
+  it('BUS-GW-02: si la publicación falla (ESB caído) igual despacha y registra solo la dependencia y el código', async () => {
+    jest.spyOn(esbClient, 'callEsbOperation').mockRejectedValue(Object.assign(new Error('down 127.0.0.1'), { code: 14 }));
+    const dispatch = jest.spyOn(grpc, 'callGatewayGrpc').mockResolvedValue({}); const warning = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    const store = new Store();
+    await new GatewayScheduler({ ...config, transport: 'esb', esbUrl: 'http://127.0.0.1:3100' }, store).run('dispatch-pending');
+    expect(dispatch).toHaveBeenCalledTimes(1); expect(store.released).toEqual(['dispatch-pending']);
+    expect(warning).toHaveBeenCalledWith(JSON.stringify({ task: 'dispatch-pending', dependency: 'esb-bus', code: '14' }));
+  });
+  it('BUS-GW-03: con transporte grpc (vuelta atrás) no hay paso de publicación', async () => {
+    const esb = jest.spyOn(esbClient, 'callEsbOperation').mockResolvedValue({}); jest.spyOn(grpc, 'callGatewayGrpc').mockResolvedValue({});
+    await new GatewayScheduler({ ...config, transport: 'grpc' }, new Store()).run('dispatch-pending');
+    expect(esb).not.toHaveBeenCalled();
+  });
+  it('BUS-GW-04: webhooks.dispatchPending usa el plazo largo configurable; una llamada simple conserva 5 s', () => {
+    expect(esbClient.deadlineFor('webhooks', 'dispatchPending', {})).toBe(30_000);
+    expect(esbClient.deadlineFor('webhooks', 'dispatchPending', { GATEWAY_ORCHESTRATION_DEADLINE_MS: '12000' })).toBe(12_000);
+    expect(esbClient.deadlineFor('webhooks', 'listEvents', {})).toBe(5_000);
   });
   it('PLT-H2-06: activado ejecuta la ronda inicial y cancela sus cinco temporizadores al destruirse', async () => {
     jest.useFakeTimers();

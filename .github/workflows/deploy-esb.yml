@@ -40,6 +40,7 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version-file: '.nvmrc', cache: npm }
       - run: npm ci
+      - run: npm run prisma:generate -w @flight-platform/esb-service
       - run: npm run lint
       - run: npm run build -w @flight-platform/shared
       - run: npm run build -w @flight-platform/contracts
@@ -47,6 +48,9 @@ jobs:
       - run: npx jest microservices/esb-service/test/unit --runInBand
       - run: npm audit --audit-level=high
       - run: npm run audit:policy
+      # La imagen debe poder cargar el motor de Prisma (openssl): arranca con NODE_ENV=production, base y RABBITMQ_URL (amqps) ficticios.
+      - name: Humo de arranque de la imagen
+        run: sh scripts/ci/image-startup-smoke.sh microservices/esb-service/Dockerfile esb-service-smoke
       - uses: google-github-actions/auth@v2
         if: github.ref == 'refs/heads/main'
         with:
@@ -64,6 +68,6 @@ jobs:
           gcloud run deploy "${CLOUD_RUN_SERVICE}" \
             --project "${PROJECT_ID}" --region "${REGION}" \
             --image "${IMAGE}" --service-account "${RUNTIME_SERVICE_ACCOUNT}" \
-            --set-secrets "INTERNAL_API_KEY=internal-api-key:latest" \
+            --update-secrets "INTERNAL_API_KEY=internal-api-key:latest" \
             --update-env-vars "GRPC_TLS=true" \
             --allow-unauthenticated --port 8080 --quiet

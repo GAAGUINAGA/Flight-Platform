@@ -52,3 +52,5 @@ export const ESB_OPERATIONS: Readonly<Record<string, string>> = {
 /** Operaciones compuestas y de salud, que no son un método gRPC. */
 export const ESB_SEAT_MAP = 'vuelos.mapa-asientos';
 export const ESB_HEALTH = 'sistema.salud';
+/** Operación nativa del ESB (F12b-2): publica la outbox de eventos al bus. La dispara el scheduler antes de despachar webhooks. */
+export const ESB_PUBLISH_EVENTS = 'sistema.publicar-eventos';

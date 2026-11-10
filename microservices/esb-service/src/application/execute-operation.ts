@@ -1,4 +1,5 @@
-import { findOperation, domainOf, isOrchestrated, SERVICES, type CompositeOperation, type RpcOperation } from '../domain/catalog';
+import { findOperation, domainOf, INGEST_EVENT_OPERATION, isOrchestrated, SERVICES, type CompositeOperation, type RpcOperation } from '../domain/catalog';
+import type { EventOperations } from './event-ports';
 import { resolveDeadlineMs, type DeadlinePolicy } from '../domain/deadline';
 import { errorFromThrown, GRPC, operationError, type OperationError } from '../domain/errors';
 import type { CallContext, HealthProbe, OperationLogger, ServiceInvoker } from './ports';
@@ -15,7 +16,9 @@ const HEALTH_MAX_MS = 10_000;
 export class ExecuteOperation {
   constructor(
     private readonly invoker: ServiceInvoker, private readonly probe: HealthProbe, private readonly logger: OperationLogger,
-    private readonly policy: DeadlinePolicy, private readonly now: () => number = Date.now
+    private readonly policy: DeadlinePolicy, private readonly now: () => number = Date.now,
+    /** Bus de eventos (F12b-2). Con `mode: 'grpc'` o sin él, `clientes.publicar-evento` sigue yendo a Webhooks. */
+    private readonly events?: { operations: EventOperations; mode: 'outbox' | 'grpc' }
   ) {}
 
   async execute(request: OperationRequest): Promise<OperationResult> {
@@ -36,11 +39,28 @@ export class ExecuteOperation {
     const deadlineAt = new Date(this.now() + deadlineMs);
     try {
       if (operation.kind === 'health') return { ok: true, result: await this.health(request.input, deadlineMs) };
+      if (operation.kind === 'native') return await this.native(operation.roles, request, () => this.requireEvents().publishOutbox(deadlineAt));
+      if (operation.kind === 'rpc' && operation.name === INGEST_EVENT_OPERATION && this.events?.mode === 'outbox') {
+        return await this.native(['system'], request, () => this.events!.operations.ingest(request.input));
+      }
       if (operation.kind === 'rpc') return await this.rpc(operation, request, deadlineAt);
       return await this.composite(operation, request, deadlineAt);
     } catch (thrown) {
       return { ok: false, error: errorFromThrown(thrown) };
     }
+  }
+
+  private requireEvents(): EventOperations {
+    if (!this.events) throw Object.assign(new Error('event bus not configured'), { code: GRPC.UNIMPLEMENTED });
+    return this.events.operations;
+  }
+
+  /** Operación que atiende el propio ESB. Mismo control de rol que una operación de sistema; los fallos se traducen como los de un servicio. */
+  private async native(roles: readonly string[], request: OperationRequest, run: () => Promise<unknown>): Promise<OperationResult> {
+    if (!(request.context.role && roles.includes(request.context.role))) {
+      return { ok: false, error: operationError('service', GRPC.PERMISSION_DENIED, 'PERMISSION_DENIED') };
+    }
+    return { ok: true, result: await run() };
   }
 
   private async rpc(operation: RpcOperation, request: OperationRequest, deadlineAt: Date): Promise<OperationResult> {

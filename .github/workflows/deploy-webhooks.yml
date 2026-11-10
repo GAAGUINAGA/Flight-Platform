@@ -20,7 +20,7 @@ jobs:
       region: us-east1
       runtime_service_account: webhooks-service-runtime@project-a1d2e3ba-f6ff-469e-854.iam.gserviceaccount.com
       secret_name: internal-api-key
-      extra_secrets: DATABASE_URL=webhooks-database-url:latest,WEBHOOK_SECRET_ENCRYPTION_KEY=webhooks-secret-encryption-key:latest
+      extra_secrets: DATABASE_URL=webhooks-database-url:latest,WEBHOOK_SECRET_ENCRYPTION_KEY=webhooks-secret-encryption-key:latest,RABBITMQ_URL=rabbitmq-url:latest
       test_command: npx jest microservices/webhooks-service/test/unit --runInBand
     secrets:
       workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}

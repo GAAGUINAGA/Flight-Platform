@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-for service in inventory pricing ancillaries reservation ticketing operations webhooks gateway; do
+for service in inventory pricing ancillaries reservation ticketing operations webhooks gateway esb; do
   upper=$(printf '%s' "$service" | tr '[:lower:]' '[:upper:]')
   password=$(printenv "ROLE_PASSWORD_${upper}")
   test -n "$password"

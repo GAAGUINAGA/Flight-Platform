@@ -9,7 +9,11 @@ export interface RpcOperation { kind: 'rpc'; name: string; service: ServiceName;
 export interface CompositeOperation { kind: 'composite'; name: string; steps: Array<{ service: ServiceName; method: string; pick: string[] }> }
 /** Sondeo de salud de los siete servicios. */
 export interface HealthOperation { kind: 'health'; name: string }
-export type Operation = RpcOperation | CompositeOperation | HealthOperation;
+/** Operación que resuelve el propio ESB (bus de eventos, ADR-F12b-04); no es un método gRPC. */
+export interface NativeOperation { kind: 'native'; name: string; handler: 'publishOutbox'; roles: readonly string[] }
+export type Operation = RpcOperation | CompositeOperation | HealthOperation | NativeOperation;
+/** Operación gRPC que, con `ESB_EVENTS_MODE=outbox`, el ESB atiende él mismo escribiendo en la outbox (si no, sigue yendo a Webhooks). */
+export const INGEST_EVENT_OPERATION = 'clientes.publicar-evento';
 
 const rpc = (name: string, service: ServiceName, method: string, extra: { orchestrated?: true; roleHint?: string; roles?: readonly string[] } = {}): RpcOperation => ({ kind: 'rpc', name, service, method, ...extra });
 
@@ -67,12 +71,13 @@ export const OPERATIONS: readonly Operation[] = [
   rpc('clientes.crear-suscripcion', 'webhooks', 'createSubscription'),
   rpc('clientes.eliminar-suscripcion', 'webhooks', 'deleteSubscription'),
   rpc('clientes.listar-eventos', 'webhooks', 'listEvents'),
-  rpc('clientes.publicar-evento', 'webhooks', 'publishEvent', { roleHint: 'system' }),
+  rpc(INGEST_EVENT_OPERATION, 'webhooks', 'publishEvent', { roleHint: 'system' }),
   // sistema (tareas del scheduler y salud)
   rpc('sistema.expirar-holds', 'inventory', 'expireHolds', { roles: ['system'] }),
   rpc('sistema.reanudar-pendientes', 'reservation', 'resumePending', { roles: ['system'] }),
   rpc('sistema.despachar-webhooks', 'webhooks', 'dispatchPending', { roles: ['system'] }),
   rpc('sistema.recuperar-check-ins', 'operations', 'recoverCheckIns', { roles: ['system'] }),
+  { kind: 'native', name: 'sistema.publicar-eventos', handler: 'publishOutbox', roles: ['system'] },
   { kind: 'health', name: 'sistema.salud' }
 ];
 
