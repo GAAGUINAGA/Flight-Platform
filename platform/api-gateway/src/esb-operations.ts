@@ -7,6 +7,8 @@ export const ESB_OPERATIONS: Readonly<Record<string, string>> = {
   'pricing.holdOffer': 'vuelos.crear-hold',
   'pricing.getOfferHold': 'vuelos.consultar-hold',
   'pricing.releaseOfferHold': 'vuelos.liberar-hold',
+  'ancillaries.holdSeats': 'vuelos.apartar-asientos',
+  'ancillaries.releaseHeldSeats': 'vuelos.liberar-asientos-hold',
   'operations.getFlightStatus': 'vuelos.estado-vuelo',
   'inventory.findFlightInstance': 'vuelos.buscar-instancia',
   'inventory.listCabinOccupancy': 'vuelos.ocupacion-cabinas',

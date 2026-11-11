@@ -13,6 +13,25 @@ export function allocationOf(passengers: unknown[]): { assignments: Array<Record
   };
 }
 
+/**
+ * Asientos apartados por el hold (ADR-F12b2fix-01). Si la reserva no trae ninguno, se reparten en el orden de los pasajeros (los infantes no
+ * ocupan asiento): los sobrantes no se asignan (los libera la reserva) y un pasajero sin asiento queda sin asiento. Si la reserva trae
+ * asientos, mandan los de la reserva (iguales u otros) y los del hold se liberan al reservar.
+ */
+export function withHeldSeats<T>(passengers: T[], held: Array<{ segmentId: string; seatNumber: string }>): T[] {
+  const list = passengers as unknown as PassengerData[];
+  if (!held.length || list.some((passenger) => (passenger.assignedSeats?.length ?? 0) > 0)) return passengers;
+  const bySegment = new Map<string, string[]>();
+  for (const seat of held) bySegment.set(seat.segmentId, [...(bySegment.get(seat.segmentId) ?? []), seat.seatNumber]);
+  const travelers = list.filter((passenger) => passenger.passengerType !== 'INFANT');
+  return list.map((passenger) => {
+    const index = travelers.indexOf(passenger);
+    if (index < 0) return passenger as unknown as T;
+    const assignedSeats = [...bySegment.entries()].flatMap(([segmentId, seats]) => seats[index] ? [{ segmentId, seatNumber: seats[index] }] : []);
+    return (assignedSeats.length ? { ...passenger, assignedSeats } : passenger) as unknown as T;
+  });
+}
+
 /** UUID determinista por (reserva, evento): reintentos del mismo hecho no duplican el evento y hechos distintos de una misma reserva no chocan. */
 export function deterministicEventId(bookingId: string, eventType: string): string {
   const hex = createHash('sha256').update(`${bookingId}:${eventType}`).digest('hex');

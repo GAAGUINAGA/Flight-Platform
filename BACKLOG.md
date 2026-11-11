@@ -150,3 +150,6 @@
 - Conviene renombrar `ADR-F12c-01-pago-booking-cubre-tarifa.md`: el prefijo F12c corresponde a GraphQL/UI y puede confundirse con esa entrega.
 
 - v1 POST /bookings con un passengerId que no es UUID (por ejemplo, PAX-1234) responde 500 (Reservation, prisma P2023) en lugar de 400 VALIDATION_FAILED: falta validar el formato en la entrada. Detectado el 09-11-2026 en producción con un script de prueba.
+
+## Observaciones de audit-17 (migraciones sin esquema)
+- Las migraciones historicas de prisma/migrations (anteriores a 20261109000000) usan SQL sin calificar con el esquema del servicio. Quedan asi por compatibilidad: ya estan aplicadas en Supabase y cambiarlas rompe su suma de verificacion. El verificador de scripts/check-raw-sql.cjs solo exige esquema en las nuevas (ADR-F12b1fix-03).

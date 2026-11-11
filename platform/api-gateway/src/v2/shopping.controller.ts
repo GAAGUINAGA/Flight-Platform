@@ -11,6 +11,9 @@ type Json = Record<string, unknown>;
 // El catálogo de ancillaries usa EXIT_ROW; el contrato v2 lo llama EMERGENCY_EXIT y no admite otros valores.
 const SEAT_CHARACTERISTICS: Record<string, string> = { WINDOW: 'WINDOW', AISLE: 'AISLE', EXTRA_LEGROOM: 'EXTRA_LEGROOM', EMERGENCY_EXIT: 'EMERGENCY_EXIT', EXIT_ROW: 'EMERGENCY_EXIT' };
 export const v2SeatCharacteristics = (values: unknown): string[] => [...new Set((Array.isArray(values) ? values : []).map((value) => SEAT_CHARACTERISTICS[String(value)]).filter((value): value is string => Boolean(value)))];
+const ASSIGNMENT_STATUS: Record<string, string> = { HELD: 'HELD', PROVISIONAL: 'BOOKED', CONFIRMED: 'TICKETED', CHECKED_IN: 'CHECKED_IN' };
+/** Estado v2 del asiento: libre, o el de su asignación (un estado desconocido sale como BOOKED, el valor de siempre para ocupado). */
+export const v2SeatStatus = (seat: { isAvailable?: boolean; status?: string }): string => seat.isAvailable ? 'AVAILABLE' : ASSIGNMENT_STATUS[String(seat.status)] ?? 'BOOKED';
 const correlation = (req: Request): string => String(req.res?.getHeader('X-Correlation-Id') ?? '');
 /** Búsqueda, mapa de asientos y estado público de vuelos (sin token). */
 export class V2ShoppingController {
@@ -26,9 +29,9 @@ export class V2ShoppingController {
     if (!isUuid(offerId) || !isUuid(segmentId)) throw new GatewayProblemError(404, 'NOT_FOUND', 'Oferta o segmento no encontrado');
     const fetched = await fetchSeatMap(this.config, offerId, segmentId, correlation(req));
     if (fetched === undefined) throw new GatewayProblemError(404, 'NOT_FOUND', 'Oferta o segmento no encontrado');
-    const map = fetched as { segmentId?: string; cabins?: Array<{ rows?: Array<{ seats?: Array<{ isAvailable?: boolean; characteristics?: unknown }> }> }> };
-    // Solo hay dos estados calculables hoy (disponible y ocupado); HELD por asiento y BOARDED llegan con F12b.
-    return { ...map, cabins: (map.cabins ?? []).map((cabin) => ({ ...cabin, rows: (cabin.rows ?? []).map((row) => ({ ...row, seats: (row.seats ?? []).map((seat) => ({ ...seat, characteristics: v2SeatCharacteristics(seat.characteristics), status: seat.isAvailable ? 'AVAILABLE' : 'BOOKED' })) })) })) };
+    const map = fetched as { segmentId?: string; cabins?: Array<{ rows?: Array<{ seats?: Array<{ isAvailable?: boolean; status?: string; characteristics?: unknown }> }> }> };
+    // Estado desde la asignación de Ancillaries (ADR-F12b2fix-01). BOARDED no se calcula todavía.
+    return { ...map, cabins: (map.cabins ?? []).map((cabin) => ({ ...cabin, rows: (cabin.rows ?? []).map((row) => ({ ...row, seats: (row.seats ?? []).map((seat) => ({ ...seat, characteristics: v2SeatCharacteristics(seat.characteristics), status: v2SeatStatus(seat) })) })) })) };
   }
 
   async flightStatus(req: Request, flightNumber: string, date: string): Promise<Json> {

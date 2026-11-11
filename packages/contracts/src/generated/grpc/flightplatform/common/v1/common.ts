@@ -127,10 +127,12 @@ export interface FlightOffer {
   grandTotal: MoneyAmount | undefined;
 }
 
+/** Aditivo F12b2fix: `status` es el estado de la asignación de Ancillaries (HELD, PROVISIONAL, CONFIRMED, CHECKED_IN); ausente si el asiento está libre. */
 export interface Seat {
   seatNumber: string;
   isAvailable: boolean;
   characteristics: string[];
+  status?: string | undefined;
 }
 
 export interface SeatRow {

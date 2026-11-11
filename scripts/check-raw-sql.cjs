@@ -71,6 +71,43 @@ function findViolations(text) {
   return violations;
 }
 
+// ADR-F12b1fix-03: las migraciones con marca de tiempo >= MIGRATION_CUTOFF deben calificar con el esquema del servicio cada tabla, índice y tipo.
+// Las anteriores ya están aplicadas en Supabase (cambiarlas rompe su suma de verificación) y quedan exentas por compatibilidad.
+const MIGRATION_CUTOFF = '20261109000000';
+const MIGRATION_TARGET = new RegExp(
+  '\\b(?:CREATE\\s+TABLE|ALTER\\s+TABLE|DROP\\s+TABLE|CREATE\\s+TYPE|ALTER\\s+TYPE|DROP\\s+TYPE|DROP\\s+INDEX|REFERENCES|INSERT\\s+INTO|UPDATE|DELETE\\s+FROM|TRUNCATE(?:\\s+TABLE)?)' +
+    '(?:\\s+IF\\s+(?:NOT\\s+)?EXISTS)?(?:\\s+ONLY)?\\s+([^\\s,;(]+)' +
+    '|\\bCREATE\\s+(?:UNIQUE\\s+)?INDEX(?:\\s+CONCURRENTLY)?(?:\\s+IF\\s+NOT\\s+EXISTS)?\\s+\\S+\\s+ON(?:\\s+ONLY)?\\s+([^\\s,;(]+)',
+  'gi',
+);
+const SCHEMA_QUALIFIED = /^(?:"([^"]+)"|([A-Za-z_][\w$]*))\.(?:"[^"]+"|[A-Za-z_][\w$]*)$/;
+
+/** Objetos de una migración sin el esquema del servicio: [{ line, object }]. */
+function migrationViolations(sql, schema) {
+  const text = sql.replace(/--[^\n]*/g, (m) => ' '.repeat(m.length));
+  const found = [];
+  for (const match of text.matchAll(MIGRATION_TARGET)) {
+    const target = (match[1] ?? match[2]).trim();
+    const parts = target.match(SCHEMA_QUALIFIED);
+    const qualifier = parts ? (parts[1] ?? parts[2]) : null;
+    if (qualifier !== schema) found.push({ line: text.slice(0, match.index).split('\n').length, object: target.replace(/"/g, '') });
+  }
+  return found;
+}
+
+function* migrationFiles() {
+  const base = join(root, 'microservices');
+  for (const service of readdirSync(base)) {
+    const dir = join(base, service, 'prisma', 'migrations');
+    let names;
+    try { names = readdirSync(dir); } catch { continue; }
+    for (const name of names) {
+      if (!/^\d{14}_/.test(name) || name.slice(0, 14) < MIGRATION_CUTOFF) continue;
+      yield { file: join(dir, name, 'migration.sql'), schema: service.replace(/-service$/, '') };
+    }
+  }
+}
+
 function* sources(dir) {
   for (const name of readdirSync(dir)) {
     if (SKIP_DIRS.has(name)) continue;
@@ -87,13 +124,22 @@ function run() {
       for (const v of findViolations(readFileSync(file, 'utf8'))) failures.push(`${relative(root, file)}:${v.line} tabla sin esquema: ${v.table}`);
     }
   }
+  const migrationFailures = [];
+  for (const { file, schema } of migrationFiles()) {
+    let sql;
+    try { sql = readFileSync(file, 'utf8'); } catch { continue; }
+    for (const v of migrationViolations(sql, schema)) migrationFailures.push(`${relative(root, file)}:${v.line} objeto sin el esquema "${schema}": ${v.object}`);
+  }
   if (failures.length) {
     console.error(`Consultas a mano con tablas sin esquema (usa table() de schema.ts):\n${failures.join('\n')}`);
     process.exitCode = 1;
-  } else {
-    console.log('raw SQL: todas las tablas llevan esquema');
   }
+  if (migrationFailures.length) {
+    console.error(`Migraciones nuevas con objetos sin esquema (califica con "<esquema>"."<objeto>"):\n${migrationFailures.join('\n')}`);
+    process.exitCode = 1;
+  }
+  if (!failures.length && !migrationFailures.length) console.log('raw SQL y migraciones nuevas: todos los objetos llevan esquema');
 }
 
 if (require.main === module) run();
-module.exports = { findViolations, unqualifiedTables };
+module.exports = { findViolations, unqualifiedTables, migrationViolations, MIGRATION_CUTOFF };

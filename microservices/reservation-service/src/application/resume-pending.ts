@@ -70,7 +70,8 @@ export class ResumePending {
     if (!this.ancillaries || !this.inventory) return true;
     const { assignments, baggage } = allocationOf(reservation.passengers);
     try {
-      if (assignments.length) await this.ancillaries.reserveSeats({ bookingId: reservation.id, ownerId: reservation.ownerId, assignments });
+      const held = await this.ancillaries.getHeldSeats?.({ holdId: reservation.holdId, ownerId: reservation.ownerId }) ?? [];
+      if (assignments.length || held.length) await this.ancillaries.reserveSeats({ bookingId: reservation.id, ownerId: reservation.ownerId, assignments, ...(held.length ? { holdId: reservation.holdId } : {}) });
       if (baggage.length) await this.ancillaries.reserveBaggage({ bookingId: reservation.id, ownerId: reservation.ownerId, baggage });
       await this.inventory.consumeHold({ holdId: reservation.holdId, ownerId: reservation.ownerId, reservationId: reservation.id });
       return true;
@@ -79,7 +80,7 @@ export class ResumePending {
 
   private async failBeforeIssuance(reservation: StoredReservation, errorCode: string): Promise<void> {
     reservation.status = 'FAILED'; reservation.attempts += 1; reservation.changes.push({ changedAt: new Date().toISOString(), description: 'FAILED' }); await this.store.update(reservation);
-    await Promise.allSettled([this.payment.void({ paymentReference: reservation.paymentReference }), this.ancillaries?.releaseAll({ bookingId: reservation.id, ownerId: reservation.ownerId }), this.inventory?.releaseReservedInventory({ bookingId: reservation.id, ownerId: reservation.ownerId }), this.pricing?.releaseHold?.({ holdId: reservation.holdId, ownerId: reservation.ownerId })]);
+    await Promise.allSettled([this.payment.void({ paymentReference: reservation.paymentReference }), this.ancillaries?.releaseAll({ bookingId: reservation.id, ownerId: reservation.ownerId }), this.inventory?.releaseReservedInventory({ bookingId: reservation.id, ownerId: reservation.ownerId }), this.pricing?.releaseHold?.({ holdId: reservation.holdId, ownerId: reservation.ownerId }), this.ancillaries?.releaseHeldSeats?.({ holdId: reservation.holdId, ownerId: reservation.ownerId })]);
     await this.events.publish({ ownerId: reservation.ownerId, eventType: 'booking.failed', bookingId: reservation.id, pnr: reservation.pnr, status: reservation.status, extra: eventExtra(reservation, { errorCode }) });
   }
 

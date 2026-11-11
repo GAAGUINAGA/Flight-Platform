@@ -42,9 +42,13 @@ model SeatAssignment {
   cabinClass       String   @map("cabin_class") @db.VarChar(32)
   passengerType    String   @map("passenger_type") @db.VarChar(16)
   status           String   @db.VarChar(16)
+  holdId           String?  @map("hold_id") @db.Uuid
+  holdExpiresAt    DateTime? @map("hold_expires_at") @db.Timestamptz(3)
+  convertedBookingId String? @map("converted_booking_id") @db.Uuid
   createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt        DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
   @@unique([bookingId, passengerId, segmentId])
+  @@index([holdId])
   @@index([bookingId, ownerId])
   @@index([flightInstanceId, seatNumber])
   @@map("seat_assignments")

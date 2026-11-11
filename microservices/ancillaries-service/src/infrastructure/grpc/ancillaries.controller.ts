@@ -42,6 +42,9 @@ export class AncillariesController {
   assignSeatAtCheckIn(data: unknown, metadata: Metadata) { return this._deps.seats ? this._deps.seats.assignAtCheckIn(this.withOwner(data, metadata)) : this.unavailable(metadata); }
   getAssignments(data: unknown, metadata: Metadata) { return this._deps.seats ? this._deps.seats.assignments(this.withOwner(data, metadata)).then((assignments) => ({ assignments })) : this.unavailable(metadata); }
   changeSeats(data: unknown, metadata: Metadata) { return this._deps.seats ? this._deps.seats.change(this.withOwner(data, metadata)).then((results) => ({ results })) : this.unavailable(metadata); }
+  holdSeats(data: unknown, metadata: Metadata) { return this._deps.seats ? this._deps.seats.holdSeats(this.withOwner(data, metadata)) : this.unavailable(metadata); }
+  releaseHeldSeats(data: unknown, metadata: Metadata) { return this._deps.seats ? this._deps.seats.releaseHeld(this.withOwner(data, metadata)).then(() => ({})) : this.unavailable(metadata); }
+  getHeldSeats(data: unknown, metadata: Metadata) { return this._deps.seats ? this._deps.seats.heldSeats(this.withOwner(data, metadata)) : this.unavailable(metadata); }
   reserveBaggage(data: unknown, metadata: Metadata) { return this._deps.baggage ? this._deps.baggage.reserve(this.withOwner(data, metadata)) : this.unavailable(metadata); }
   registerBaggageAllowance(data: unknown, metadata: Metadata) { requireRole(context(metadata), 'system'); return this._deps.baggage ? this._deps.baggage.registerAllowances(this.withOwner(data, metadata)).then(() => ({})) : this.unavailable(metadata); }
   getBaggageOptions(data: unknown, metadata: Metadata) { return this._deps.baggage ? this._deps.baggage.options(this.withOwner(data, metadata)).then((options) => ({ options })) : this.unavailable(metadata); }
@@ -57,6 +60,6 @@ export class AncillariesController {
   }
 }
 
-const methods: Record<string, keyof AncillariesController> = { GetSeatMapForOffer: 'getSeatMapForOffer', ReserveSeats: 'reserveSeats', ConfirmSeats: 'confirmSeats', ReleaseSeats: 'releaseSeats', AssignSeatAtCheckIn: 'assignSeatAtCheckIn', GetAssignments: 'getAssignments', ReserveBaggage: 'reserveBaggage', RegisterBaggageAllowance: 'registerBaggageAllowance', GetBaggageOptions: 'getBaggageOptions', PurchaseBaggage: 'purchaseBaggage', ReleaseAll: 'releaseAll', ChangeSeats: 'changeSeats' };
+const methods: Record<string, keyof AncillariesController> = { GetSeatMapForOffer: 'getSeatMapForOffer', ReserveSeats: 'reserveSeats', ConfirmSeats: 'confirmSeats', ReleaseSeats: 'releaseSeats', AssignSeatAtCheckIn: 'assignSeatAtCheckIn', GetAssignments: 'getAssignments', ReserveBaggage: 'reserveBaggage', RegisterBaggageAllowance: 'registerBaggageAllowance', GetBaggageOptions: 'getBaggageOptions', PurchaseBaggage: 'purchaseBaggage', ReleaseAll: 'releaseAll', ChangeSeats: 'changeSeats', HoldSeats: 'holdSeats', ReleaseHeldSeats: 'releaseHeldSeats', GetHeldSeats: 'getHeldSeats' };
 for (const [rpc, key] of Object.entries(methods)) GrpcMethod('AncillariesService', rpc)(AncillariesController.prototype, key, Object.getOwnPropertyDescriptor(AncillariesController.prototype, key)!);
 Inject(ANCILLARIES_DEPS)(AncillariesController, undefined as unknown as string, 0);

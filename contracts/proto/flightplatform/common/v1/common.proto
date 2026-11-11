@@ -92,7 +92,8 @@ message FlightOffer {
   repeated ItinerarySnapshot itineraries = 4;
   MoneyAmount grand_total = 5;
 }
-message Seat { string seat_number = 1; bool is_available = 2; repeated string characteristics = 3; }
+// Aditivo F12b2fix: `status` es el estado de la asignación de Ancillaries (HELD, PROVISIONAL, CONFIRMED, CHECKED_IN); ausente si el asiento está libre.
+message Seat { string seat_number = 1; bool is_available = 2; repeated string characteristics = 3; optional string status = 4; }
 message SeatRow { uint32 row_number = 1; repeated Seat seats = 2; }
 message SeatCabin { string cabin_class = 1; repeated SeatRow rows = 2; }
 message SeatMap { string segment_id = 1; repeated SeatCabin cabins = 2; }

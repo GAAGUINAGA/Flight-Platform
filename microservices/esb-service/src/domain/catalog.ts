@@ -33,6 +33,8 @@ export const OPERATIONS: readonly Operation[] = [
   rpc('vuelos.crear-hold', 'pricing', 'holdOffer'),
   rpc('vuelos.consultar-hold', 'pricing', 'getOfferHold'),
   rpc('vuelos.liberar-hold', 'pricing', 'releaseOfferHold'),
+  rpc('vuelos.apartar-asientos', 'ancillaries', 'holdSeats'),
+  rpc('vuelos.liberar-asientos-hold', 'ancillaries', 'releaseHeldSeats'),
   rpc('vuelos.estado-vuelo', 'operations', 'getFlightStatus'),
   rpc('vuelos.buscar-instancia', 'inventory', 'findFlightInstance', { roleHint: 'admin|system' }),
   rpc('vuelos.ocupacion-cabinas', 'inventory', 'listCabinOccupancy', { roleHint: 'admin|system' }),

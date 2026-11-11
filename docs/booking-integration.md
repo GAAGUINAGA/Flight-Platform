@@ -118,6 +118,33 @@ hasta 60 min antes de la salida, equipaje hasta 4 h antes, cotización y oferta 
 pasajero. La reserva con pago pendiente o emisión fallida se reintenta hasta 3 veces; agotados los intentos queda `FAILED`, con
 tickets `VOIDED` y capacidad y asientos liberados.
 
+### 5.1 Acuerdos de integración con Booking (09-11-2026)
+
+Estos tres acuerdos se pactaron con Booking por encima del contrato: **el contrato v2 no cambia (sigue 2.0.0)**. `HoldRequest` se
+amplía de forma compatible (propiedad opcional que antes se ignoraba); quien no la envía no nota ningún cambio.
+
+**1. `assignedSeats` en `POST /vuelos/offers/hold`.** Propiedad opcional del cuerpo, con el mismo formato que `assignedSeats` de un pasajero:
+
+```json
+{ "offerId": "…", "itinerarySelections": [ … ], "passengersBreakdown": { "adults": 2 },
+  "assignedSeats": [ { "segmentId": "<uuid del segmento de la oferta>", "seatNumber": "12A" },
+                     { "segmentId": "<uuid del segmento de la oferta>", "seatNumber": "12B" } ] }
+```
+
+- `segmentId` es el UUID del segmento de la oferta (el mismo del mapa de asientos); `seatNumber` tiene la forma `12A` (1–2 dígitos y una letra A–K). Hasta tantos asientos por segmento como pasajeros con asiento (adultos + jóvenes + niños), sin repetidos.
+- Los asientos quedan apartados mientras el hold esté vigente y vencen con él. `[]` o la ausencia del campo equivalen a no apartar.
+- Si algún asiento ya está vendido o apartado por otro hold vigente: **409 `application/problem+json` con `code: SEAT_TAKEN`**, y no se crea el hold (no hay `Location` ni hold que liberar). Se aparta todo o nada.
+- Un formato inválido, un segmento que no es de la oferta o más asientos que pasajeros: 422 `VALIDATION_FAILED`, sin hold.
+- `DELETE /vuelos/offers/hold/{holdId}` y el vencimiento liberan los asientos. Al crear la reserva con ese hold: si `passengers[].assignedSeats` viene vacío se usan los del hold, repartidos en el orden de los pasajeros (sin asiento para los infantes); si coinciden, pasan de apartados a vendidos; si trae otros se liberan los del hold y se intentan los nuevos (409 `SEAT_TAKEN` si alguno está ocupado, y el hold conserva sus asientos).
+
+**2. `HELD` en `GET /vuelos/offers/{offerId}/seatmap`.** Un asiento apartado por un hold vigente (de Booking o del canal propio) sale con
+`status: HELD` e `isAvailable: false`. Al vencer el hold o liberarse vuelve a `AVAILABLE`; al pagarse pasa a `BOOKED` y, con el boleto emitido, a `TICKETED`.
+En el mapa de v1 (`/flights/v1`) el asiento apartado sale `isAvailable: false` (v1 no tiene `status`).
+
+**3. `CHECKED_IN` después del check-in.** El asiento de un pasajero con check-in hecho sale `status: CHECKED_IN` (antes salía `BOOKED`).
+
+Estados del mapa v2: `AVAILABLE`, `HELD`, `BOOKED`, `TICKETED`, `CHECKED_IN` (`BOARDED` no se calcula todavía).
+
 ## 6. Pagos simulados
 
 La API no procesa pagos: recibe una `paymentReference`. En este despliegue el verificador es simulado y decide por prefijo:

@@ -7,7 +7,11 @@ export class PrismaSeatMapStore implements SeatLayoutStore, SeatAvailabilityStor
     return this.prisma.seatLayout.findMany({ where: { aircraft }, orderBy: [{ cabinClass: 'asc' }, { rowNumber: 'asc' }, { seatNumber: 'asc' }], select: { cabinClass: true, seatNumber: true, rowNumber: true, characteristics: true } });
   }
   async activeSeatNumbers(flightInstanceId: string): Promise<string[]> {
-    const rows = await this.prisma.seatAssignment.findMany({ where: { flightInstanceId, status: { not: 'RELEASED' } }, select: { seatNumber: true } });
-    return rows.map((row) => row.seatNumber);
+    return [...(await this.seatStatuses(flightInstanceId, new Date())).keys()];
+  }
+  /** Solo lectura: una HELD con el vencimiento pasado se trata como libre sin escribir nada (la libera quien aparta). */
+  async seatStatuses(flightInstanceId: string, now: Date): Promise<Map<string, string>> {
+    const rows = await this.prisma.seatAssignment.findMany({ where: { flightInstanceId, OR: [{ status: { notIn: ['RELEASED', 'HELD'] } }, { status: 'HELD', holdExpiresAt: { gt: now } }] }, select: { seatNumber: true, status: true } });
+    return new Map(rows.map((row) => [row.seatNumber, row.status]));
   }
 }

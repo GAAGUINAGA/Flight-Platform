@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { decimalToMinor, DomainError, minorToDecimal } from '@flight-platform/shared';
 import { validatePassengers } from '../domain/passengers';
 import { generatePnr } from '../domain/pnr';
-import { allocationOf, deterministicEventId, eventExtra, isV2Reservation, ticketSummary } from './allocation';
+import { allocationOf, deterministicEventId, eventExtra, isV2Reservation, ticketSummary, withHeldSeats } from './allocation';
 import { AncillariesPort, EventPublisher, InventoryPort, PaymentVerifier, PricingPort, TicketingPort } from './ports';
 import { ReservationStore, StoredReservation } from './reservation-store';
 export interface CreateReservationInput { ownerId: string; holdId: string; passengers: unknown[]; payment: { paymentReference: string }; idempotencyKey: string; paymentChannel?: string; deferIssuanceFailure?: boolean; }
@@ -20,6 +20,9 @@ export class CreateReservation {
     const used = await this.store.findByPaymentReference(input.payment.paymentReference); if (used) throw new DomainError('PAYMENT_REFERENCE_INVALID');
     const hold = await this.pricing.getHold({ holdId: input.holdId, ownerId: input.ownerId }); if (hold.status !== 'HELD' || new Date(hold.expiresAt) <= new Date()) throw new DomainError('OFFER_NO_LONGER_AVAILABLE');
     validatePassengers(input.passengers as never[], hold.passengersBreakdown);
+    // Asientos apartados en el hold (ADR-F12b2fix-01): sin asientos en la reserva se usan los del hold, en el orden de los pasajeros.
+    const held = await this.ancillaries.getHeldSeats?.({ holdId: input.holdId, ownerId: input.ownerId }) ?? [];
+    const passengers = withHeldSeats(input.passengers, held);
     const itineraryPrices = hold.itineraries as Array<{ itineraryId: string; pricingOptions: Array<{ extraCheckedBaggagePrice?: { currency: string; total: string } }> }>;
     let expectedMinor = decimalToMinor(hold.lockedPrice.total);
     for (const passenger of input.passengers as Array<{ extraBaggage?: Array<{ itineraryId: string; quantity: number }> }>) for (const bag of passenger.extraBaggage ?? []) {
@@ -31,7 +34,7 @@ export class CreateReservation {
     if (!Number.isSafeInteger(expectedMinor)) throw new DomainError('VALIDATION_FAILED');
     const grandTotal = { ...hold.lockedPrice, total: minorToDecimal(expectedMinor) };
     const paymentResult = await this.payment.verify({ paymentReference: input.payment.paymentReference, currency: grandTotal.currency, total: grandTotal.total, ...(input.paymentChannel ? { channel: input.paymentChannel } : {}) });
-    const reservation: StoredReservation = { id: randomUUID(), ownerId: input.ownerId, pnr: await generatePnr(async (pnr) => Boolean(await this.store.findByPnr(pnr))), status: paymentResult === 'PENDING' ? 'PENDING_PAYMENT' : 'PENDING', holdId: input.holdId, paymentReference: input.payment.paymentReference, idempotencyKey: input.idempotencyKey, passengers: input.passengers, itineraries: hold.itineraries, grandTotal, changes: [], attempts: 0, ...(input.paymentChannel ? { paymentChannel: input.paymentChannel } : {}) };
+    const reservation: StoredReservation = { id: randomUUID(), ownerId: input.ownerId, pnr: await generatePnr(async (pnr) => Boolean(await this.store.findByPnr(pnr))), status: paymentResult === 'PENDING' ? 'PENDING_PAYMENT' : 'PENDING', holdId: input.holdId, paymentReference: input.payment.paymentReference, idempotencyKey: input.idempotencyKey, passengers, itineraries: hold.itineraries, grandTotal, changes: [], attempts: 0, ...(input.paymentChannel ? { paymentChannel: input.paymentChannel } : {}) };
     if (hold.itineraries.length === 0) throw new DomainError('VALIDATION_FAILED');
     const allowanceItems = (hold.itineraries as Array<{ itineraryId: string; pricingOptions: Array<{ baggageAllowance?: { checkedBaggageIncluded?: number } }> }>).flatMap((itinerary) => {
       const included = itinerary.pricingOptions?.[0]?.baggageAllowance?.checkedBaggageIncluded;
@@ -42,11 +45,11 @@ export class CreateReservation {
     try { await this.ancillaries.registerBaggageAllowance({ bookingId: reservation.id, ownerId: input.ownerId, allowances: allowanceItems }); }
     catch (error) { reservation.status = 'FAILED'; reservation.changes.push({ changedAt: new Date().toISOString(), description: 'FAILED' }); await this.store.update(reservation); await this.payment.void({ paymentReference: input.payment.paymentReference }); throw error; }
     if (paymentResult === 'PENDING') return reservation;
-    const { assignments, baggage } = allocationOf(input.passengers);
-    try { if (assignments.length) await this.ancillaries.reserveSeats({ bookingId: reservation.id, ownerId: input.ownerId, assignments }); if (baggage.length) await this.ancillaries.reserveBaggage({ bookingId: reservation.id, ownerId: input.ownerId, baggage }); await this.inventory.consumeHold({ holdId: input.holdId, ownerId: input.ownerId, reservationId: reservation.id }); } catch (error) { reservation.status = 'FAILED'; reservation.changes.push({ changedAt: new Date().toISOString(), description: 'FAILED' }); await this.store.update(reservation); await this.ancillaries.releaseAll({ bookingId: reservation.id, ownerId: input.ownerId }); await this.payment.void({ paymentReference: input.payment.paymentReference }); await this.events.publish({ ownerId: input.ownerId, eventType: 'booking.failed', bookingId: reservation.id, pnr: reservation.pnr, status: reservation.status, extra: eventExtra(reservation, { errorCode: error instanceof DomainError ? error.code : 'PNR_CREATION_FAILED' }) }); throw error; } reservation.status = 'TICKET_ISSUING'; reservation.changes.push({ changedAt: new Date().toISOString(), description: 'TICKET_ISSUING' }); await this.store.update(reservation);
+    const { assignments, baggage } = allocationOf(passengers);
+    try { if (assignments.length || held.length) await this.ancillaries.reserveSeats({ bookingId: reservation.id, ownerId: input.ownerId, assignments, ...(held.length ? { holdId: input.holdId } : {}) }); if (baggage.length) await this.ancillaries.reserveBaggage({ bookingId: reservation.id, ownerId: input.ownerId, baggage }); await this.inventory.consumeHold({ holdId: input.holdId, ownerId: input.ownerId, reservationId: reservation.id }); } catch (error) { reservation.status = 'FAILED'; reservation.changes.push({ changedAt: new Date().toISOString(), description: 'FAILED' }); await this.store.update(reservation); await this.ancillaries.releaseAll({ bookingId: reservation.id, ownerId: input.ownerId, ...(held.length ? { restoreHold: true } : {}) }); await this.payment.void({ paymentReference: input.payment.paymentReference }); await this.events.publish({ ownerId: input.ownerId, eventType: 'booking.failed', bookingId: reservation.id, pnr: reservation.pnr, status: reservation.status, extra: eventExtra(reservation, { errorCode: error instanceof DomainError ? error.code : 'PNR_CREATION_FAILED' }) }); throw error; } reservation.status = 'TICKET_ISSUING'; reservation.changes.push({ changedAt: new Date().toISOString(), description: 'TICKET_ISSUING' }); await this.store.update(reservation);
     let tickets: unknown[];
     try {
-      tickets = await this.ticketing.issueTickets({ bookingId: reservation.id, ownerId: input.ownerId, passengers: input.passengers, itineraries: hold.itineraries, requestId: reservation.id });
+      tickets = await this.ticketing.issueTickets({ bookingId: reservation.id, ownerId: input.ownerId, passengers, itineraries: hold.itineraries, requestId: reservation.id });
       if (tickets.some((ticket) => (ticket as { status?: string }).status !== 'ISSUED')) throw new DomainError('TICKET_ISSUANCE_FAILED');
     } catch (error) {
       // La reserva ya consumió el hold y queda en TICKET_ISSUING: ResumePending reintenta. Con `deferIssuanceFailure` (v2) se devuelve así, para responder 202.

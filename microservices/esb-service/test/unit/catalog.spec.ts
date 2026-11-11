@@ -13,8 +13,8 @@ const protoMethods = (service: ServiceName): Set<string> => {
 };
 
 describe('ESB-CAT: catálogo de operaciones con nombre', () => {
-  it('ESB-CAT-01: hay 44 operaciones gRPC, 1 compuesta de asientos y 1 de salud (46)', () => {
-    expect(OPERATIONS.filter((operation) => operation.kind === 'rpc')).toHaveLength(44);
+  it('ESB-CAT-01: hay 46 operaciones gRPC (44 + apartar y liberar asientos del hold, F12b2fix), 1 compuesta de asientos y 1 de salud', () => {
+    expect(OPERATIONS.filter((operation) => operation.kind === 'rpc')).toHaveLength(46);
     expect(OPERATIONS.filter((operation) => operation.kind === 'composite')).toHaveLength(1);
     expect(OPERATIONS.filter((operation) => operation.kind === 'health')).toHaveLength(1);
   });

@@ -1,4 +1,23 @@
-import { findViolations } from './check-raw-sql.cjs';
+import { findViolations, migrationViolations } from './check-raw-sql.cjs';
+
+describe('check-raw-sql: migraciones nuevas con esquema del servicio', () => {
+  it('rechaza ALTER TABLE e índice sin esquema (la migración seat_hold original)', () => {
+    const sql = 'ALTER TABLE "seat_assignments" ADD COLUMN "hold_id" UUID;\nCREATE INDEX "seat_assignments_hold_id_idx" ON "seat_assignments"("hold_id");';
+    expect(migrationViolations(sql, 'ancillaries')).toEqual([
+      expect.objectContaining({ line: 1, object: 'seat_assignments' }),
+      expect.objectContaining({ line: 2, object: 'seat_assignments' }),
+    ]);
+  });
+  it('rechaza tipos, claves foráneas y un esquema ajeno', () => {
+    expect(migrationViolations('CREATE TYPE "Status" AS ENUM (\'A\');', 'esb')).toHaveLength(1);
+    expect(migrationViolations('ALTER TABLE "esb"."a" ADD CONSTRAINT f FOREIGN KEY (x) REFERENCES "b"("id");', 'esb')).toHaveLength(1);
+    expect(migrationViolations('ALTER TABLE "public"."a" ADD COLUMN x INT;', 'esb')).toHaveLength(1);
+  });
+  it('acepta objetos calificados y no lee los comentarios', () => {
+    const sql = '-- ALTER TABLE "x" no cuenta\nALTER TABLE "ancillaries"."seat_assignments" ADD COLUMN "hold_id" UUID;\nCREATE UNIQUE INDEX "i" ON "ancillaries"."seat_assignments"("hold_id");\nCREATE TABLE "ancillaries"."t" ("id" UUID);';
+    expect(migrationViolations(sql, 'ancillaries')).toEqual([]);
+  });
+});
 
 describe('check-raw-sql: tablas de consultas a mano con esquema', () => {
   it('rechaza una tabla sin esquema en $queryRaw con genérico anidado', () => {

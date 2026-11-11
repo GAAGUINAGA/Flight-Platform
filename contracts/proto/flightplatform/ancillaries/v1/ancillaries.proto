@@ -16,10 +16,15 @@ service AncillariesService {
   rpc ReleaseAll(BookingOwnerRequest) returns (flightplatform.common.v1.Empty);
   // Aditivo F12a: cambio atómico de asientos (PUT /vuelos/bookings/{id}/seats): o se cambian todos o ninguno.
   rpc ChangeSeats(ChangeSeatsRequest) returns (ChangeSeatsResponse);
+  // Aditivo F12b2fix (ADR-F12b2fix-01): asientos apartados por un hold.
+  rpc HoldSeats(HoldSeatsRequest) returns (HeldSeatsResponse);
+  rpc ReleaseHeldSeats(HeldSeatsRequest) returns (flightplatform.common.v1.Empty);
+  rpc GetHeldSeats(HeldSeatsRequest) returns (HeldSeatsResponse);
 }
 
 message GetSeatMapForOfferRequest { string offer_id = 1; optional string segment_id = 2; }
-message BookingOwnerRequest { string booking_id = 1; string owner_id = 2; }
+// restore_hold (aditivo F12b2fix, solo ReleaseAll): devuelve al hold los asientos que la reserva había tomado de él.
+message BookingOwnerRequest { string booking_id = 1; string owner_id = 2; optional bool restore_hold = 3; }
 message SeatAssignment {
   string booking_id = 1;
   string passenger_id = 2;
@@ -33,7 +38,13 @@ message ReserveSeatsRequest {
   string booking_id = 1;
   string owner_id = 2;
   repeated SeatAssignment assignments = 3;
+  // Aditivo F12b2fix: hold del que viene la reserva; sus asientos apartados se liberan y se intentan los de `assignments` en la misma transacción.
+  optional string hold_id = 4;
 }
+message HeldSeat { string segment_id = 1; string seat_number = 2; }
+message HoldSeatsRequest { string hold_id = 1; string owner_id = 2; string expires_at = 3; repeated HeldSeat seats = 4; }
+message HeldSeatsRequest { string hold_id = 1; string owner_id = 2; }
+message HeldSeatsResponse { repeated HeldSeat seats = 1; }
 message SeatAssignmentsResponse { repeated SeatAssignment assignments = 1; }
 message AssignSeatAtCheckInRequest {
   string booking_id = 1;

@@ -171,7 +171,7 @@ describeReal('F12a P4 · postventa, asientos y check-in v2 (contra servicios rea
       const res = await put(id, s.client, seatBody(segmentId, [['PAX-1', '1C']])); expect(res.status).toBe(200); expectV2Response('PUT', '/vuelos/bookings/{bookingId}/seats', 200, res.body);
       expect(res.body.seats).toEqual([{ passengerId: 'PAX-1', segmentId, previousSeatNumber: '1A', seatNumber: '1C', status: 'TICKETED' }]); expect(res.body.amountCharged).toBeUndefined();
       const map = await request(stack.server).get(`/api/v2/vuelos/offers/${held.offer.offerId}/seatmap`).query({ segmentId }); const seatOf = (n: string) => map.body.cabins[0].rows.flatMap((r: { seats: Array<{ seatNumber: string; status: string }> }) => r.seats).find((x: { seatNumber: string }) => x.seatNumber === n);
-      expect([seatOf('1A').status, seatOf('1C').status]).toEqual(['AVAILABLE', 'BOOKED']);
+      expect([seatOf('1A').status, seatOf('1C').status]).toEqual(['AVAILABLE', 'TICKETED']);
       const sent = (await deliveries(s.client)).find((e) => e.eventType === 'booking.seat_changed'); expect(sent?.extra).toMatchObject({ changeType: 'SEAT' }); expectSchema('EventBookingChanged', buildCloudEvent(sent!, 'gabatair'));
       expect((await getBooking(stack, s.client, 'u1', id)).body.passengers[0].assignedSeats[0].seatNumber).toBe('1C');
     }, 150_000);

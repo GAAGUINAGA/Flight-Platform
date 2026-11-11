@@ -24,6 +24,7 @@ export class FailReservation {
     await this.ancillaries.releaseAll(ref);
     await this.inventory.releaseReservedInventory(ref);
     await this.pricing?.releaseHold?.({ holdId: reservation.holdId, ownerId: reservation.ownerId }).catch(() => undefined);
+    await this.ancillaries.releaseHeldSeats?.({ holdId: reservation.holdId, ownerId: reservation.ownerId }).catch(() => undefined);
     await this.payment.void({ paymentReference: reservation.paymentReference });
     reservation.status = 'FAILED'; reservation.attempts += 1; reservation.changes.push({ changedAt: new Date().toISOString(), description: 'FAILED' });
     await this.store.update(reservation);

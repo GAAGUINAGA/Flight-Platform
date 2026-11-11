@@ -16,9 +16,11 @@ export interface GetSeatMapForOfferRequest {
   segmentId?: string | undefined;
 }
 
+/** restore_hold (aditivo F12b2fix, solo ReleaseAll): devuelve al hold los asientos que la reserva había tomado de él. */
 export interface BookingOwnerRequest {
   bookingId: string;
   ownerId: string;
+  restoreHold?: boolean | undefined;
 }
 
 export interface SeatAssignment {
@@ -35,6 +37,29 @@ export interface ReserveSeatsRequest {
   bookingId: string;
   ownerId: string;
   assignments: SeatAssignment[];
+  /** Aditivo F12b2fix: hold del que viene la reserva; sus asientos apartados se liberan y se intentan los de `assignments` en la misma transacción. */
+  holdId?: string | undefined;
+}
+
+export interface HeldSeat {
+  segmentId: string;
+  seatNumber: string;
+}
+
+export interface HoldSeatsRequest {
+  holdId: string;
+  ownerId: string;
+  expiresAt: string;
+  seats: HeldSeat[];
+}
+
+export interface HeldSeatsRequest {
+  holdId: string;
+  ownerId: string;
+}
+
+export interface HeldSeatsResponse {
+  seats: HeldSeat[];
 }
 
 export interface SeatAssignmentsResponse {
@@ -149,6 +174,14 @@ export interface AncillariesServiceClient {
   /** Aditivo F12a: cambio atómico de asientos (PUT /vuelos/bookings/{id}/seats): o se cambian todos o ninguno. */
 
   changeSeats(request: ChangeSeatsRequest): Observable<ChangeSeatsResponse>;
+
+  /** Aditivo F12b2fix (ADR-F12b2fix-01): asientos apartados por un hold. */
+
+  holdSeats(request: HoldSeatsRequest): Observable<HeldSeatsResponse>;
+
+  releaseHeldSeats(request: HeldSeatsRequest): Observable<Empty>;
+
+  getHeldSeats(request: HeldSeatsRequest): Observable<HeldSeatsResponse>;
 }
 
 export interface AncillariesServiceController {
@@ -193,6 +226,16 @@ export interface AncillariesServiceController {
   changeSeats(
     request: ChangeSeatsRequest,
   ): Promise<ChangeSeatsResponse> | Observable<ChangeSeatsResponse> | ChangeSeatsResponse;
+
+  /** Aditivo F12b2fix (ADR-F12b2fix-01): asientos apartados por un hold. */
+
+  holdSeats(request: HoldSeatsRequest): Promise<HeldSeatsResponse> | Observable<HeldSeatsResponse> | HeldSeatsResponse;
+
+  releaseHeldSeats(request: HeldSeatsRequest): Promise<Empty> | Observable<Empty> | Empty;
+
+  getHeldSeats(
+    request: HeldSeatsRequest,
+  ): Promise<HeldSeatsResponse> | Observable<HeldSeatsResponse> | HeldSeatsResponse;
 }
 
 export function AncillariesServiceControllerMethods() {
@@ -210,6 +253,9 @@ export function AncillariesServiceControllerMethods() {
       "purchaseBaggage",
       "releaseAll",
       "changeSeats",
+      "holdSeats",
+      "releaseHeldSeats",
+      "getHeldSeats",
     ];
     for (const method of grpcMethods) {
       const descriptor: any = Reflect.getOwnPropertyDescriptor(constructor.prototype, method);

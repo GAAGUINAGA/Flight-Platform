@@ -35,7 +35,9 @@ export class ShoppingController {
   async seatmap(req: Request, offerId: string, segmentId: string): Promise<unknown> {
     const map = await fetchSeatMap(this.config, offerId, segmentId, String(req.res?.getHeader('X-Correlation-Id') ?? ''));
     if (map === undefined) throw new GatewayProblemError(404, 'OFFER_NO_LONGER_AVAILABLE', 'Offer or segment not available');
-    return map;
+    // v1 no tiene `status` por asiento: el apartado solo se ve como isAvailable false.
+    const value = map as { cabins?: Array<{ rows?: Array<{ seats?: Array<Json> }> }> };
+    return { ...value, cabins: (value.cabins ?? []).map((cabin) => ({ ...cabin, rows: (cabin.rows ?? []).map((row) => ({ ...row, seats: (row.seats ?? []).map((seat) => { const { status, ...visible } = seat; void status; return visible; }) })) })) };
   }
 }
 

@@ -69,13 +69,13 @@ describeReal('F12a P2 · búsqueda, mapa de asientos, estado de vuelo y hold (co
       expect(seats.map((seat: { seatNumber: string }) => seat.seatNumber).sort()).toEqual(['1A', '1B', '1C']);
       expect(seats.every((seat: { isAvailable: boolean; status: string }) => seat.isAvailable && seat.status === 'AVAILABLE')).toBe(true);
     }, 60_000);
-    it('V2-P2-11 un asiento reservado pasa a BOOKED y isAvailable a false', async () => {
+    it('V2-P2-11 un asiento de una reserva con boleto emitido pasa a TICKETED y isAvailable a false', async () => {
       const s = await scenario(); const client = s.client; const held = await hold(stack, s, client, 'u1');
       const booked = await book(stack, s, client, 'u1', held, { passengers: [passenger('PAX-1', { assignedSeats: [{ segmentId: held.offer.segmentId, seatNumber: '1B' }] })] });
       expect(booked.response.status).toBe(201);
       const res = await request(stack.server).get(`/api/v2/vuelos/offers/${held.offer.offerId}/seatmap`).query({ segmentId: held.offer.segmentId });
       const seat = res.body.cabins[0].rows.flatMap((r: { seats: Array<{ seatNumber: string; isAvailable: boolean; status: string }> }) => r.seats).find((x: { seatNumber: string }) => x.seatNumber === '1B');
-      expect(seat).toMatchObject({ isAvailable: false, status: 'BOOKED' });
+      expect(seat).toMatchObject({ isAvailable: false, status: 'TICKETED' });
     }, 90_000);
     it('V2-P2-12 un offerId que no es UUID o no existe responde 404 NOT_FOUND', async () => {
       const segmentId = randomUUID();

@@ -26,7 +26,11 @@ export interface AncillariesPort {
   reserveSeats(input: unknown): Promise<void>;
   reserveBaggage(input: unknown): Promise<void>;
   confirmSeats(input: { bookingId: string; ownerId: string }): Promise<void>;
-  releaseAll(input: { bookingId: string; ownerId: string }): Promise<void>;
+  /** `restoreHold`: devuelve al hold los asientos que esta reserva tomó de él (solo cuando el hold sigue vivo). */
+  releaseAll(input: { bookingId: string; ownerId: string; restoreHold?: boolean }): Promise<void>;
+  /** Asientos apartados por el hold (ADR-F12b2fix-01). Opcionales: sin ellos la reserva se comporta como antes. */
+  getHeldSeats?(input: { holdId: string; ownerId: string }): Promise<Array<{ segmentId: string; seatNumber: string }>>;
+  releaseHeldSeats?(input: { holdId: string; ownerId: string }): Promise<void>;
   getAssignments(input: { bookingId: string; ownerId: string }): Promise<unknown[]>;
   getBaggageOptions(input: { bookingId: string; ownerId: string }): Promise<unknown[]>;
   purchaseBaggage(input: { bookingId: string; ownerId: string; passengerId: string; itineraryId: string; quantity: number; operationId: string }): Promise<{ passengerId: string; itineraryId: string; totalBaggage: number }>;
