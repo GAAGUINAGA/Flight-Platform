@@ -1,4 +1,4 @@
-# ADR-F12c-01 — El pago de Booking debe cubrir la tarifa (modifica D4 de F12a)
+# ADR-F12b2fix-02 — El pago de Booking debe cubrir la tarifa (modifica D4 de F12a)
 
 Estado: Aceptado (decisión del humano, 2026-11-08). Modifica la decisión D4 de `ADR-F12-04-reservation-pagos-booking-compensacion.md`.
 

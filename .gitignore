@@ -16,3 +16,4 @@ microservices/*/src/infrastructure/persistence/prisma-client/
 platform/api-gateway/generated/
 platform/api-gateway/.local/
 .local/
+plantilla-portal-aereo

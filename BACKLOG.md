@@ -147,7 +147,12 @@
 - Herramienta de reproceso de la cola de fallidos `q.webhooks.entrega.fallidos` (hoy manual desde la consola de RabbitMQ), con alarma por tamaño de la cola (ADR-F12b-05).
 ## Observaciones de la verificación de pagos de Booking (audit-13)
 - La segunda corrida completa del Gateway tuvo 1 fallo intermitente en `p1-security.e2e.spec.ts`, sin `ENOBUFS`; el archivo pasó aislado (49/49) y las dos corridas completas siguientes pasaron (868/868, 1 `todo`).
-- Conviene renombrar `ADR-F12c-01-pago-booking-cubre-tarifa.md`: el prefijo F12c corresponde a GraphQL/UI y puede confundirse con esa entrega.
+- ~~Conviene renombrar `ADR-F12c-01-pago-booking-cubre-tarifa.md`~~ Hecho en F12c-0: ahora es `ADR-F12b2fix-02-pago-booking-cubre-tarifa.md` (el prefijo F12c queda para GraphQL/UI: `ADR-F12c-01-front-graphql-react.md`). Los informes de auditoría y bitácoras anteriores conservan el nombre antiguo (historial); los comentarios de `booking-payments.ts` y su prueba también lo citan como `ADR-F12c-01`.
+
+## Pendientes que el front necesita (F12c-0, 2026-11-11; ver `docs/dev/f12c0-diseno-front.md` §14)
+- **Prioridad alta (pequeño):** la puerta de embarque. Operations ya la guarda (`departure_gate`, ADR-F12-10) pero `GET /vuelos/flights/{n}/status` y los pases de abordar v2 no la devuelven (el contrato v2 ya declara `gate` en `FlightStatusEndpoint` y `BoardingPass`). Exponerla.
+- **Prioridad alta (pequeño):** salud del bus de eventos en el panel. El ESB ya informa el bus en `/health/deps`; `GET /api/v2/vuelos/health` solo reporta los siete servicios. Incluir el estado del bus (y, si es posible, eventos pendientes/fallidos) en la salud o en un endpoint de administración.
+- Catálogo de aeropuertos/rutas y de vuelos por origen (hoy configuración estática en el front).
 
 - v1 POST /bookings con un passengerId que no es UUID (por ejemplo, PAX-1234) responde 500 (Reservation, prisma P2023) en lugar de 400 VALIDATION_FAILED: falta validar el formato en la entrada. Detectado el 09-11-2026 en producción con un script de prueba.
 
