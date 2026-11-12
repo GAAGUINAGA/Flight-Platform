@@ -9,6 +9,7 @@ import { createReservationServer, findProtoRoot } from './infrastructure/grpc/se
 import { FakePaymentVerifier } from './infrastructure/clients/fakes';
 import { BookingPaymentVerifier, bookingPaymentsConfigFromEnv, warnIfVerificationOff } from './infrastructure/clients/booking-payments';
 import { RoutingPaymentVerifier } from './infrastructure/clients/routing-payment-verifier';
+import { WebPaymentVerifier, warnWebPayments, webPaymentModeFromEnv } from './infrastructure/clients/web-payments';
 import { GrpcAncillariesGateway, GrpcEventPublisher, GrpcInventoryGateway, GrpcPricingGateway, GrpcServiceForOwner, GrpcTicketingGateway } from './infrastructure/clients/grpc-gateways';
 import { PrismaClient } from './infrastructure/persistence/prisma-client/client';
 import { PrismaReservationStore } from './infrastructure/persistence/prisma-reservation-store';
@@ -34,8 +35,8 @@ async function bootstrap(): Promise<void> {
   warnIfEventBusBypassed(process.env, 'reservation-service');
   const esb = process.env.ESB_URL ? esbEventClientFromEnv(process.env, internalApiKey, 'reservation-service') : undefined;
   const events = new GrpcEventPublisher(esb ? () => ({ publishEvent: (input: unknown) => from(esb.publish(input as EsbEventInput)) }) : factory(process.env.WEBHOOKS_GRPC_URL ?? 'localhost:50057', 'flightplatform.webhooks.v1', 'flightplatform/webhooks/v1/webhooks.proto', 'WebhooksService'));
-  // v1 conserva su verificador; los clientes client_credentials de v2 usan el canal BOOKING (API de pagos de Booking, configurable por entorno).
-  const prisma = new PrismaClient(); const store = new PrismaReservationStore(prisma); const bookingPayments = bookingPaymentsConfigFromEnv(); warnIfVerificationOff(bookingPayments); const payment = new RoutingPaymentVerifier(new FakePaymentVerifier(), { BOOKING: new BookingPaymentVerifier(bookingPayments) });
+  // v1 conserva su verificador; los socios de v2 usan el canal BOOKING (API de pagos de Booking, configurable por entorno) y la web propia el canal WEB (pago simulado, solo con WEB_PAYMENT_MODE=simulated; ADR-F12c-02).
+  const prisma = new PrismaClient(); const store = new PrismaReservationStore(prisma); const bookingPayments = bookingPaymentsConfigFromEnv(); warnIfVerificationOff(bookingPayments); const webMode = webPaymentModeFromEnv(process.env); warnWebPayments(webMode); const payment = new RoutingPaymentVerifier(new FakePaymentVerifier(), { BOOKING: new BookingPaymentVerifier(bookingPayments), WEB: new WebPaymentVerifier(webMode, new FakePaymentVerifier()) });
   const deps = composeReservation({ store, pricing, payment, ancillaries, inventory, ticketing, events, operations: new PrismaBaggageOperations(prisma), quotes: new PrismaCancellationQuotes(prisma), clock: new SystemClock(), cutoffHours: Number(process.env.BAGGAGE_CUTOFF_HOURS ?? '4'), holdTtlMinutes: Number(process.env.HOLD_TTL_MINUTES ?? '20'), validateResponse: createResponseValidator() });
   const app = await createReservationServer({ url: grpcBindUrl(process.env, '50054'), internalApiKey, deps });
   app.enableShutdownHooks();

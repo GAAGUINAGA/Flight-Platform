@@ -13,6 +13,7 @@ import { v2Controller, v2Route } from './route';
 import { InMemoryV2StateStore, type V2StateStore } from './state';
 import type { StockSync } from './stock/stock-sync';
 import { ownerClient } from './v2-security';
+import { assertWebMayPay, channelFor, translateWebLimitError, webLimitsFor, webSalesChannel } from './web-sales';
 
 type Json = Record<string, unknown>;
 const logger = new Logger('V2Bookings');
@@ -50,12 +51,18 @@ export class V2BookingController {
   }
 
   async create(req: Request, res: Response, body: BookingBody): Promise<Json> {
-    const replay = req.v2Replay === true; const partner = Boolean(req.auth!.clientId); const clientId = req.auth!.clientId ?? ownerClient(req.auth!.ownerId);
+    const replay = req.v2Replay === true; const channel = channelFor(req.auth!); const clientId = req.auth!.clientId ?? ownerClient(req.auth!.ownerId);
+    // Canal WEB (ADR-F12c-02): interruptor y correo confirmado antes de tocar el hold. Un socio (BOOKING) no pasa por aquí.
+    if (channel === 'WEB') assertWebMayPay(this.config, req.auth!);
     const { passengers, internalToExternal } = mapPassengerIds(body.passengers, `${req.auth!.ownerId}:${body.holdId}`);
     if (!replay) await this.preflight(req, body);
-    const created = await this.call(req, 'reservation', 'createReservation', { holdId: body.holdId, passengers, payment: { paymentReference: body.payment.paymentReference }, idempotencyKey: req.header('idempotency-key'), ...(partner ? { paymentChannel: 'BOOKING', deferIssuanceFailure: true } : {}) }) as { bookingId: string; status: string };
+    // ADR-F12c-03: los topes por usuario los aplica Reservation al insertar la reserva (con un candado por dueño); aquí solo se envían los valores y se traduce el rechazo.
+    // Un reintento con la misma Idempotency-Key devuelve la reserva existente (Reservation busca primero por clave): no crea otra ni cuenta de nuevo.
+    const created = await this.call(req, 'reservation', 'createReservation', { holdId: body.holdId, passengers, payment: { paymentReference: body.payment.paymentReference }, idempotencyKey: req.header('idempotency-key'), paymentChannel: channel, deferIssuanceFailure: true, ...(channel === 'WEB' ? webLimitsFor(this.config) : {}) }).catch((error: unknown) => { throw translateWebLimitError(error); }) as { bookingId: string; status: string };
     // La fila de v2 se (re)escribe también en los reintentos: una caída entre Reservation y esta tabla se repara con el reintento.
-    await this.state.saveBooking({ bookingId: created.bookingId, clientId, ownerId: req.auth!.ownerId, holdId: body.holdId, paymentReference: body.payment.paymentReference, ...(body.salesChannel ? { salesChannel: body.salesChannel } : {}), passengerMap: internalToExternal }).catch(() => logger.error('v2 booking state could not be saved'));
+    // Las reservas del canal WEB quedan marcadas como de prueba (`salesChannel.partnerId = WEB_TEST`); el cuerpo del cliente nunca decide esa marca.
+    const salesChannel = channel === 'WEB' ? webSalesChannel(body.passengers.length) : body.salesChannel;
+    await this.state.saveBooking({ bookingId: created.bookingId, clientId, ownerId: req.auth!.ownerId, holdId: body.holdId, paymentReference: body.payment.paymentReference, ...(salesChannel ? { salesChannel } : {}), passengerMap: internalToExternal }).catch(() => logger.error('v2 booking state could not be saved'));
     const raw = await this.fetch(req, created.bookingId); await this.stock?.trigger(this.stock.flightsOf(raw as never), correlation(req));
     const detail = await this.compose(raw);
     res.status(replay ? 200 : created.status === 'CONFIRMED' ? 201 : 202); res.setHeader('Location', `${this.base}/api/v2/vuelos/bookings/${created.bookingId}`);

@@ -51,7 +51,7 @@ No hay variables obligatorias nuevas. Estas tienen valor por defecto:
 | reservation | `BOOKING_PAYMENTS_AUTH_VALUE` (valor de la cabecera de autenticación hacia la API de pagos de Booking) | vacía | **Sí** |
 | reservation | `BOOKING_PAYMENTS_AUTH_HEADER`, `BOOKING_PAYMENTS_PATH_TEMPLATE`, `BOOKING_PAYMENTS_TIMEOUT_MS`, `BOOKING_PAYMENTS_STATUS_MAP`, `BOOKING_PAYMENTS_FIELDS` | ver `microservices/reservation-service/src/infrastructure/clients/booking-payments.ts` | No |
 
-> Actualización (ADR-F12c-01): `BOOKING_PAYMENTS_BASE_URL`, `BOOKING_PAYMENTS_AUTH_HEADER` y el secreto `BOOKING_PAYMENTS_AUTH_VALUE=booking-payments-auth:latest` ya están declarados en `deploy-reservation.yml`; el pago de Booking se acepta con monto mayor o igual al total de la reserva.
+> Actualización (ADR-F12b2fix-02): `BOOKING_PAYMENTS_BASE_URL`, `BOOKING_PAYMENTS_AUTH_HEADER` y el secreto `BOOKING_PAYMENTS_AUTH_VALUE=booking-payments-auth:latest` ya están declarados en `deploy-reservation.yml`; el pago de Booking se acepta con monto mayor o igual al total de la reserva.
 
 `BOOKING_PAYMENTS_VERIFY=off` y `INTEGRATION_LOCAL` no se definen en la nube (el servicio se niega a arrancar con ellos en producción).
 

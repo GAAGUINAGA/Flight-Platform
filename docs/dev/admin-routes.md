@@ -1,5 +1,7 @@
 # Rutas administrativas `/flights/v1/admin/*` (PLT-H1)
 
+> **Deprecadas (F12c, ADR-F12c-02).** El contrato v1 está deprecado y el panel de administración ya no debe usar estas rutas. La **API interna de administración, versión 1** (`/api/admin/v1`, OpenAPI `contracts/openapi/interno/admin-v1.yaml`, sin relación con el contrato v1) ofrece lista de vuelos con `flightInstanceId`, lectura y guardado de tarifas y las reservas de prueba del canal WEB. Estas rutas siguen existiendo hasta que se retire v1.
+
 No forman parte de `contracts/openapi/vuelos-openapi.yaml`; el Gateway las excluye de la validación OpenAPI
 (`ignorePaths` en `platform/api-gateway/src/app.ts`) y cada servicio valida la entrada con Zod.
 

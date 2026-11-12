@@ -147,7 +147,7 @@
 - Herramienta de reproceso de la cola de fallidos `q.webhooks.entrega.fallidos` (hoy manual desde la consola de RabbitMQ), con alarma por tamaño de la cola (ADR-F12b-05).
 ## Observaciones de la verificación de pagos de Booking (audit-13)
 - La segunda corrida completa del Gateway tuvo 1 fallo intermitente en `p1-security.e2e.spec.ts`, sin `ENOBUFS`; el archivo pasó aislado (49/49) y las dos corridas completas siguientes pasaron (868/868, 1 `todo`).
-- ~~Conviene renombrar `ADR-F12c-01-pago-booking-cubre-tarifa.md`~~ Hecho en F12c-0: ahora es `ADR-F12b2fix-02-pago-booking-cubre-tarifa.md` (el prefijo F12c queda para GraphQL/UI: `ADR-F12c-01-front-graphql-react.md`). Los informes de auditoría y bitácoras anteriores conservan el nombre antiguo (historial); los comentarios de `booking-payments.ts` y su prueba también lo citan como `ADR-F12c-01`.
+- ~~Conviene renombrar `ADR-F12c-01-pago-booking-cubre-tarifa.md`~~ Hecho en F12c-0: ahora es `ADR-F12b2fix-02-pago-booking-cubre-tarifa.md` (el prefijo F12c queda para GraphQL/UI: `ADR-F12c-01-front-graphql-react.md`). Los informes de auditoría y bitácoras anteriores conservan el nombre antiguo (historial). Las citas vivas (comentarios de `booking-payments.ts` y su prueba, `docs/dev/f12a-despliegue.md`) se corrigieron en la entrega de backend previo al front.
 
 ## Pendientes que el front necesita (F12c-0, 2026-11-11; ver `docs/dev/f12c0-diseno-front.md` §14)
 - **Prioridad alta (pequeño):** la puerta de embarque. Operations ya la guarda (`departure_gate`, ADR-F12-10) pero `GET /vuelos/flights/{n}/status` y los pases de abordar v2 no la devuelven (el contrato v2 ya declara `gate` en `FlightStatusEndpoint` y `BoardingPass`). Exponerla.
@@ -158,3 +158,7 @@
 
 ## Observaciones de audit-17 (migraciones sin esquema)
 - Las migraciones historicas de prisma/migrations (anteriores a 20261109000000) usan SQL sin calificar con el esquema del servicio. Quedan asi por compatibilidad: ya estan aplicadas en Supabase y cambiarlas rompe su suma de verificacion. El verificador de scripts/check-raw-sql.cjs solo exige esquema en las nuevas (ADR-F12b1fix-03).
+
+## Observaciones de audit-20 (backend previo al front)
+- Intermitente en Reservation: la primera corrida real falló PST-07 / C (esperaba QUOTE_EXPIRED, recibió BOOKING_NOT_CONFIRMED); la repetición pasó 19/19. Revisar si la prueba depende del tiempo de vencimiento de la cotización.
+- Intermitente en el gateway: la primera corrida completa falló V2-P1-43 (esperaba 200, recibió 503); las dos siguientes pasaron. Revisar si es un arranque lento de un servicio en la suite.

@@ -31,6 +31,7 @@ import { PostSaleController } from './post-sale.controller';
 import { OperationsController } from './operations.controller';
 import { WebhooksController } from './webhooks.controller';
 import { AdminController } from './admin.controller';
+import { AdminApiController, mountAdminApiHttp } from './admin-api';
 import { AnyScopeGuard } from './v2/v2-security';
 import { DevAuthService, InMemoryDevAuthClientStore, type DevAuthClientStore } from './v2/dev-auth';
 import { PrismaDevAuthClientStore } from './v2/prisma-dev-auth-store';
@@ -102,7 +103,7 @@ export async function createGatewayApp(config: GatewayConfig) {
   ];
   class GatewayModule {}
   const v2Controllers = [V2AuthController, V2HealthController, V2ShoppingController, V2HoldController, V2BookingController, V2PostSaleController, V2WebhooksController, V2EventsController, V2BookingEventsController, V2OperationsController, V2PromotionsController, ...(process.env.NODE_ENV === 'test' ? [(await import('./v2/test-controller')).V2TestController] : [])];
-  Module({ imports: [LoggerModule.forRoot({ pinoHttp: loggerOptions })], controllers: testComponents ? [HealthController, ShoppingController, HoldController, BookingController, PostSaleController, OperationsController, WebhooksController, AdminController, ...v2Controllers, testComponents.TestController] : [HealthController, ShoppingController, HoldController, BookingController, PostSaleController, OperationsController, WebhooksController, AdminController, ...v2Controllers], providers })(GatewayModule);
+  Module({ imports: [LoggerModule.forRoot({ pinoHttp: loggerOptions })], controllers: testComponents ? [HealthController, ShoppingController, HoldController, BookingController, PostSaleController, OperationsController, WebhooksController, AdminController, AdminApiController, ...v2Controllers, testComponents.TestController] : [HealthController, ShoppingController, HoldController, BookingController, PostSaleController, OperationsController, WebhooksController, AdminController, AdminApiController, ...v2Controllers], providers })(GatewayModule);
   const app = await NestFactory.create(GatewayModule);
   const express = app.getHttpAdapter().getInstance(); express.set('trust proxy', 1);
   express.use(helmet({ hsts: { maxAge: 15552000, includeSubDomains: true } }));
@@ -116,6 +117,7 @@ export async function createGatewayApp(config: GatewayConfig) {
   express.use('/api/v2/vuelos/booking-events', expressFactory.json({ limit: '100kb', type: ['application/json', 'application/cloudevents+json'], verify: (req, _res, buf) => { (req as Request).rawBody = Buffer.from(buf); } }));
   express.use(expressFactory.json({ limit: '100kb' }));
   mountV2Http(express, config, app.get(DevAuthService));
+  mountAdminApiHttp(express, config, app.get(DevAuthService));
   const problemAjv = new Ajv({ strict: false }); addFormats(problemAjv);
   const problemSchema = config.validateResponses ? problemAjv.compile((parse(readFileSync(openApiSpecPath(), 'utf8')) as { components: { schemas: { ProblemDetails: object } } }).components.schemas.ProblemDetails) : undefined;
   express.use('/flights/v1', openApiMiddleware({ apiSpec: openApiSpecPath(), validateRequests: true, validateSecurity: false, validateFormats: true, ajvFormats: { mode: 'full' }, validateResponses: config.validateResponses ? {

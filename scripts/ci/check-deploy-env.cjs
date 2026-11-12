@@ -19,10 +19,14 @@ const workflows = path.join(root, '.github', 'workflows');
 const SERVICES = [
   { name: 'webhooks', workflow: 'deploy-webhooks.yml', src: 'microservices/webhooks-service/src', mode: 'set', secrets: ['DATABASE_URL', 'WEBHOOK_SECRET_ENCRYPTION_KEY', 'RABBITMQ_URL'], env: [] },
   { name: 'inventory', workflow: 'deploy-inventory.yml', src: 'microservices/inventory-service/src', mode: 'set', secrets: ['DATABASE_URL'], env: ['ESB_URL', 'GRPC_TLS'] },
-  { name: 'reservation', workflow: 'deploy-reservation.yml', src: 'microservices/reservation-service/src', mode: 'set', secrets: ['DATABASE_URL', 'BOOKING_PAYMENTS_AUTH_VALUE'], env: ['ESB_URL', 'GRPC_TLS', 'BOOKING_PAYMENTS_BASE_URL', 'BOOKING_PAYMENTS_AUTH_HEADER'] },
+  { name: 'reservation', workflow: 'deploy-reservation.yml', src: 'microservices/reservation-service/src', mode: 'set', secrets: ['DATABASE_URL', 'BOOKING_PAYMENTS_AUTH_VALUE'], env: ['ESB_URL', 'GRPC_TLS', 'BOOKING_PAYMENTS_BASE_URL', 'BOOKING_PAYMENTS_AUTH_HEADER', 'WEB_PAYMENT_MODE'] },
   { name: 'operations', workflow: 'deploy-operations.yml', src: 'microservices/operations-service/src', mode: 'set', secrets: ['DATABASE_URL'], env: ['ESB_URL', 'GRPC_TLS'] },
   { name: 'esb', workflow: 'deploy-esb.yml', src: 'microservices/esb-service/src', mode: 'update', secrets: ['INTERNAL_API_KEY'], manual: ['DATABASE_URL', 'DIRECT_URL', 'RABBITMQ_URL'], env: ['GRPC_TLS'] }
 ];
+
+// El Gateway se despliega en Render (sin workflow de despliegue: las variables se configuran en el panel de Render). Lo que se puede verificar
+// aquí es que cada variable del canal WEB (ADR-F12c-02) siga usándose en su código y esté documentada en .env.example y en la guía de despliegue.
+const GATEWAY_RENDER = { src: 'platform/api-gateway/src', envExample: 'platform/api-gateway/.env.example', guide: 'docs/dev/f12c-backend-previo-despliegue.md', env: ['WEB_PAYMENT_MODE', 'WEB_MAX_ACTIVE_BOOKINGS', 'WEB_MAX_PASSENGERS_PER_DAY'] };
 
 const read = (file) => fs.readFileSync(file, 'utf8');
 const listFiles = (dir) => fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? listFiles(path.join(dir, e.name)) : [path.join(dir, e.name)]));
@@ -56,6 +60,13 @@ function check() {
       if (v === 'DIRECT_URL') continue; // solo la usa Prisma Migrate
       if (!code.includes(v) && !pkgs.includes(v) && !['DATABASE_URL', 'INTERNAL_API_KEY'].includes(v)) problems.push(`${svc.name}: ${v} figura en el manifiesto pero el código ya no la usa (actualiza scripts/ci/check-deploy-env.cjs)`);
     }
+  }
+  const gwCode = listFiles(path.join(root, GATEWAY_RENDER.src)).filter((f) => f.endsWith('.ts') && !f.endsWith('.spec.ts')).map(read).join('\n');
+  const gwExample = read(path.join(root, GATEWAY_RENDER.envExample)); const gwGuide = read(path.join(root, GATEWAY_RENDER.guide));
+  for (const v of GATEWAY_RENDER.env) {
+    if (!gwCode.includes(v)) problems.push(`gateway: ${v} figura en el manifiesto pero el código ya no la usa (actualiza scripts/ci/check-deploy-env.cjs)`);
+    if (!new RegExp(`^#?\\s*${v}=`, 'm').test(gwExample)) problems.push(`gateway: ${v} no está declarada en ${GATEWAY_RENDER.envExample}`);
+    if (!gwGuide.includes(v)) problems.push(`gateway: ${v} no figura en la guía ${GATEWAY_RENDER.guide} (variables de Render)`);
   }
   return problems;
 }

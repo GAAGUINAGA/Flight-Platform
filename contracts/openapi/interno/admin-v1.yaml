@@ -1,0 +1,270 @@
+openapi: 3.0.3
+info:
+  title: API interna de administración de GabatAIR — versión 1
+  version: 1.0.0
+  description: |
+    **API interna de administración, versión 1.** Es de uso exclusivo del panel de administración de GabatAIR.
+    **No forma parte del contrato público** con Booking y **no tiene relación con el contrato `v1` (`/flights/v1`), que está deprecado**:
+    aquí «v1» es solo la primera versión de esta API interna.
+
+    - Solo el rol `admin` con el scope `flights:admin` (JWT de Supabase). Un `customer`, un `partner` o una petición sin token no entran.
+    - Errores con el formato `ProblemDetails` de la API v2 (RFC 7807).
+    - Los manejadores son los de las antiguas rutas de administración; no hay lógica nueva salvo `GET /web-bookings`.
+    - Fechas y horas de vuelo en ISO-8601 con desplazamiento; `date` es la fecha local del aeropuerto de origen (ADR-F12b1fix-02).
+servers:
+  - url: /api/admin/v1
+    description: Gateway (misma URL base que el resto de la plataforma)
+security:
+  - BearerAuth: []
+paths:
+  /flights:
+    get:
+      operationId: listAdminFlights
+      summary: Listar vuelos (con flightInstanceId)
+      parameters:
+        - name: date
+          in: query
+          required: false
+          description: Fecha local del aeropuerto de origen (AAAA-MM-DD).
+          schema: { type: string, format: date }
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 0, maximum: 200 }
+        - name: cursor
+          in: query
+          required: false
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Página de vuelos
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminFlightList' }
+        '400': { $ref: '#/components/responses/Problem400' }
+        '401': { $ref: '#/components/responses/Problem401' }
+        '403': { $ref: '#/components/responses/Problem403' }
+  /fares:
+    get:
+      operationId: listAdminFares
+      summary: Leer tarifas (de un vuelo o todas)
+      parameters:
+        - name: flightInstanceId
+          in: query
+          required: false
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Tarifas
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminFareList' }
+        '400': { $ref: '#/components/responses/Problem400' }
+        '401': { $ref: '#/components/responses/Problem401' }
+        '403': { $ref: '#/components/responses/Problem403' }
+    put:
+      operationId: upsertAdminFare
+      summary: Guardar una tarifa (la clave natural vuelo + cabina + marca actualiza y conserva fareId)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AdminFareInput' }
+      responses:
+        '200':
+          description: Tarifa guardada
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminFareResponse' }
+        '400': { $ref: '#/components/responses/Problem400' }
+        '401': { $ref: '#/components/responses/Problem401' }
+        '403': { $ref: '#/components/responses/Problem403' }
+  /web-bookings:
+    get:
+      operationId: listWebTestBookings
+      summary: Reservas del canal WEB (pago simulado), marcadas como de prueba
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+        - name: before
+          in: query
+          required: false
+          description: Cursor (`nextCursor` de la página anterior).
+          schema: { type: string, format: date-time }
+      responses:
+        '200':
+          description: Reservas de prueba de la web, de la más reciente a la más antigua
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WebTestBookingList' }
+        '400': { $ref: '#/components/responses/Problem400' }
+        '401': { $ref: '#/components/responses/Problem401' }
+        '403': { $ref: '#/components/responses/Problem403' }
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT de Supabase con `app_role = admin` y el scope `flights:admin`.
+  responses:
+    Problem400:
+      description: Solicitud inválida
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/ProblemDetails' }
+    Problem401:
+      description: No autenticado
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/ProblemDetails' }
+    Problem403:
+      description: Rol o scope insuficiente
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/ProblemDetails' }
+  schemas:
+    ProblemDetails:
+      type: object
+      additionalProperties: false
+      required: [type, title, status, code]
+      properties:
+        type: { type: string }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        instance: { type: string }
+        code:
+          type: string
+          enum: [VALIDATION_FAILED, UNAUTHORIZED, FORBIDDEN, NOT_FOUND, RATE_LIMIT_EXCEEDED, INTERNAL_ERROR, PROVIDER_UNAVAILABLE]
+        correlation_id: { type: string }
+        timestamp: { type: string, format: date-time }
+        invalidParams:
+          type: array
+          items:
+            type: object
+            properties:
+              name: { type: string }
+              reason: { type: string }
+    CabinClass:
+      type: string
+      enum: [ECONOMY, PREMIUM_ECONOMY, BUSINESS, FIRST]
+    Page:
+      type: object
+      properties:
+        nextCursor: { type: string, nullable: true }
+    CabinCapacity:
+      type: object
+      required: [cabinClass, capacity]
+      properties:
+        cabinClass: { $ref: '#/components/schemas/CabinClass' }
+        capacity: { type: integer, minimum: 0 }
+    FlightEndpoint:
+      type: object
+      properties:
+        iataCode: { type: string, pattern: '^[A-Z]{3}$' }
+        at: { type: string, format: date-time }
+        terminal: { type: string, nullable: true }
+    AdminFlight:
+      type: object
+      required: [flightInstanceId, segment, cabins, closed]
+      properties:
+        flightInstanceId: { type: string, format: uuid }
+        segment:
+          type: object
+          properties:
+            flightNumber: { type: string }
+            departure: { $ref: '#/components/schemas/FlightEndpoint' }
+            arrival: { $ref: '#/components/schemas/FlightEndpoint' }
+            aircraft: { type: string, nullable: true }
+        cabins:
+          type: array
+          items: { $ref: '#/components/schemas/CabinCapacity' }
+        closed: { type: boolean }
+    AdminFlightList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/AdminFlight' }
+        page: { $ref: '#/components/schemas/Page' }
+    Money:
+      type: object
+      additionalProperties: false
+      required: [currency, total]
+      properties:
+        currency: { type: string, pattern: '^[A-Z]{3}$' }
+        baseFare: { type: string, pattern: '^\d+\.\d{2}$' }
+        taxes: { type: string, pattern: '^\d+\.\d{2}$' }
+        total: { type: string, pattern: '^\d+\.\d{2}$' }
+    AdminFareInput:
+      type: object
+      additionalProperties: false
+      required: [flightInstanceId, cabinClass, fareBrand, price, fareRules, baggageAllowance, extraCheckedBaggagePrice]
+      properties:
+        fareId: { type: string, format: uuid }
+        flightInstanceId: { type: string, format: uuid }
+        cabinClass: { $ref: '#/components/schemas/CabinClass' }
+        fareBrand: { type: string, minLength: 1, maxLength: 32 }
+        price: { $ref: '#/components/schemas/Money' }
+        fareRules:
+          type: object
+          additionalProperties: false
+          required: [isRefundable, isChangeable]
+          properties:
+            isRefundable: { type: boolean }
+            isChangeable: { type: boolean }
+        baggageAllowance:
+          type: object
+          additionalProperties: false
+          properties:
+            personalItemIncluded: { type: boolean }
+            carryOnIncluded: { type: integer, minimum: 0, maximum: 9 }
+            checkedBaggageIncluded: { type: integer, minimum: 0, maximum: 9 }
+        extraCheckedBaggagePrice: { $ref: '#/components/schemas/Money' }
+    AdminFare:
+      type: object
+      required: [fareId, flightInstanceId, cabinClass, fareBrand, price]
+      properties:
+        fareId: { type: string, format: uuid }
+        flightInstanceId: { type: string, format: uuid }
+        cabinClass: { $ref: '#/components/schemas/CabinClass' }
+        fareBrand: { type: string }
+        price: { type: object }
+        fareRules: { type: object }
+        baggageAllowance: { type: object }
+        extraCheckedBaggagePrice: { type: object }
+    AdminFareResponse:
+      type: object
+      required: [fare]
+      properties:
+        fare: { $ref: '#/components/schemas/AdminFare' }
+    AdminFareList:
+      type: object
+      required: [fares]
+      properties:
+        fares:
+          type: array
+          items: { $ref: '#/components/schemas/AdminFareResponse' }
+        page: { $ref: '#/components/schemas/Page' }
+    WebTestBooking:
+      type: object
+      required: [bookingId, createdAt, channel, test, passengers]
+      properties:
+        bookingId: { type: string, format: uuid }
+        createdAt: { type: string, format: date-time }
+        channel: { type: string, enum: [WEB] }
+        test: { type: boolean, enum: [true], description: 'Siempre true: pago simulado, sin cobro.' }
+        passengers: { type: integer, minimum: 0 }
+        owner: { type: string, description: 'Referencia opaca del usuario (hash); nunca el sub ni datos personales.' }
+    WebTestBookingList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/WebTestBooking' }
+        nextCursor: { type: string, format: date-time, nullable: true }

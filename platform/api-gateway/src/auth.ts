@@ -3,7 +3,7 @@ import { URL } from 'node:url';
 import { createRemoteJWKSet, importSPKI, jwtVerify } from 'jose';
 import type { JwtIssuer } from './config';
 
-export interface AuthContext { ownerId: string; role: string; scopes: Set<string>; /** Solo v2 con token de partner: cliente OAuth al que pertenece el dueño compuesto. */ clientId?: string; }
+export interface AuthContext { ownerId: string; role: string; scopes: Set<string>; /** Solo v2 con token de partner: cliente OAuth al que pertenece el dueño compuesto. */ clientId?: string; /** Claim `email_verified: true` de nivel superior (lo agrega el hook de Supabase desde `email_confirmed_at`); nunca `user_metadata`, que el usuario puede editar. */ emailVerified?: boolean; }
 export async function verifyBearer(header: string | undefined, issuers: JwtIssuer[]): Promise<AuthContext> {
   if (!header?.startsWith('Bearer ')) throw new Error('UNAUTHENTICATED');
   const token = header.slice(7);
@@ -14,7 +14,7 @@ export async function verifyBearer(header: string | undefined, issuers: JwtIssue
         : await jwtVerify(token, await importSPKI(readFileSync(issuer.publicKeyFile!, 'utf8'), 'RS256'), { issuer: issuer.iss, audience: issuer.aud, algorithms: ['RS256', 'ES256'], clockTolerance: 30 });
       const { payload } = result;
       if (typeof payload.sub !== 'string') throw new Error('missing sub');
-      return { ownerId: payload.sub, role: typeof payload.app_role === 'string' ? payload.app_role : (issuer.role ?? 'customer'), scopes: new Set(typeof payload.scope === 'string' ? payload.scope.split(' ') : []) };
+      return { ownerId: payload.sub, role: typeof payload.app_role === 'string' ? payload.app_role : (issuer.role ?? 'customer'), scopes: new Set(typeof payload.scope === 'string' ? payload.scope.split(' ') : []), ...(payload.email_verified === true ? { emailVerified: true } : {}) };
     } catch { /* Try the next configured issuer. */ }
   }
   throw new Error('UNAUTHENTICATED');

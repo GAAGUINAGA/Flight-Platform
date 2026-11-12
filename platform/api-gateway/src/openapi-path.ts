@@ -15,6 +15,19 @@ export function openApiV2SpecPath(): string {
   }
 }
 
+/** OpenAPI de la API interna de administración (`/api/admin/v1`, ADR-F12c-02), separado de los contratos con Booking. */
+export function openApiAdminSpecPath(): string {
+  if (process.env.OPENAPI_ADMIN_SPEC_PATH) return resolve(process.env.OPENAPI_ADMIN_SPEC_PATH);
+  let directory = __dirname;
+  for (;;) {
+    const candidate = join(directory, 'contracts', 'openapi', 'interno', 'admin-v1.yaml');
+    if (existsSync(candidate)) return candidate;
+    const parent = dirname(directory);
+    if (parent === directory) throw new Error('OpenAPI admin specification not found');
+    directory = parent;
+  }
+}
+
 export function openApiSpecPath(): string {
   if (process.env.OPENAPI_SPEC_PATH) return resolve(process.env.OPENAPI_SPEC_PATH);
   let directory = __dirname;

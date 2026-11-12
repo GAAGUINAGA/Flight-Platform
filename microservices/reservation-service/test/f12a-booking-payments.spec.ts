@@ -114,7 +114,7 @@ describe('F12a verificador de pagos de Booking (D4)', () => {
     let seen = ''; await new BookingPaymentVerifier({ ...config, fetchImpl: (async (url: string) => { seen = url; return new Response(JSON.stringify({ estado: 'PENDIENTE' })); }) as unknown as typeof fetch }).verify(input);
     expect(seen).toBe('http://100.64.1.2:9000/v2/payments/PAY-BKP-001/status/'.replace(/\/$/, ''));
   });
-  // ADR-F12c-01: el pago de Booking incluye su servicio; basta con que cubra el total (630 nuestros + 63 de Booking = 693).
+  // ADR-F12b2fix-02: el pago de Booking incluye su servicio; basta con que cubra el total (630 nuestros + 63 de Booking = 693).
   const BOOKING_REAL = { payment_reference: 'PAY-BKP-20261108-226306', status: 'CAPTURED', amount: 693, refunded_amount: 0, currency: 'USD', captured_at: '2026-11-08T22:18:22.600Z', auth_code: 'AUTH-PAG-BE3D6520', bookings: [] };
   const reservation630 = { paymentReference: 'PAY-BKP-20261108-226306', currency: 'USD', total: '630.00' };
   it('PAY-31: la respuesta real de Booking (CAPTURED, 693) cubre una reserva de 630 y se acepta', async () => {

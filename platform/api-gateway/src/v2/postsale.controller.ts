@@ -10,6 +10,7 @@ import { bookingLinks } from './links';
 import { v2Controller, v2Route } from './route';
 import { publicSegment } from './shapes';
 import { InMemoryV2StateStore, type V2BookingRecord, type V2StateStore } from './state';
+import { assertWebMayPay, channelFor } from './web-sales';
 import type { StockSync } from './stock/stock-sync';
 
 type Json = Record<string, unknown>;
@@ -33,7 +34,8 @@ export class V2PostSaleController {
     const toInternal = (passengerId: string): string => { const internal = inverse.get(passengerId) ?? (isUuid(passengerId) ? passengerId.toLowerCase() : undefined); if (!internal || !known.has(internal)) throw new GatewayProblemError(400, 'VALIDATION_FAILED', 'passengerId no pertenece a la reserva'); return internal; };
     return { raw, record, map, toInternal };
   }
-  private paymentChannel(req: Request): Json { return req.auth!.clientId ? { paymentChannel: 'BOOKING' } : {}; }
+  /** Canal de pago por rol (ADR-F12c-02): socio → BOOKING; usuario de Supabase → WEB, que exige interruptor y correo confirmado. */
+  private paymentChannel(req: Request): Json { const channel = channelFor(req.auth!); if (channel === 'WEB') assertWebMayPay(this.config, req.auth!); return { paymentChannel: channel }; }
 
   async baggageOptions(req: Request, bookingId: string): Promise<Json[]> {
     const { map } = await this.access(req, bookingId); const value = await this.call(req, 'reservation', 'getBaggageOptions', { bookingId }) as { options?: Json[] };

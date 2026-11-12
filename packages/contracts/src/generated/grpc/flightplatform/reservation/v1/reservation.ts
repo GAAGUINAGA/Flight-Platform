@@ -45,7 +45,15 @@ export interface CreateReservationRequest {
     | string
     | undefined;
   /** Aditivo F12a: si Ticketing falla tras consumir el hold, devuelve la reserva en TICKET_ISSUING (a reintentar) en lugar de error. */
-  deferIssuanceFailure?: boolean | undefined;
+  deferIssuanceFailure?:
+    | boolean
+    | undefined;
+  /**
+   * Aditivo F12c (ADR-F12c-03): topes por dueño del canal WEB que Reservation aplica en la transacción que inserta la reserva
+   * (reservas activas y pasajeros por día UTC). Ausentes = sin topes (canal BOOKING).
+   */
+  webMaxActiveBookings?: number | undefined;
+  webMaxPassengersPerDay?: number | undefined;
 }
 
 export interface FailReservationRequest {

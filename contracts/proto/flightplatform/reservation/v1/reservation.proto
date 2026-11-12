@@ -37,6 +37,10 @@ message CreateReservationRequest {
   optional string payment_channel = 6;
   // Aditivo F12a: si Ticketing falla tras consumir el hold, devuelve la reserva en TICKET_ISSUING (a reintentar) en lugar de error.
   optional bool defer_issuance_failure = 7;
+  // Aditivo F12c (ADR-F12c-03): topes por dueño del canal WEB que Reservation aplica en la transacción que inserta la reserva
+  // (reservas activas y pasajeros por día UTC). Ausentes = sin topes (canal BOOKING).
+  optional uint32 web_max_active_bookings = 8;
+  optional uint32 web_max_passengers_per_day = 9;
 }
 message FailReservationRequest { string booking_id = 1; string owner_id = 2; optional string reason = 3; }
 message GetReservationRequest { string booking_id = 1; string owner_id = 2; }

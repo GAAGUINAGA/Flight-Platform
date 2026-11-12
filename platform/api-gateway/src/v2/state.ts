@@ -1,6 +1,7 @@
 import type { PrismaClient } from '../../generated/prisma-client';
+import { isWebTestBooking, WEB_TEST_PARTNER_ID } from './web-sales';
 
-export interface V2BookingRecord { bookingId: string; clientId: string; ownerId: string; holdId: string; paymentReference: string; salesChannel?: Record<string, unknown>; passengerMap: Record<string, string> }
+export interface V2BookingRecord { bookingId: string; clientId: string; ownerId: string; holdId: string; paymentReference: string; salesChannel?: Record<string, unknown>; passengerMap: Record<string, string>; /** Lo asigna el almacén al guardar la primera vez. */ createdAt?: Date }
 
 /** Estado propio de la fachada v2: lo que el contrato expone de una reserva y Reservation no guarda, y los eventos de Booking ya procesados. */
 export interface V2StateStore {
@@ -14,11 +15,13 @@ export interface V2StateStore {
   completeEvent(clientId: string, eventId: string, outcome: string): Promise<void>;
   eventOutcome(clientId: string, eventId: string): Promise<string | null>;
   releaseEvent(clientId: string, eventId: string): Promise<void>;
+  /** Reservas del canal WEB (de prueba), de la más reciente a la más antigua; `before` es el cursor (createdAt de la última leída). */
+  listWebBookings(options: { limit: number; before?: Date }): Promise<V2BookingRecord[]>;
 }
 
 export class InMemoryV2StateStore implements V2StateStore {
   readonly bookings = new Map<string, V2BookingRecord>(); readonly events = new Map<string, { type: string; outcome: string }>();
-  async saveBooking(record: V2BookingRecord): Promise<void> { this.bookings.set(record.bookingId, { ...record }); }
+  async saveBooking(record: V2BookingRecord): Promise<void> { this.bookings.set(record.bookingId, { ...record, createdAt: this.bookings.get(record.bookingId)?.createdAt ?? record.createdAt ?? new Date() }); }
   async findBooking(bookingId: string): Promise<V2BookingRecord | null> { return this.bookings.get(bookingId) ?? null; }
   async findBookingByPayment(clientId: string, paymentReference: string): Promise<V2BookingRecord | null> { return [...this.bookings.values()].find((r) => r.clientId === clientId && r.paymentReference === paymentReference) ?? null; }
   async findBookingByPaymentReference(paymentReference: string): Promise<V2BookingRecord | null> { return [...this.bookings.values()].find((r) => r.paymentReference === paymentReference) ?? null; }
@@ -26,6 +29,7 @@ export class InMemoryV2StateStore implements V2StateStore {
   async completeEvent(clientId: string, eventId: string, outcome: string): Promise<void> { const found = this.events.get(`${clientId}:${eventId}`); if (found) found.outcome = outcome; }
   async eventOutcome(clientId: string, eventId: string): Promise<string | null> { const found = this.events.get(`${clientId}:${eventId}`); return found?.outcome ? found.outcome : null; }
   async releaseEvent(clientId: string, eventId: string): Promise<void> { this.events.delete(`${clientId}:${eventId}`); }
+  async listWebBookings(options: { limit: number; before?: Date }): Promise<V2BookingRecord[]> { return [...this.bookings.values()].filter((r) => isWebTestBooking(r.salesChannel) && (!options.before || (r.createdAt ?? new Date(0)) < options.before)).sort((a, b) => (b.createdAt?.getTime() ?? 0) - (a.createdAt?.getTime() ?? 0)).slice(0, options.limit).map((r) => ({ ...r })); }
 }
 
 const isUniqueViolation = (error: unknown): boolean => typeof error === 'object' && error !== null && (error as { code?: string }).code === 'P2002';
@@ -36,7 +40,7 @@ export class PrismaV2StateStore implements V2StateStore {
     const data = { clientId: r.clientId, ownerId: r.ownerId, holdId: r.holdId, paymentReference: r.paymentReference, salesChannel: (r.salesChannel ?? undefined) as never, passengerMap: r.passengerMap as never };
     await this.prisma.v2Booking.upsert({ where: { bookingId: r.bookingId }, create: { bookingId: r.bookingId, ...data }, update: data });
   }
-  private toRecord(row: { bookingId: string; clientId: string; ownerId: string; holdId: string; paymentReference: string; salesChannel: unknown; passengerMap: unknown }): V2BookingRecord { return { bookingId: row.bookingId, clientId: row.clientId, ownerId: row.ownerId, holdId: row.holdId, paymentReference: row.paymentReference, ...(row.salesChannel ? { salesChannel: row.salesChannel as Record<string, unknown> } : {}), passengerMap: (row.passengerMap ?? {}) as Record<string, string> }; }
+  private toRecord(row: { bookingId: string; clientId: string; ownerId: string; holdId: string; paymentReference: string; salesChannel: unknown; passengerMap: unknown; createdAt?: Date }): V2BookingRecord { return { bookingId: row.bookingId, clientId: row.clientId, ownerId: row.ownerId, holdId: row.holdId, paymentReference: row.paymentReference, ...(row.createdAt ? { createdAt: row.createdAt } : {}), ...(row.salesChannel ? { salesChannel: row.salesChannel as Record<string, unknown> } : {}), passengerMap: (row.passengerMap ?? {}) as Record<string, string> }; }
   async findBooking(bookingId: string): Promise<V2BookingRecord | null> { const row = await this.prisma.v2Booking.findUnique({ where: { bookingId } }); return row ? this.toRecord(row) : null; }
   async findBookingByPayment(clientId: string, paymentReference: string): Promise<V2BookingRecord | null> { const row = await this.prisma.v2Booking.findFirst({ where: { clientId, paymentReference }, orderBy: { createdAt: 'desc' } }); return row ? this.toRecord(row) : null; }
   async findBookingByPaymentReference(paymentReference: string): Promise<V2BookingRecord | null> { const row = await this.prisma.v2Booking.findFirst({ where: { paymentReference }, orderBy: { createdAt: 'desc' } }); return row ? this.toRecord(row) : null; }
@@ -47,4 +51,8 @@ export class PrismaV2StateStore implements V2StateStore {
   async completeEvent(clientId: string, eventId: string, outcome: string): Promise<void> { await this.prisma.v2ProcessedEvent.update({ where: { clientId_eventId: { clientId, eventId } }, data: { outcome } }); }
   async eventOutcome(clientId: string, eventId: string): Promise<string | null> { const row = await this.prisma.v2ProcessedEvent.findUnique({ where: { clientId_eventId: { clientId, eventId } } }); return row?.outcome ? row.outcome : null; }
   async releaseEvent(clientId: string, eventId: string): Promise<void> { await this.prisma.v2ProcessedEvent.deleteMany({ where: { clientId, eventId, outcome: '' } }); }
+  async listWebBookings(options: { limit: number; before?: Date }): Promise<V2BookingRecord[]> {
+    const rows = await this.prisma.v2Booking.findMany({ where: { salesChannel: { path: ['partnerId'], equals: WEB_TEST_PARTNER_ID }, ...(options.before ? { createdAt: { lt: options.before } } : {}) }, orderBy: { createdAt: 'desc' }, take: options.limit });
+    return rows.map((row) => this.toRecord(row));
+  }
 }

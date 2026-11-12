@@ -1,12 +1,23 @@
 import { randomUUID } from 'node:crypto';
+import { Logger } from '@nestjs/common';
 import { decimalToMinor, DomainError, minorToDecimal } from '@flight-platform/shared';
 import { validatePassengers } from '../domain/passengers';
 import { generatePnr } from '../domain/pnr';
 import { allocationOf, deterministicEventId, eventExtra, isV2Reservation, ticketSummary, withHeldSeats } from './allocation';
 import { AncillariesPort, EventPublisher, InventoryPort, PaymentVerifier, PricingPort, TicketingPort } from './ports';
 import { ReservationStore, StoredReservation } from './reservation-store';
-export interface CreateReservationInput { ownerId: string; holdId: string; passengers: unknown[]; payment: { paymentReference: string }; idempotencyKey: string; paymentChannel?: string; deferIssuanceFailure?: boolean; }
-type CreateReservationResult = StoredReservation & { tickets?: unknown[] };
+export interface CreateReservationInput { ownerId: string; holdId: string; passengers: unknown[]; payment: { paymentReference: string }; idempotencyKey: string; paymentChannel?: string; deferIssuanceFailure?: boolean; webMaxActiveBookings?: number; webMaxPassengersPerDay?: number; }
+const isPositiveInteger = (value: unknown): value is number => typeof value === 'number' && Number.isSafeInteger(value) && value >= 1;
+/** Canal WEB sin topes completos y validos = configuracion faltante: se rechaza (INVALID_ARGUMENT) sin insertar ni tocar el pago. BOOKING no lleva topes. Sin datos personales en el registro. */
+function webLimitsOf(input: CreateReservationInput): { maxActiveBookings: number; maxPassengersPerDay: number } | undefined {
+  if (input.paymentChannel !== 'WEB') return undefined;
+  if (!isPositiveInteger(input.webMaxActiveBookings) || !isPositiveInteger(input.webMaxPassengersPerDay)) {
+    new Logger('CreateReservation').error('Configuración faltante: el canal WEB llegó sin topes válidos (webMaxActiveBookings/webMaxPassengersPerDay); creación rechazada antes de insertar.');
+    throw new DomainError('VALIDATION_FAILED');
+  }
+  return { maxActiveBookings: input.webMaxActiveBookings, maxPassengersPerDay: input.webMaxPassengersPerDay };
+}
+type CreateReservationResult =StoredReservation & { tickets?: unknown[] };
 export class CreateReservation {
   private readonly pending = new Map<string, Promise<CreateReservationResult>>();
   private serial: Promise<void> = Promise.resolve();
@@ -16,6 +27,7 @@ export class CreateReservation {
     const operation = this.serial.then(() => this.create(input)); this.serial = operation.then(() => undefined, () => undefined); this.pending.set(lock, operation); try { return await operation; } finally { this.pending.delete(lock); }
   }
   private async create(input: CreateReservationInput): Promise<CreateReservationResult> {
+    const limits = webLimitsOf(input); // Falla cerrado (ADR-F12c-03): antes de cualquier lectura, insercion o efecto (pago incluido).
     const existing = await this.store.findByIdempotency(input.ownerId, input.idempotencyKey); if (existing) return existing;
     const used = await this.store.findByPaymentReference(input.payment.paymentReference); if (used) throw new DomainError('PAYMENT_REFERENCE_INVALID');
     const hold = await this.pricing.getHold({ holdId: input.holdId, ownerId: input.ownerId }); if (hold.status !== 'HELD' || new Date(hold.expiresAt) <= new Date()) throw new DomainError('OFFER_NO_LONGER_AVAILABLE');
@@ -41,7 +53,9 @@ export class CreateReservation {
       if (!Number.isInteger(included) || included! < 0) throw new DomainError('VALIDATION_FAILED');
       return (input.passengers as Array<{ passengerId: string; passengerType: string }>).map((passenger) => ({ passengerId: passenger.passengerId, itineraryId: itinerary.itineraryId, checkedBaggageIncluded: passenger.passengerType === 'INFANT' ? 0 : included! }));
     });
-    await this.store.create(reservation);
+    // Canal WEB (ADR-F12c-03): los topes por dueño los aplica el almacén dentro de la transacción que inserta; los socios (BOOKING) no tienen topes.
+    try { await this.store.create(reservation, limits); }
+    catch (error) { if (error instanceof DomainError && (error.code === 'WEB_ACTIVE_LIMIT_EXCEEDED' || error.code === 'WEB_PASSENGERS_LIMIT_EXCEEDED')) await this.payment.void({ paymentReference: input.payment.paymentReference }).catch(() => undefined); throw error; }
     try { await this.ancillaries.registerBaggageAllowance({ bookingId: reservation.id, ownerId: input.ownerId, allowances: allowanceItems }); }
     catch (error) { reservation.status = 'FAILED'; reservation.changes.push({ changedAt: new Date().toISOString(), description: 'FAILED' }); await this.store.update(reservation); await this.payment.void({ paymentReference: input.payment.paymentReference }); throw error; }
     if (paymentResult === 'PENDING') return reservation;

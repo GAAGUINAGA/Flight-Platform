@@ -21,7 +21,7 @@ jobs:
       runtime_service_account: reservation-service-runtime@project-a1d2e3ba-f6ff-469e-854.iam.gserviceaccount.com
       secret_name: internal-api-key
       extra_secrets: DATABASE_URL=reservation-database-url:latest,BOOKING_PAYMENTS_AUTH_VALUE=booking-payments-auth:latest
-      extra_env_vars: INVENTORY_GRPC_URL=inventory-service-gtl24uc77a-ue.a.run.app:443,PRICING_GRPC_URL=pricing-service-gtl24uc77a-ue.a.run.app:443,ANCILLARIES_GRPC_URL=ancillaries-service-gtl24uc77a-ue.a.run.app:443,TICKETING_GRPC_URL=ticketing-service-gtl24uc77a-ue.a.run.app:443,WEBHOOKS_GRPC_URL=webhooks-service-gtl24uc77a-ue.a.run.app:443,GRPC_TLS=true,BOOKING_PAYMENTS_BASE_URL=https://booking-core-api.azurewebsites.net/api/v2,BOOKING_PAYMENTS_AUTH_HEADER=x-api-key,ESB_URL=https://esb-service-gtl24uc77a-ue.a.run.app
+      extra_env_vars: INVENTORY_GRPC_URL=inventory-service-gtl24uc77a-ue.a.run.app:443,PRICING_GRPC_URL=pricing-service-gtl24uc77a-ue.a.run.app:443,ANCILLARIES_GRPC_URL=ancillaries-service-gtl24uc77a-ue.a.run.app:443,TICKETING_GRPC_URL=ticketing-service-gtl24uc77a-ue.a.run.app:443,WEBHOOKS_GRPC_URL=webhooks-service-gtl24uc77a-ue.a.run.app:443,GRPC_TLS=true,BOOKING_PAYMENTS_BASE_URL=https://booking-core-api.azurewebsites.net/api/v2,BOOKING_PAYMENTS_AUTH_HEADER=x-api-key,ESB_URL=https://esb-service-gtl24uc77a-ue.a.run.app,WEB_PAYMENT_MODE=simulated
       test_command: npx jest microservices/reservation-service/test --runInBand --testPathIgnorePatterns=integration
     secrets:
       workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}

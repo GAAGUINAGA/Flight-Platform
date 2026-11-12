@@ -2,7 +2,7 @@ import { status as grpcStatus } from '@grpc/grpc-js';
 import { HttpException } from '@nestjs/common';
 
 // Duck typing: `web-errors` importa este módulo y un import directo de GatewayProblemError sería circular.
-const isGatewayProblem = (error: unknown): error is { statusCode: number; code: string; safeDetail?: string } =>
+const isGatewayProblem = (error: unknown): error is { statusCode: number; code: string; safeDetail?: string; problemType?: string } =>
   error instanceof Error && typeof (error as { statusCode?: unknown }).statusCode === 'number' && typeof (error as { code?: unknown }).code === 'string' && error.constructor.name === 'GatewayProblemError';
 
 /** Códigos del enum `ProblemDetails.code` del contrato v2 y el HTTP con el que el contrato los lista. */
@@ -25,16 +25,19 @@ const TITLES: Readonly<Record<string, string>> = {
 export interface V2Problem { type: string; title: string; status: number; code: string; detail?: string; instance?: string; correlation_id?: string; timestamp: string; invalidParams?: Array<{ name: string; reason: string }>; }
 export interface V2RequestInfo { method: string; path: string; correlationId?: string; }
 
-export const isV2Path = (path: string): boolean => path === '/api/v2' || path.startsWith('/api/v2/');
+/** `/api/admin/v1` (API interna de administración, ADR-F12c-02) usa la misma autenticación y el mismo formato de errores que v2. */
+export const isInternalAdminPath = (path: string): boolean => path === '/api/admin/v1' || path.startsWith('/api/admin/v1/');
+export const isV2Path = (path: string): boolean => path === '/api/v2' || path.startsWith('/api/v2/') || isInternalAdminPath(path);
 
 const kebab =(code: string): string => code.toLowerCase().replace(/_/g, '-');
 
-export function buildV2Problem(code: string, request: V2RequestInfo, options: { status?: number; detail?: string; invalidParams?: V2Problem['invalidParams'] } = {}): V2Problem {
+export function buildV2Problem(code: string, request: V2RequestInfo, options: { status?: number; detail?: string; invalidParams?: V2Problem['invalidParams']; problemType?: string } = {}): V2Problem {
   const known = code in V2_PROBLEM_STATUS;
   const finalCode = known ? code : 'INTERNAL_ERROR';
   const status = options.status ?? V2_PROBLEM_STATUS[finalCode];
+  const typeSuffix = options.problemType && /^[a-z0-9-]{1,64}$/.test(options.problemType) ? options.problemType : kebab(finalCode);
   return {
-    type: `https://flight-platform.dev/problems/${kebab(finalCode)}`, title: TITLES[finalCode] ?? finalCode, status, code: finalCode,
+    type: `https://flight-platform.dev/problems/${typeSuffix}`, title: TITLES[finalCode] ?? finalCode, status, code: finalCode,
     ...(options.detail ? { detail: options.detail } : {}), instance: request.path, ...(request.correlationId ? { correlation_id: request.correlationId } : {}),
     timestamp: new Date().toISOString(), ...(options.invalidParams?.length ? { invalidParams: options.invalidParams } : {})
   };
@@ -47,7 +50,7 @@ export function v2ProblemFromError(error: unknown, request: V2RequestInfo): V2Pr
   if (isGatewayProblem(error)) {
     // Los guards de v1 lanzan VALIDATION_FAILED con 401/403: en v2 son UNAUTHORIZED/FORBIDDEN.
     const code = error.code in V2_PROBLEM_STATUS && !(error.code === 'VALIDATION_FAILED' && error.statusCode !== 400) ? error.code : codeForStatus(error.statusCode);
-    return buildV2Problem(code, request, { status: error.statusCode, detail: error.safeDetail });
+    return buildV2Problem(code, request, { status: error.statusCode, detail: error.safeDetail, problemType: error.problemType });
   }
   if (typeof error === 'object' && error !== null && 'code' in error && typeof error.code === 'number') {
     const details = (error as { details?: unknown }).details;

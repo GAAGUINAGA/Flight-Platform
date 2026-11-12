@@ -32,6 +32,20 @@ export interface GatewayConfig {
   /** `true` si ESB_URL vino explícita; `main.ts` la exige en producción con transporte esb. */
   esbUrlConfigured: boolean;
   v2?: V2Config;
+  /** Canal de venta WEB (pago simulado de prueba, ADR-F12c-02). Sin `WEB_PAYMENT_MODE=simulated` no se vende. */
+  web: WebSalesConfig;
+}
+
+export interface WebSalesConfig {
+  /** `simulated` solo si WEB_PAYMENT_MODE es exactamente `simulated`; cualquier otro valor (o ausente) es `off`. */
+  paymentMode: 'simulated' | 'off';
+  /** Valor recibido (para avisar al arrancar si no es reconocido). */
+  paymentModeRaw?: string;
+  /** Reservas activas (no canceladas ni fallidas) por usuario. */
+  maxActiveBookings: number;
+  /** Pasajeros reservados por usuario en las últimas 24 h. */
+  maxPassengersPerDay: number;
+  requireVerifiedEmail: boolean;
 }
 
 /** Configuración de la fachada v2 y del dev-auth (F12a). Los valores por defecto son los de producción. */
@@ -112,8 +126,22 @@ export function loadConfig(env: Environment = process.env): GatewayConfig {
   if (transport !== 'esb' && transport !== 'grpc') throw new Error('GATEWAY_TRANSPORT must be esb or grpc');
   const esbUrl = (env.ESB_URL ?? process.env.ESB_URL ?? '').trim().replace(/\/+$/, '');
   if (esbUrl && !/^https?:\/\/[^\s/]+$/.test(esbUrl)) throw new Error('ESB_URL must be an origin without path');
+  const positive = (value: string | undefined, fallback: number, name: string): number => {
+    if (value === undefined || value.trim() === '') return fallback;
+    const parsed = Number(value);
+    if (!Number.isInteger(parsed) || parsed < 1) throw new Error(`${name} must be a positive integer`);
+    return parsed;
+  };
+  if (env.WEB_REQUIRE_VERIFIED_EMAIL === 'false' && production) throw new Error('WEB_REQUIRE_VERIFIED_EMAIL=false is forbidden in production');
+  const webPaymentModeRaw = env.WEB_PAYMENT_MODE?.trim() || undefined;
+  const web: WebSalesConfig = {
+    paymentMode: webPaymentModeRaw === 'simulated' ? 'simulated' : 'off', paymentModeRaw: webPaymentModeRaw,
+    maxActiveBookings: positive(env.WEB_MAX_ACTIVE_BOOKINGS, 5, 'WEB_MAX_ACTIVE_BOOKINGS'),
+    maxPassengersPerDay: positive(env.WEB_MAX_PASSENGERS_PER_DAY, 10, 'WEB_MAX_PASSENGERS_PER_DAY'),
+    requireVerifiedEmail: env.WEB_REQUIRE_VERIFIED_EMAIL !== 'false'
+  };
   return {
-    transport, esbUrl: esbUrl || 'http://localhost:3100', esbUrlConfigured: Boolean(esbUrl),
+    transport, esbUrl: esbUrl || 'http://localhost:3100', esbUrlConfigured: Boolean(esbUrl), web,
     v2, port, internalApiKey: required(env.INTERNAL_API_KEY, 'INTERNAL_API_KEY'), jwtIssuers,
     corsOrigins: (env.CORS_ORIGINS ?? '').split(',').map((x: string) => x.trim()).filter(Boolean),
     publicLimit: Number(env.RATE_LIMIT_PUBLIC_PER_MIN ?? 60), authLimit: Number(env.RATE_LIMIT_AUTH_PER_MIN ?? 120),

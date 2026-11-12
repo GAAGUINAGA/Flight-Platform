@@ -16,8 +16,12 @@ describe('F12a integración: estado de la fachada v2 y clientes del dev-auth en 
   const record = (overrides: Partial<Parameters<PrismaV2StateStore['saveBooking']>[0]> = {}) => { const bookingId = randomUUID(); bookingIds.push(bookingId); return { bookingId, clientId: `${run}-a`, ownerId: `${run}-a~u1`, holdId: randomUUID(), paymentReference: `PAY-${randomUUID()}`, passengerMap: { [randomUUID()]: 'PAX-1' }, ...overrides }; };
 
   it('V2-STATE-01 guarda y lee la reserva v2 con sus ids de pasajero y canal de venta', async () => {
-    const value = record({ salesChannel: { partnerOrderId: 'ORD-1', packageId: null } }); await state.saveBooking(value);
-    expect(await state.findBooking(value.bookingId)).toEqual(value);
+    const value = record({ salesChannel: { partnerOrderId: 'ORD-1', packageId: null } }); const before = Date.now(); await state.saveBooking(value); const after = Date.now();
+    const found = await state.findBooking(value.bookingId);
+    // createdAt lo asigna el almacén (tope de pasajeros por día del canal WEB): fecha válida y cercana al guardado (holgura de reloj de 5 s entre app y base).
+    expect(found?.createdAt).toBeInstanceOf(Date); const created = found!.createdAt!.getTime(); expect(Number.isNaN(created)).toBe(false);
+    expect(created).toBeGreaterThanOrEqual(before - 5_000); expect(created).toBeLessThanOrEqual(after + 5_000);
+    expect({ ...found, createdAt: undefined }).toEqual({ ...value, createdAt: undefined });
   });
   it('V2-STATE-02 guardar dos veces la misma reserva actualiza sin duplicar (repara un reintento)', async () => {
     const value = record(); await state.saveBooking(value); await state.saveBooking({ ...value, passengerMap: { x: 'PAX-9' } });
