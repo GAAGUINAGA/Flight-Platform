@@ -164,3 +164,5 @@
 - Intermitente en el gateway: la primera corrida completa falló V2-P1-43 (esperaba 200, recibió 503); las dos siguientes pasaron. Revisar si es un arranque lento de un servicio en la suite.
 
 - La paginación de GET /api/v2/vuelos/bookings no funciona en la nube: el gateway pasa page { limit, cursor } a Reservation (booking.controller.ts:35), pero la respuesta ignora ambos (limit=5 devolvió 20; con el cursor devolvió la misma página). Probable desajuste de nombres con el .proto, que el cliente gRPC descarta en silencio. Detectado el 12-11-2026; se corrige como primer punto de F12c-1.
+
+- docs/dev/f12c1-graphql-despliegue.md §2: el primer despliegue fallaría porque el servicio no arranca en producción sin GATEWAY_BASE_URL y JWT_ISSUERS; documentar el orden usado (crear el servicio con imagen provisional y sus variables antes del push). Además, cita el nombre antiguo ADR-F12c-01-pago-booking-cubre-tarifa (ahora ADR-F12b2fix-02).
