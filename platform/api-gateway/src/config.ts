@@ -80,6 +80,15 @@ export function loadConfig(env: Environment = process.env): GatewayConfig {
   let jwtIssuers: JwtIssuer[];
   try { jwtIssuers = JSON.parse(required(env.JWT_ISSUERS, 'JWT_ISSUERS')) as JwtIssuer[]; } catch { throw new Error('JWT_ISSUERS must be a JSON array'); }
   if (!Array.isArray(jwtIssuers) || jwtIssuers.length === 0) throw new Error('JWT_ISSUERS must contain at least one issuer');
+  // Emisores adicionales SOLO para la plataforma local (local:up suma el emisor de desarrollo a los del perfil/.env sin reemplazarlos).
+  const extraIssuersRaw = env.JWT_ISSUERS_EXTRA?.trim();
+  if (extraIssuersRaw) {
+    if (env.INTEGRATION_LOCAL !== 'true' || env.NODE_ENV === 'production') throw new Error('JWT_ISSUERS_EXTRA requires INTEGRATION_LOCAL=true and is forbidden in production');
+    let extra: JwtIssuer[];
+    try { extra = JSON.parse(extraIssuersRaw) as JwtIssuer[]; } catch { throw new Error('JWT_ISSUERS_EXTRA must be a JSON array'); }
+    if (!Array.isArray(extra)) throw new Error('JWT_ISSUERS_EXTRA must be a JSON array');
+    jwtIssuers = [...jwtIssuers, ...extra.filter((candidate) => !jwtIssuers.some((current) => current.iss === candidate.iss && current.aud === candidate.aud && current.jwksUri === candidate.jwksUri && current.publicKeyFile === candidate.publicKeyFile))]; // solo se omite la copia idéntica: un emisor con el mismo iss pero otra llave se suma (verifyBearer prueba cada uno)
+  }
   for (const issuer of jwtIssuers) {
     if (!issuer.iss || !issuer.aud || (!!issuer.jwksUri === !!issuer.publicKeyFile)) throw new Error('Each JWT issuer requires iss, aud and exactly one key source');
     if (env.NODE_ENV === 'production' && (issuer.publicKeyFile || issuer.iss === 'flight-platform-dev')) throw new Error('Development JWT issuers are forbidden in production');

@@ -7,6 +7,7 @@ module.exports = {
   modulePathIgnorePatterns: [
     '<rootDir>/platform/api-gateway/(dist|generated)/',
     '<rootDir>/microservices/[^/]+/dist/',
+    '<rootDir>/platform/graphql/dist/',
     '<rootDir>/dist/'
   ],
   transform: { '^.+\\.ts$': ['ts-jest', { tsconfig: 'tsconfig.base.json' }] },

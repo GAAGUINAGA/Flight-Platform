@@ -1,4 +1,5 @@
 import type { PrismaClient } from '../../generated/prisma-client';
+import { isAfterCreatedCursor, type CreatedCursor } from './list-cursor';
 import { isWebTestBooking, WEB_TEST_PARTNER_ID } from './web-sales';
 
 export interface V2BookingRecord { bookingId: string; clientId: string; ownerId: string; holdId: string; paymentReference: string; salesChannel?: Record<string, unknown>; passengerMap: Record<string, string>; /** Lo asigna el almacén al guardar la primera vez. */ createdAt?: Date }
@@ -15,8 +16,8 @@ export interface V2StateStore {
   completeEvent(clientId: string, eventId: string, outcome: string): Promise<void>;
   eventOutcome(clientId: string, eventId: string): Promise<string | null>;
   releaseEvent(clientId: string, eventId: string): Promise<void>;
-  /** Reservas del canal WEB (de prueba), de la más reciente a la más antigua; `before` es el cursor (createdAt de la última leída). */
-  listWebBookings(options: { limit: number; before?: Date }): Promise<V2BookingRecord[]>;
+  /** Reservas del canal WEB (de prueba), de la más reciente a la más antigua (empate por bookingId descendente); `before` es el cursor compuesto (fecha de creación, bookingId) de la última leída. */
+  listWebBookings(options: { limit: number; before?: CreatedCursor }): Promise<V2BookingRecord[]>;
 }
 
 export class InMemoryV2StateStore implements V2StateStore {
@@ -29,7 +30,7 @@ export class InMemoryV2StateStore implements V2StateStore {
   async completeEvent(clientId: string, eventId: string, outcome: string): Promise<void> { const found = this.events.get(`${clientId}:${eventId}`); if (found) found.outcome = outcome; }
   async eventOutcome(clientId: string, eventId: string): Promise<string | null> { const found = this.events.get(`${clientId}:${eventId}`); return found?.outcome ? found.outcome : null; }
   async releaseEvent(clientId: string, eventId: string): Promise<void> { this.events.delete(`${clientId}:${eventId}`); }
-  async listWebBookings(options: { limit: number; before?: Date }): Promise<V2BookingRecord[]> { return [...this.bookings.values()].filter((r) => isWebTestBooking(r.salesChannel) && (!options.before || (r.createdAt ?? new Date(0)) < options.before)).sort((a, b) => (b.createdAt?.getTime() ?? 0) - (a.createdAt?.getTime() ?? 0)).slice(0, options.limit).map((r) => ({ ...r })); }
+  async listWebBookings(options: { limit: number; before?: CreatedCursor }): Promise<V2BookingRecord[]> { const { before } = options; return [...this.bookings.values()].filter((r) => isWebTestBooking(r.salesChannel) && (!before || isAfterCreatedCursor(r.createdAt ?? new Date(0), r.bookingId, before))).sort((a, b) => (b.createdAt?.getTime() ?? 0) - (a.createdAt?.getTime() ?? 0) || (a.bookingId < b.bookingId ? 1 : a.bookingId > b.bookingId ? -1 : 0)).slice(0, options.limit).map((r) => ({ ...r })); }
 }
 
 const isUniqueViolation = (error: unknown): boolean => typeof error === 'object' && error !== null && (error as { code?: string }).code === 'P2002';
@@ -51,8 +52,9 @@ export class PrismaV2StateStore implements V2StateStore {
   async completeEvent(clientId: string, eventId: string, outcome: string): Promise<void> { await this.prisma.v2ProcessedEvent.update({ where: { clientId_eventId: { clientId, eventId } }, data: { outcome } }); }
   async eventOutcome(clientId: string, eventId: string): Promise<string | null> { const row = await this.prisma.v2ProcessedEvent.findUnique({ where: { clientId_eventId: { clientId, eventId } } }); return row?.outcome ? row.outcome : null; }
   async releaseEvent(clientId: string, eventId: string): Promise<void> { await this.prisma.v2ProcessedEvent.deleteMany({ where: { clientId, eventId, outcome: '' } }); }
-  async listWebBookings(options: { limit: number; before?: Date }): Promise<V2BookingRecord[]> {
-    const rows = await this.prisma.v2Booking.findMany({ where: { salesChannel: { path: ['partnerId'], equals: WEB_TEST_PARTNER_ID }, ...(options.before ? { createdAt: { lt: options.before } } : {}) }, orderBy: { createdAt: 'desc' }, take: options.limit });
+  async listWebBookings(options: { limit: number; before?: CreatedCursor }): Promise<V2BookingRecord[]> {
+    const { before } = options;
+    const rows = await this.prisma.v2Booking.findMany({ where: { salesChannel: { path: ['partnerId'], equals: WEB_TEST_PARTNER_ID }, ...(before ? { OR: [{ createdAt: { lt: before.createdAt } }, { createdAt: before.createdAt, bookingId: { lt: before.id } }] } : {}) }, orderBy: [{ createdAt: 'desc' }, { bookingId: 'desc' }], take: options.limit });
     return rows.map((row) => this.toRecord(row));
   }
 }

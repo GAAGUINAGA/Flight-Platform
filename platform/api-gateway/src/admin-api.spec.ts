@@ -148,6 +148,60 @@ describe('B-2: API interna de administración /api/admin/v1', () => {
       expect(JSON.stringify(response.body)).not.toContain('user-a'); expect(JSON.stringify(response.body)).not.toContain('pay_ok_1');
     } finally { await instance.close(); }
   });
+  it('ADM-API-13 (F12c-1 punto 0): GET /web-bookings pagina con limit y before sin repetir ni saltar, y no emite nextCursor cuando no quedan más (ni tras una página exacta)', async () => {
+    const instance = await app({ WEB_PAYMENT_MODE: 'simulated' });
+    try {
+      const state = instance.get('V2_STATE') as InMemoryV2StateStore; const ids: string[] = [];
+      for (let index = 0; index < 5; index += 1) { const bookingId = `00000000-0000-4000-8000-0000000001${String(index).padStart(2, '0')}`; ids.push(bookingId); await state.saveBooking({ bookingId, clientId: 'user-a', ownerId: 'user-a', holdId: FLIGHT, paymentReference: `pay_ok_${index}`, salesChannel: { partnerId: 'WEB_TEST', passengers: 1 }, passengerMap: {}, createdAt: new Date(Date.UTC(2026, 10, 12, 10, 0, index)) }); }
+      const get = (query: Record<string, string>) => request(instance.getHttpServer()).get('/api/admin/v1/web-bookings').query(query).set('Authorization', ADMIN);
+      const seen: string[] = []; const sizes: number[] = []; let before: string | undefined;
+      for (let page = 0; page < 10; page += 1) { const response = await get({ limit: '2', ...(before ? { before } : {}) }); expect(response.status).toBe(200); sizes.push(response.body.items.length); seen.push(...response.body.items.map((item: { bookingId: string }) => item.bookingId)); before = response.body.nextCursor ?? undefined; if (!before) break; }
+      expect(sizes).toEqual([2, 2, 1]); expect([...seen].sort()).toEqual([...ids].sort()); expect(new Set(seen).size).toBe(5);
+      const exact = await get({ limit: '5' }); expect(exact.body.items).toHaveLength(5); expect(exact.body.nextCursor).toBeNull();
+      // De la más reciente a la más antigua (cada una un segundo más nueva que la anterior).
+      expect(seen).toEqual([...ids].reverse());
+    } finally { await instance.close(); }
+  });
+  it('ADM-API-14 (F12c-1 punto 0): web-bookings con 5 reservas de la MISMA fecha de creación en el borde de la página: sin repetir ni saltar; cursor inválido ⇒ 400', async () => {
+    const instance = await app({ WEB_PAYMENT_MODE: 'simulated' });
+    try {
+      const state = instance.get('V2_STATE') as InMemoryV2StateStore; const same = new Date(Date.UTC(2026, 10, 12, 10, 0, 0)); const ids: string[] = [];
+      for (let index = 0; index < 5; index += 1) { const bookingId = `00000000-0000-4000-8000-0000000002${String(index).padStart(2, '0')}`; ids.push(bookingId); await state.saveBooking({ bookingId, clientId: 'user-a', ownerId: 'user-a', holdId: FLIGHT, paymentReference: `pay_ok_t${index}`, salesChannel: { partnerId: 'WEB_TEST', passengers: 1 }, passengerMap: {}, createdAt: same }); }
+      await state.saveBooking({ bookingId: '00000000-0000-4000-8000-000000000299', clientId: 'user-a', ownerId: 'user-a', holdId: FLIGHT, paymentReference: 'pay_ok_older', salesChannel: { partnerId: 'WEB_TEST', passengers: 1 }, passengerMap: {}, createdAt: new Date(Date.UTC(2026, 10, 12, 9)) });
+      const get = (query: Record<string, string>) => request(instance.getHttpServer()).get('/api/admin/v1/web-bookings').query(query).set('Authorization', ADMIN);
+      for (const limit of [1, 2, 3]) {
+        const seen: string[] = []; let before: string | undefined;
+        for (let page = 0; page < 10; page += 1) { const response = await get({ limit: String(limit), ...(before ? { before } : {}) }); expect(response.status).toBe(200); seen.push(...response.body.items.map((item: { bookingId: string }) => item.bookingId)); before = response.body.nextCursor ?? undefined; if (!before) break; }
+        expect(seen).toEqual([...ids].reverse().concat('00000000-0000-4000-8000-000000000299'));
+      }
+      expect((await get({ before: 'no-es-un-cursor' })).status).toBe(400);
+    } finally { await instance.close(); }
+  });
+  it('ADM-API-15 (audit-25 H1): el cursor de web-bookings es texto OPACO en el OpenAPI interno (sin format), y parámetros y respuestas se validan con Ajv contra ese contrato', async () => {
+    const instance = await app({ WEB_PAYMENT_MODE: 'simulated' });
+    try {
+      const state = instance.get('V2_STATE') as InMemoryV2StateStore;
+      for (let index = 0; index < 3; index += 1) await state.saveBooking({ bookingId: `00000000-0000-4000-8000-0000000003${String(index).padStart(2, '0')}`, clientId: 'user-a', ownerId: 'user-a', holdId: FLIGHT, paymentReference: `pay_ok_o${index}`, salesChannel: { partnerId: 'WEB_TEST', passengers: 1 }, passengerMap: {}, createdAt: new Date(Date.UTC(2026, 10, 12, 10, 0, index)) });
+      const operation = (adminSpec.paths['/web-bookings'] as { get: { parameters: Array<{ name: string; schema: object }> } }).get;
+      const paramSchema = (name: string) => operation.parameters.find((parameter) => parameter.name === name)!.schema;
+      const beforeSchema = paramSchema('before') as { type: string; format?: string; maxLength?: number }; expect(beforeSchema).toMatchObject({ type: 'string', maxLength: 200 }); expect(beforeSchema.format).toBeUndefined();
+      const listSchema = (adminSpec.components.schemas.WebTestBookingList as { properties: { nextCursor: { format?: string; maxLength?: number } } }).properties.nextCursor; expect(listSchema.format).toBeUndefined(); expect(listSchema.maxLength).toBe(200);
+      const get = (query: Record<string, string>) => request(instance.getHttpServer()).get('/api/admin/v1/web-bookings').query(query).set('Authorization', ADMIN);
+      const first = await get({ limit: '2' }); expect(first.status).toBe(200); expect(validate('WebTestBookingList', first.body).errors).toBeNull();
+      const checkParam = ajv.compile(beforeSchema as never); expect(checkParam(first.body.nextCursor)).toBe(true);
+      const second = await get({ limit: '2', before: first.body.nextCursor }); expect(second.status).toBe(200); expect(validate('WebTestBookingList', second.body).errors).toBeNull(); expect(second.body.nextCursor).toBeNull();
+      const good = decodeURIComponent(first.body.nextCursor as string); const raw = Buffer.from(good, 'base64url').toString('utf8');
+      const tampered = [
+        'no-es-un-cursor', `${good}!!`, `${good}AA`, good.slice(0, -2), good.slice(1), Buffer.from(raw.replace('|', '#')).toString('base64url'), Buffer.from(raw.replace(/\|.*$/, '|no-uuid')).toString('base64url'),
+        Buffer.from('2026-02-31T10:00:00.000Z|00000000-0000-4000-8000-000000000301').toString('base64url'), Buffer.from('2026-11-12').toString('base64url'), Buffer.from('{"$ne":null}').toString('base64url'), "' OR 1=1 --", 'A'.repeat(201)
+      ];
+      for (const before of tampered) { const response = await get({ before }); expect({ before: before.slice(0, 30), status: response.status }).toEqual({ before: before.slice(0, 30), status: 400 }); isProblem(response.body, 400, 'VALIDATION_FAILED'); }
+      for (const query of ['before=', 'before=a&before=b', 'before[]=a', 'before[x]=a']) { const response = await request(instance.getHttpServer()).get(`/api/admin/v1/web-bookings?${query}`).set('Authorization', ADMIN); expect({ query, status: response.status }).toEqual({ query, status: 400 }); isProblem(response.body, 400, 'VALIDATION_FAILED'); }
+      // Un cursor bien formado pero inventado solo es una posición: no abre nada que el listado no mostrara ya (solo reservas WEB de prueba, de cualquier dueño: es una API de administración).
+      const invented = Buffer.from('2026-11-12T10:00:00.001Z|00000000-0000-4000-8000-000000000999').toString('base64url'); const fromInvented = await get({ before: invented });
+      expect(fromInvented.status).toBe(200); expect(validate('WebTestBookingList', fromInvented.body).errors).toBeNull(); expect(JSON.stringify(fromInvented.body)).not.toContain('user-a');
+    } finally { await instance.close(); }
+  });
 });
 
 describe('Aislamiento v2: un cliente no ve ni toca reservas de otro cliente ni de un socio', () => {

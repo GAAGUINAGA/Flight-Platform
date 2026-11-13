@@ -16,12 +16,16 @@ $script:Services = @(
   @{ Name = 'ticketing';   Dir = 'microservices/ticketing-service';   Port = 50055; Pass = '^$' },
   @{ Name = 'operations';  Dir = 'microservices/operations-service';  Port = 50056; Pass = '^$' },
   @{ Name = 'webhooks';    Dir = 'microservices/webhooks-service';    Port = 50057; Pass = '^WEBHOOK_' },
-  @{ Name = 'reservation'; Dir = 'microservices/reservation-service'; Port = 50054; Pass = '^BOOKING_PAYMENTS_' }
+  @{ Name = 'reservation'; Dir = 'microservices/reservation-service'; Port = 50054; Pass = '^(BOOKING_PAYMENTS_|WEB_PAYMENT_MODE$)' }
 )
 # ESB (F12b-1): se levanta después de los siete servicios y antes del Gateway. Lee su propio .env (INTERNAL_API_KEY); las URLs gRPC se le pasan por entorno.
 $script:Esb = @{ Name = 'esb'; Dir = 'microservices/esb-service'; Port = 3100 }
+# Servicio GraphQL (F12c-1): se levanta después del Gateway (lo llama por HTTP) y escucha en 127.0.0.1:4000 por omisión. Sin base de datos ni .env propio.
+$script:Graphql = @{ Name = 'graphql'; Dir = 'platform/graphql'; Port = 4000 }
+# Variables del perfil que recibe el servicio GraphQL (JWT_ISSUERS y CORS_ORIGINS; también pueden venir del entorno de la terminal).
+$script:GraphqlPass = '^(JWT_ISSUERS|CORS_ORIGINS|MAX_|RATE_LIMIT_|OPERATION_TIMEOUT_MS|GATEWAY_TIMEOUT_MS)'
 # Variables del perfil que recibe el Gateway (el resto del perfil no se le pasa).
-$script:GatewayPass = '^(PUBLIC_BASE_URL|NODE_ID|PROVIDER_NAME|BOOKING_EVENTS_|BOOKING_STOCK_|STOCK_SYNC_|AIRPORT_TIMEZONES|SAGA_|DEV_AUTH_|WEBHOOK_SOURCE_CODE|HEALTH_|SCHEDULER_|RATE_LIMIT_|DOMESTIC_AIRPORTS|CORS_ORIGINS)'
+$script:GatewayPass = '^(JWT_ISSUERS$|WEB_|PUBLIC_BASE_URL|NODE_ID|PROVIDER_NAME|BOOKING_EVENTS_|BOOKING_STOCK_|STOCK_SYNC_|AIRPORT_TIMEZONES|SAGA_|DEV_AUTH_|WEBHOOK_SOURCE_CODE|HEALTH_|SCHEDULER_|RATE_LIMIT_|DOMESTIC_AIRPORTS|CORS_ORIGINS)'
 
 function Read-Profile([string]$Path) {
   $values = [ordered]@{}
@@ -50,15 +54,20 @@ function Invoke-Checked([string]$Description, [scriptblock]$Command) {
   if ($LASTEXITCODE -ne 0) { throw "Falló: $Description (código $LASTEXITCODE)." }
 }
 
+# El servicio se lanza con native-launch.cs (CreateProcess con lista explícita de manejadores: solo los archivos de log como stdio).
+# Start-Process (aun con salida redirigida) deja heredar las tuberías de la consola, y local:up en una tubería (Select-String)
+# no terminaría mientras viva un servicio.
+if (-not ('NativeLaunch' -as [type])) { Add-Type -TypeDefinition (Get-Content -LiteralPath (Join-Path $PSScriptRoot 'native-launch.cs') -Raw) }
 function Start-LocalProcess([string]$Name, [string]$WorkDir, [string[]]$NodeArgs, [hashtable]$EnvVars) {
   New-Item -ItemType Directory -Force -Path $script:PidDir, $script:LogDir | Out-Null
   $saved = @{}
-  foreach ($key in $EnvVars.Keys) { $saved[$key] = [Environment]::GetEnvironmentVariable($key, 'Process'); [Environment]::SetEnvironmentVariable($key, [string]$EnvVars[$key], 'Process') }
+  foreach ($key in $EnvVars.Keys) { $saved[$key] = [Environment]::GetEnvironmentVariable($key, "Process"); [Environment]::SetEnvironmentVariable($key, [string]$EnvVars[$key], "Process") }
   try {
     $quoted = $NodeArgs | ForEach-Object { if ($_ -match '\s') { '"' + $_ + '"' } else { $_ } }
-    $process = Start-Process -FilePath 'node' -ArgumentList $quoted -WorkingDirectory $WorkDir -WindowStyle Hidden -PassThru `
-      -RedirectStandardOutput (Join-Path $script:LogDir "$Name.out.log") -RedirectStandardError (Join-Path $script:LogDir "$Name.err.log")
-  } finally { foreach ($key in $saved.Keys) { [Environment]::SetEnvironmentVariable($key, $saved[$key], 'Process') } }
+    $commandLine = '"' + (Get-Command node -CommandType Application | Select-Object -First 1).Source + '" ' + ($quoted -join ' ')
+    $launchedId = [NativeLaunch]::Start($commandLine, $WorkDir, (Join-Path $script:LogDir "$Name.out.log"), (Join-Path $script:LogDir "$Name.err.log"))
+  } finally { foreach ($key in $saved.Keys) { [Environment]::SetEnvironmentVariable($key, $saved[$key], "Process") } }
+  $process = Get-Process -Id $launchedId -ErrorAction Stop
   Set-Content -LiteralPath (Join-Path $script:PidDir "$Name.pid") -Value $process.Id
   return $process
 }

@@ -1,0 +1,220 @@
+# ───────── Directivas ─────────
+directive @authenticated on FIELD_DEFINITION          # exige JWT (el Gateway valida igualmente)
+directive @admin on FIELD_DEFINITION                  # exige app_role = admin en GraphQL (además del Gateway)
+
+# ───────── Escalares ─────────
+scalar Date        # AAAA-MM-DD; fecha LOCAL del aeropuerto indicado por el campo
+scalar DateTime    # ISO-8601 con desplazamiento; instante absoluto
+scalar Decimal     # importe como cadena decimal ("630.00"); nunca número flotante
+
+# ───────── Enumeraciones ─────────
+enum Role { CUSTOMER ADMIN PARTNER }
+enum CabinClass { ECONOMY PREMIUM_ECONOMY BUSINESS FIRST }
+enum PassengerType { ADULT YOUTH CHILD INFANT }
+enum DocumentType { PASSPORT NATIONAL_ID }
+enum Gender { M F X }
+enum BookingStatus { PENDING PENDING_PAYMENT TICKET_ISSUING CONFIRMED FAILED CHANGE_PENDING CANCELLATION_PENDING CANCELLED }
+enum TicketStatus { PENDING ISSUING ISSUED FAILED VOIDED REFUNDED }
+enum HoldStatus { HELD RELEASED EXPIRED CONSUMED }
+enum SeatStatus { AVAILABLE HELD BOOKED TICKETED CHECKED_IN BOARDED }
+enum CancelReasonCode { CUSTOMER_REQUEST OTHER }                  # SAGA_COMPENSATION y FLIGHT_CANCELLED son de uso interno/socios
+enum RefundStatus { CALCULATED SETTLED NOT_REFUNDABLE }
+enum InventoryRestorationStatus { RESTORED PENDING }
+enum SeatCharacteristic { WINDOW AISLE EXTRA_LEGROOM EMERGENCY_EXIT }
+enum FlightStatusCode { SCHEDULED BOARDING DEPARTED DELAYED ARRIVED CANCELLED DIVERTED }
+enum CheckInStatus { NOT_ELIGIBLE AVAILABLE IN_PROGRESS COMPLETED FAILED }
+enum PassengerCheckInStatus { CHECKED_IN NOT_CHECKED_IN FAILED }
+enum BarcodeType { AZTEC PDF417 QR }
+enum Outcome { COMPLETED PENDING }                    # 200/201 vs 202
+enum ErrorCategory { VALIDATION UNAUTHENTICATED FORBIDDEN NOT_FOUND CONFLICT GONE UNPROCESSABLE RATE_LIMITED UNAVAILABLE INTERNAL }
+enum HealthStatus { HEALTHY DEGRADED DOWN }
+enum DependencyStatus { UP DOWN DEGRADED }
+
+# ───────── Comunes ─────────
+type Money { currency: String! total: Decimal! baseFare: Decimal taxes: Decimal }
+type PageInfo { endCursor: String hasNextPage: Boolean! }
+type Viewer { userId: ID! role: Role! }               # del JWT; no hay sesión en el servidor
+
+# ───────── Búsqueda ─────────
+input PassengerCountsInput { adults: Int! = 1  youths: Int = 0  children: Int = 0  infants: Int = 0 }
+input ItineraryQueryInput { origin: String! destination: String! departureDate: Date! }  # IATA ^[A-Z]{3}$; fecha local del origen
+input SearchInput { itineraries: [ItineraryQueryInput!]! passengers: PassengerCountsInput! }   # 1..6 tramos
+
+type Airline { code: String name: String }
+type Endpoint { iataCode: String! at: DateTime! terminal: String }
+type Segment {
+  segmentId: ID! flightNumber: String! departure: Endpoint! arrival: Endpoint!
+  layoverMinutes: Int marketingCarrier: String! operatingCarrier: String!
+  aircraft: String durationMinutes: Int status: FlightStatusCode
+}
+type FareRules { isRefundable: Boolean! isChangeable: Boolean! }
+type BaggageAllowance { personalItemIncluded: Boolean carryOnIncluded: Int checkedBaggageIncluded: Int }
+type PassengerTypePrice { passengerType: PassengerType price: Money }
+type CabinPricing {
+  cabinClass: CabinClass! fareBrand: String! availableSeats: Int! fareRules: FareRules!
+  baggageAllowance: BaggageAllowance! extraCheckedBaggagePrice: Money
+  pricePerPassengerType: [PassengerTypePrice!]!
+}
+type Itinerary { itineraryId: ID! totalDurationMinutes: Int! stopsCount: Int! segments: [Segment!]! pricingOptions: [CabinPricing!]! }
+type FlightOffer { offerId: ID! airline: Airline! itineraries: [Itinerary!]! grandTotal: Money! }
+type SearchResult { totalOffers: Int! offers: [FlightOffer!]! }
+
+# ───────── Mapa de asientos ─────────
+type Seat { seatNumber: String! status: SeatStatus! isAvailable: Boolean! characteristics: [SeatCharacteristic!]! }   # v2: isAvailable == (status = AVAILABLE)
+type SeatRow { rowNumber: Int! seats: [Seat!]! }
+type SeatMapCabin { cabinClass: CabinClass! rows: [SeatRow!]! }
+type SeatMap { segmentId: ID! cabins: [SeatMapCabin!]! }
+
+# ───────── Estado de vuelo ─────────
+type StatusEndpoint { iataCode: String! terminal: String gate: String scheduledAt: DateTime! estimatedAt: DateTime actualAt: DateTime }   # gate: hoy no se llena (H-6)
+type FlightStatus {
+  flightNumber: String! date: Date! marketingCarrier: String! operatingCarrier: String!
+  departure: StatusEndpoint! arrival: StatusEndpoint! aircraft: String status: FlightStatusCode! delayMinutes: Int updatedAt: DateTime
+}
+
+# ───────── Hold ─────────
+input ItinerarySelectionInput { itineraryId: ID! cabinClass: CabinClass! fareBrand: String! }
+# `seats` = `assignedSeats` del hold (acuerdo ADR-F12b2fix-01, formato de docs/booking-integration.md §5.1): se reparten en el orden de los pasajeros; a lo sumo tantos por tramo como pasajeros con asiento
+input HoldOfferInput { offerId: ID! selections: [ItinerarySelectionInput!]! passengers: PassengerCountsInput! seats: [SeatAssignmentInput!] ttlMinutes: Int }   # ttlMinutes 5..30
+type Hold { holdId: ID! status: HoldStatus! expiresAt: DateTime remainingSeconds: Int ttlMinutes: Int lockedPrice: Money! }
+
+# ───────── Reservas ─────────
+input ContactInput { email: String! phone: String! }
+input SeatAssignmentInput { segmentId: ID! seatNumber: String! }
+input ExtraBaggageInput { itineraryId: ID! quantity: Int! }                              # 0..3
+input PassengerInput {
+  passengerId: ID! passengerType: PassengerType! associatedAdultId: ID
+  firstName: String! lastName: String! documentType: DocumentType! documentNumber: String!
+  nationality: String! documentExpiryDate: Date birthDate: Date! gender: Gender! contact: ContactInput!
+  assignedSeats: [SeatAssignmentInput!] extraBaggage: [ExtraBaggageInput!]
+}
+input CreateBookingInput { holdId: ID! passengers: [PassengerInput!]! paymentReference: String! }
+
+type SeatAssignment { segmentId: ID! seatNumber: String! }
+type ExtraBaggage { itineraryId: ID! quantity: Int! }
+type BookingPassenger {
+  passengerId: ID! passengerType: PassengerType! firstName: String! lastName: String!
+  documentType: DocumentType! documentNumberMasked: String!       # solo últimos caracteres; el número completo no sale del servicio
+  nationality: String birthDate: Date gender: Gender assignedSeats: [SeatAssignment!] extraBaggage: [ExtraBaggage!]
+}
+type TicketSegment { segmentId: ID! status: String! couponNumber: String }
+type Ticket { ticketId: ID! passengerId: ID! eTicketNumber: String status: TicketStatus! issuedAt: DateTime segments: [TicketSegment!] failureReason: String }
+type BookingChange { changedAt: DateTime description: String }
+type Booking {
+  bookingId: ID! pnr: String! status: BookingStatus! grandTotal: Money! createdAt: DateTime! updatedAt: DateTime
+  availableActions: [String!]!    # claves de `_links` (cancel, check-in, seats, baggage-options, date-change-search, issue-tickets…): reflejan el estado, no la ventana de check-in
+  itineraries: [Itinerary!] passengers: [BookingPassenger!] tickets: [Ticket!] changes: [BookingChange!]
+}
+type BookingSummary { bookingId: ID! pnr: String! status: BookingStatus! origin: String destination: String departureDate: Date grandTotal: Money availableActions: [String!]! }
+type BookingEdge { cursor: String! node: BookingSummary! }
+type BookingConnection { edges: [BookingEdge!]! pageInfo: PageInfo! }
+input BookingFilterInput { pnr: String status: BookingStatus createdFrom: Date createdTo: Date }
+type CreateBookingPayload { outcome: Outcome! booking: Booking! }
+
+# ───────── Postventa ─────────
+type BaggageOption { passengerId: ID! itineraryId: ID! price: Money maxAllowed: Int alreadyPurchased: Int }
+input AddBaggageInput { bookingId: ID! passengerId: ID! itineraryId: ID! quantity: Int! paymentReference: String! }
+type AddBaggagePayload { passengerId: ID! itineraryId: ID! totalBaggage: Int! }
+
+input DateChangeInput { itineraryId: ID! newDepartureDate: Date! }                       # fecha local del origen del tramo
+type DateChangePrice { fareDifference: Decimal taxDifference: Decimal changeFee: Decimal totalToPay: Decimal }
+type DateChangeOffer { changeOfferId: ID! expiresAt: DateTime! segments: [Segment!]! priceDifference: DateChangePrice! }
+input ConfirmDateChangeInput { bookingId: ID! changeOfferId: ID! paymentReference: String assignedSeats: [SeatChangeInput!] }
+type ConfirmDateChangePayload { outcome: Outcome! booking: Booking }
+
+type CancellationQuote { quoteId: ID! isRefundable: Boolean! refundAmount: Decimal! penaltyAmount: Decimal! currency: String! expiresAt: DateTime! }
+type Refund { refundId: String amount: Decimal penaltyAmount: Decimal currency: String percentage: Float status: RefundStatus }   # la aerolínea calcula; con pago simulado no hay movimiento de dinero (H-19)
+type InventoryRestoration { status: InventoryRestorationStatus seatsReleased: Int }
+type CancelBookingPayload { outcome: Outcome! status: BookingStatus! cancelledAt: DateTime refund: Refund ticketsVoided: [String!] inventoryRestoration: InventoryRestoration message: String }
+type IssueTicketsPayload { booking: Booking! issued: Int! }
+
+input SeatChangeInput { passengerId: ID! segmentId: ID! seatNumber: String! }
+type SeatChange { passengerId: ID! segmentId: ID! previousSeatNumber: String seatNumber: String! status: SeatStatus! }
+type ChangeSeatsPayload { seats: [SeatChange!]! }   # v2: sin costo; `amountCharged` se omite
+
+# ───────── Check-in ─────────
+type CheckedInSegment { segmentId: ID! seat: String status: PassengerCheckInStatus! }
+type CheckedInPassenger { passengerId: ID! status: PassengerCheckInStatus! segments: [CheckedInSegment!] }
+type CheckInResult { bookingId: ID! status: CheckInStatus! checkedInPassengers: [CheckedInPassenger!]! }
+type BoardingPass { passengerId: ID! segmentId: ID! seat: String! boardingGroup: String boardingPosition: String gate: String barcode: String! barcodeType: BarcodeType! }   # gate: hoy no se llena (H-6)
+
+# ───────── Administración (@admin) ─────────
+type AdminCabin { cabinClass: CabinClass! capacity: Int! }
+type AdminFlight {                                                                        # forma a confirmar con el OpenAPI interno (B-2)
+  flightInstanceId: ID! flightNumber: String! departureIata: String! arrivalIata: String!
+  departureAt: DateTime! arrivalAt: DateTime! cabins: [AdminCabin!]! aircraft: String closed: Boolean!
+}
+type AdminFlightConnection { items: [AdminFlight!]! pageInfo: PageInfo! }
+type AdminFare {
+  fareId: ID! flightInstanceId: ID! cabinClass: CabinClass! fareBrand: String!
+  price: Money! fareRules: FareRules! baggageAllowance: BaggageAllowance! extraCheckedBaggagePrice: Money!
+}
+input MoneyInput { currency: String! total: Decimal! baseFare: Decimal taxes: Decimal }
+input UpsertFareInput {
+  fareId: ID flightInstanceId: ID! cabinClass: CabinClass! fareBrand: String! price: MoneyInput!
+  isRefundable: Boolean! isChangeable: Boolean! personalItemIncluded: Boolean carryOnIncluded: Int checkedBaggageIncluded: Int
+  extraCheckedBaggagePrice: MoneyInput!
+}
+type SeatsByStatus { AVAILABLE: Int HELD: Int BOOKED: Int TICKETED: Int CHECKED_IN: Int BOARDED: Int }   # nombres de campo en mayúsculas, igual que el contrato v2
+type CabinOccupancy { cabinClass: CabinClass! totalSeats: Int! seatsByStatus: SeatsByStatus! }
+type FlightAlert { code: String! severity: String! message: String }
+type FlightOperation {
+  flightNumber: String! date: Date! origin: String! destination: String! departureAt: DateTime!
+  status: FlightStatusCode! aircraft: String totalSeats: Int! loadFactor: Float! cabins: [CabinOccupancy!]!
+  activeHolds: Int! nextHoldExpiryAt: DateTime checkInOpen: Boolean! alerts: [FlightAlert!]!
+}
+type FlightOperationConnection { totalFlights: Int! items: [FlightOperation!]! pageInfo: PageInfo! }
+type DependencyHealth { name: String! status: DependencyStatus! latencyMs: Int }
+type PlatformHealth { status: HealthStatus! nodeId: String! version: String! uptimeSeconds: Int latencyMs: Int dependencies: [DependencyHealth!]! timestamp: DateTime! }
+input FlightStatusUpdateInput { date: Date! status: FlightStatusCode! estimatedDepartureAt: DateTime estimatedArrivalAt: DateTime departureGate: String reason: String }
+type FlightStatusUpdate { previousStatus: FlightStatusCode flight: FlightStatus! affectedBookings: Int! eventId: String }
+type PromotionAgreement {
+  allowsPromotions: Boolean! maxDiscountPercent: Float! destinations: [String!] routes: [String!]
+  cabins: [CabinClass!] validUntil: Date conditions: String updatedAt: DateTime
+}
+input PromotionAgreementInput {
+  allowsPromotions: Boolean! maxDiscountPercent: Float! destinations: [String!] routes: [String!]
+  cabins: [CabinClass!] validUntil: Date conditions: String
+}
+
+# ───────── Consultas ─────────
+type Query {
+  # públicas
+  searchFlights(input: SearchInput!): SearchResult!                                  # GW: POST /search
+  seatMap(offerId: ID!, segmentId: ID!): SeatMap!                                    # GW: GET /offers/{id}/seatmap (con HELD)
+  flightStatus(flightNumber: String!, date: Date!): FlightStatus!                    # GW: GET /flights/{n}/status
+
+  # cliente
+  viewer: Viewer @authenticated                                                       # del JWT (sin llamada al Gateway)
+  hold(holdId: ID!): Hold! @authenticated                                            # GW: GET /offers/hold/{id}
+  myBookings(filter: BookingFilterInput, first: Int = 10, after: String): BookingConnection! @authenticated  # GW: GET /bookings (first≤50)
+  booking(bookingId: ID!): Booking! @authenticated                                   # GW: GET /bookings/{id} (+ /tickets)
+  boardingPasses(bookingId: ID!): [BoardingPass!]! @authenticated                    # GW: GET /bookings/{id}/boarding-passes
+  baggageOptions(bookingId: ID!): [BaggageOption!]! @authenticated                   # GW: GET …/baggage-options
+  searchDateChange(bookingId: ID!, changes: [DateChangeInput!]!): [DateChangeOffer!]! @authenticated   # GW: POST …/date-change/search (solo lectura)
+  cancellationQuote(bookingId: ID!): CancellationQuote! @authenticated               # GW: GET …/cancellation-quote
+
+  # administrador
+  adminFlights(date: Date, first: Int = 50, after: String): AdminFlightConnection! @admin          # GW: ADMIN-API GET /admin/flights (B-2)
+  adminFares(flightInstanceId: ID): [AdminFare!]! @admin                                           # GW: ADMIN-API GET /admin/fares (B-2)
+  flightOperations(date: Date!, origin: String, destination: String, status: FlightStatusCode, first: Int = 50, after: String): FlightOperationConnection! @admin  # GW: GET v2 /operaciones/vuelos
+  platformHealth: PlatformHealth!                                                                  # GW: GET v2 /health (pública)
+  promotionAgreement: PromotionAgreement @admin                                                    # GW: GET v2 /promociones/contrato (404 → null)
+}
+
+# ───────── Mutaciones (idempotencyKey: UUID generado por el cliente por intención) ─────────
+type Mutation {
+  holdOffer(input: HoldOfferInput!, idempotencyKey: ID!): Hold! @authenticated                 # GW: POST /offers/hold
+  releaseHold(holdId: ID!): Boolean! @authenticated                                            # GW: DELETE /offers/hold/{id}
+  createBooking(input: CreateBookingInput!, idempotencyKey: ID!): CreateBookingPayload! @authenticated   # GW: POST /bookings (canal WEB, B-1)
+  addBaggage(input: AddBaggageInput!, idempotencyKey: ID!): AddBaggagePayload! @authenticated  # GW: POST …/baggage
+  confirmDateChange(input: ConfirmDateChangeInput!, idempotencyKey: ID!): ConfirmDateChangePayload! @authenticated  # GW: POST …/date-change
+  cancelBooking(bookingId: ID!, quoteId: ID!, reasonCode: CancelReasonCode = CUSTOMER_REQUEST, reason: String, idempotencyKey: ID!): CancelBookingPayload! @authenticated  # GW: POST …/cancel
+  changeSeats(bookingId: ID!, seats: [SeatChangeInput!]!, idempotencyKey: ID!): ChangeSeatsPayload! @authenticated        # GW: PUT v2 …/seats
+  issueTickets(bookingId: ID!): IssueTicketsPayload! @authenticated                           # GW: POST …/tickets (reintento de emisión tras un 202)
+  checkIn(bookingId: ID!): CheckInResult! @authenticated                                       # GW: POST …/check-in
+
+  updateFlightStatus(flightNumber: String!, input: FlightStatusUpdateInput!, idempotencyKey: ID): FlightStatusUpdate! @admin  # GW: PATCH v2 /flights/{n}/status
+  upsertFare(input: UpsertFareInput!): AdminFare! @admin                                       # GW: ADMIN-API PUT /admin/fares (B-2)
+  setPromotionAgreement(input: PromotionAgreementInput!, idempotencyKey: ID!): PromotionAgreement! @admin  # GW: PUT v2 /promociones/contrato
+}

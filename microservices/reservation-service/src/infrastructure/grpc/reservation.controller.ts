@@ -21,7 +21,7 @@ const paymentChannel = z.enum(['BOOKING', 'WEB']).optional();
 const createSchema = z.object({ holdId: z.string().guid(), passengers: z.array(passengerSchema).min(1).max(9), payment: z.object({ paymentReference: rpcString(255) }).strict(), idempotencyKey: rpcString(255), paymentChannel, deferIssuanceFailure: z.boolean().optional(), webMaxActiveBookings: z.number().int().min(1).max(100_000).optional(), webMaxPassengersPerDay: z.number().int().min(1).max(100_000).optional() }).strict();
 const getSchema = z.object({ bookingId: z.string().guid() }).strict();
 const failSchema = z.object({ bookingId: z.string().guid(), reason: z.string().trim().max(255).optional() }).strict();
-const listSchema = z.object({ pnr: z.string().trim().length(6).optional(), status: z.enum(['PENDING', 'PENDING_PAYMENT', 'TICKET_ISSUING', 'CONFIRMED', 'FAILED', 'CHANGE_PENDING', 'CANCEL_PENDING', 'CANCELLED']).optional(), createdFrom: z.string().datetime({ offset: true }).optional(), createdTo: z.string().datetime({ offset: true }).optional(), page: z.object({ cursor: z.string().optional(), limit: z.number().int().min(1).max(50) }).strict().optional() }).strict();
+const listSchema = z.object({ pnr: z.string().trim().length(6).optional(), status: z.enum(['PENDING', 'PENDING_PAYMENT', 'TICKET_ISSUING', 'CONFIRMED', 'FAILED', 'CHANGE_PENDING', 'CANCEL_PENDING', 'CANCELLED']).optional(), createdFrom: z.string().datetime({ offset: true }).optional(), createdTo: z.string().datetime({ offset: true }).optional(), page: z.object({ cursor: z.string().max(200).nullish(), limit: z.number().int().min(0).max(50) }).strict().nullish() }).strict();
 const flightSchema = z.object({ flightInstanceId: z.string().guid(), limit: z.number().int().min(1).max(50).optional(), cursor: z.string().guid().optional() }).strict();
 const resumeSchema = z.object({ limit: z.number().int().min(0).max(4294967295).optional() }).strict();
 const baggageSchema = z.object({ bookingId: z.string().guid(), passengerId: z.string().guid(), itineraryId: z.string().guid(), quantity: z.number().int().min(1).max(3), payment: z.object({ paymentReference: rpcString(255) }).strict(), idempotencyKey: z.string().guid(), paymentChannel }).strict();
@@ -46,6 +46,15 @@ const withOwner = (data: unknown, metadata: Metadata, schema: z.ZodObject, rpc: 
   if (!ownerId) throw new DomainError('NOT_FOUND');
   return { ...validate(requested(data), schema, rpc), ownerId };
 };
+/**
+ * El .proto trae la paginación en `page { cursor, limit }` (common.v1.PageRequest) y el caso de uso `ReservationQueries.list` la lee como `limit` y `cursor` planos.
+ * Sin esta conversión el caso de uso ignoraba `page` en silencio: `limit` valía siempre 20 y el cursor nunca avanzaba (F12c-1, punto 0).
+ */
+const flattenPage = (input: Record<string, unknown>): Record<string, unknown> => {
+  // `page` es opcional: sin él (o con el mensaje vacío del cargador, limit 0 y sin cursor) se usan los valores por omisión del caso de uso (primera página, 20).
+  const { page, ...rest } = input; const requestedPage = page as { cursor?: string | null; limit?: number } | null | undefined;
+  return { ...rest, ...(requestedPage?.limit ? { limit: requestedPage.limit } : {}), ...(requestedPage?.cursor ? { cursor: requestedPage.cursor } : {}) };
+};
 const booking = (value: unknown): unknown => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
   const record = value as Record<string, unknown>;
@@ -64,7 +73,7 @@ export class ReservationController {
   constructor(private readonly deps: ReservationHandlers) {}
   createReservation(data: unknown, metadata: Metadata) { return this.deps.createReservation ? this.deps.createReservation(withOwner(data, metadata, createSchema, 'CreateReservation')).then(grpcResponse) : unavailable(); }
   getReservation(data: unknown, metadata: Metadata) { return this.deps.getReservation ? this.deps.getReservation(withOwner(data, metadata, getSchema, 'GetReservation')).then(grpcResponse) : unavailable(); }
-  listReservations(data: unknown, metadata: Metadata) { return this.deps.listReservations ? this.deps.listReservations(withOwner(data, metadata, listSchema, 'ListReservations')).then(grpcResponse) : unavailable(); }
+  listReservations(data: unknown, metadata: Metadata) { return this.deps.listReservations ? this.deps.listReservations(flattenPage(withOwner(data, metadata, listSchema, 'ListReservations'))).then(grpcResponse) : unavailable(); }
   getReservationSnapshot(data: unknown, metadata: Metadata) { return this.deps.getReservationSnapshot ? this.deps.getReservationSnapshot(withOwner(data, metadata, getSchema, 'GetReservationSnapshot')).then(grpcResponse) : unavailable(); }
   listReservationsByFlightInstance(data: unknown, metadata: Metadata) { requireRole(requestContextFromMetadata(metadata) as RequestContext, 'system'); return this.deps.listReservationsByFlightInstance ? this.deps.listReservationsByFlightInstance(validate(data, flightSchema, 'ListReservationsByFlightInstance')).then(grpcResponse) : unavailable(); }
   getBaggageOptions(data: unknown, metadata: Metadata) { return this.deps.getBaggageOptions ? this.deps.getBaggageOptions(withOwner(data, metadata, getSchema, 'GetBaggageOptions')).then((options) => ({ options })) : unavailable(); }

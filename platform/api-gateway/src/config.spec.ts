@@ -23,4 +23,16 @@ describe('PLT-J2: configuración final del Gateway', () => {
     expect(loadConfig({ ...base, NODE_ENV: 'production' })).toMatchObject({ publicLimit: 60, authLimit: 120, idempotencyTtlHours: 24, corsOrigins: [], grpcTls: false });
     expect(loadConfig({ ...base, NODE_ENV: 'production', RATE_LIMIT_PUBLIC_PER_MIN: '30', RATE_LIMIT_AUTH_PER_MIN: '90', CORS_ORIGINS: 'https://a.test, https://b.test', GRPC_TLS: 'true' })).toMatchObject({ publicLimit: 30, authLimit: 90, corsOrigins: ['https://a.test', 'https://b.test'], grpcTls: true });
   });
+  it('J2-04: JWT_ISSUERS_EXTRA (solo local) SUMA el emisor de desarrollo a los existentes, sin duplicar, y se rechaza fuera de INTEGRATION_LOCAL y en producción', () => {
+    const dev = JSON.stringify([{ iss: 'flight-platform-dev', aud: 'flight-platform', publicKeyFile: 'C:/llaves/dev-public.pem' }]);
+    const local = loadConfig({ ...base, NODE_ENV: 'development', INTEGRATION_LOCAL: 'true', JWT_ISSUERS_EXTRA: dev });
+    expect(local.jwtIssuers.map((issuer) => issuer.iss)).toEqual(['https://project.supabase.co/auth/v1', 'flight-platform-dev']);
+    expect(loadConfig({ ...base, NODE_ENV: 'development', INTEGRATION_LOCAL: 'true', JWT_ISSUERS_EXTRA: dev, JWT_ISSUERS: dev }).jwtIssuers).toHaveLength(1);
+    const staleDev = JSON.stringify([{ iss: 'flight-platform-dev', aud: 'flight-platform', publicKeyFile: 'C:/otra/ruta.pem' }]);
+    expect(loadConfig({ ...base, NODE_ENV: 'development', INTEGRATION_LOCAL: 'true', JWT_ISSUERS: staleDev, JWT_ISSUERS_EXTRA: dev }).jwtIssuers.map((issuer) => issuer.publicKeyFile)).toEqual(['C:/otra/ruta.pem', 'C:/llaves/dev-public.pem']);
+    expect(() => loadConfig({ ...base, NODE_ENV: 'development', JWT_ISSUERS_EXTRA: dev })).toThrow('JWT_ISSUERS_EXTRA requires INTEGRATION_LOCAL=true');
+    expect(() => loadConfig({ ...base, NODE_ENV: 'production', INTEGRATION_LOCAL: 'true', JWT_ISSUERS_EXTRA: dev })).toThrow('forbidden in production');
+    expect(() => loadConfig({ ...base, NODE_ENV: 'production', JWT_ISSUERS_EXTRA: dev })).toThrow('JWT_ISSUERS_EXTRA requires INTEGRATION_LOCAL=true');
+    expect(() => loadConfig({ ...base, NODE_ENV: 'development', INTEGRATION_LOCAL: 'true', JWT_ISSUERS_EXTRA: 'no-json' })).toThrow('JWT_ISSUERS_EXTRA must be a JSON array');
+  });
 });

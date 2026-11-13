@@ -61,6 +61,8 @@ Reglas que conviene conocer:
 Límites de tasa (valores por defecto, configurables): 60 peticiones por minuto por huella en rutas públicas y 120 por minuto por
 `sub` en rutas autenticadas. Al excederlos: 429 `RATE_LIMIT_EXCEEDED` con `Retry-After`.
 
+Listas paginadas (`GET /bookings`): `limit` (1–50, 10 por defecto) y `cursor` (el `nextCursor` de la página anterior, opaco; `null` en la última). Van de la reserva más reciente a la más antigua (por fecha de creación, con desempate estable por `bookingId`), sin repetir ni saltar reservas aunque compartan fecha; un `cursor` inventado responde 400. El contrato no promete orden: no dependas de otro.
+
 Los errores son `application/problem+json` con `ProblemDetails` (`type`, `title`, `status`, `code`, `detail?`, `invalidParams?`).
 Nunca incluyen trazas ni mensajes internos.
 

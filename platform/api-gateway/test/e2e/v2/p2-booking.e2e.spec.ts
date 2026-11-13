@@ -203,9 +203,10 @@ describeReal('F12a P2 · reservas, emisión y boletos v2 (contra servicios reale
     }, 90_000);
     it('V2-P2-65 pagina con limit y cursor sin repetir ni omitir', async () => {
       const s = await scenario(); const created = []; for (let i = 0; i < 2; i += 1) created.push((await confirmed(s, 'u1')).response.body.bookingId);
-      const seen: string[] = []; let cursor: string | undefined;
-      for (let page = 0; page < 5; page += 1) { const res = await request(stack.server).get('/api/v2/vuelos/bookings').query({ limit: '1', ...(cursor ? { cursor } : {}) }).set(await headers(stack, s.client, 'u1')); expect(res.status).toBe(200); seen.push(...res.body.items.map((i: { bookingId: string }) => i.bookingId)); cursor = res.body.nextCursor ?? undefined; if (!cursor) break; }
-      expect(seen.sort()).toEqual([...created].sort());
+      const seen: string[] = []; const sizes: number[] = []; let cursor: string | undefined;
+      for (let page = 0; page < 5; page += 1) { const res = await request(stack.server).get('/api/v2/vuelos/bookings').query({ limit: '1', ...(cursor ? { cursor } : {}) }).set(await headers(stack, s.client, 'u1')); expect(res.status).toBe(200); sizes.push(res.body.items.length); seen.push(...res.body.items.map((i: { bookingId: string }) => i.bookingId)); cursor = res.body.nextCursor ?? undefined; if (!cursor) break; }
+      // F12c-1 punto 0: antes solo se comparaba la unión, y un servicio que ignoraba `limit` devolvía las 2 en una página y la prueba pasaba. Ahora se exige que cada página respete el limit.
+      expect(sizes).toEqual([1, 1]); expect(seen.sort()).toEqual([...created].sort());
     }, 180_000);
     it('V2-P2-66 un estado desconocido o un limit fuera de rango responden 400 y sin token 401', async () => {
       const s = await scenario(); const h = await headers(stack, s.client, 'u1');

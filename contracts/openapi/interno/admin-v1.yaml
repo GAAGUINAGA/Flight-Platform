@@ -11,6 +11,12 @@ info:
     - Errores con el formato `ProblemDetails` de la API v2 (RFC 7807).
     - Los manejadores son los de las antiguas rutas de administración; no hay lógica nueva salvo `GET /web-bookings`.
     - Fechas y horas de vuelo en ISO-8601 con desplazamiento; `date` es la fecha local del aeropuerto de origen (ADR-F12b1fix-02).
+
+    **Registro de cambios** (la versión de la API interna sigue siendo `v1`: es interna, sin consumidores en producción fuera de la entrega F12c-1; el único es el servicio GraphQL).
+    - 2026-11-12 (F12c-1, audit-25 H1; adenda al ADR-F12c-02): `GET /web-bookings` — el parámetro `before` y la propiedad `nextCursor` pasan de `string` con `format: date-time` a **texto opaco**
+      (`type: string`, sin `format`, `maxLength: 200`). Motivo: la lista se ordena por fecha de creación **y** `bookingId` (desempate) y un cursor que solo fuera una fecha repetía o saltaba reservas
+      con la misma fecha de creación en el borde de la página. El cliente no debe interpretarlo ni formatearlo, solo devolver el `nextCursor` recibido. Un `before` mal formado o alterado responde `400 VALIDATION_FAILED`.
+      Cambio incompatible solo para quien tratara el cursor como fecha: se declara aquí por no haberse declarado en la entrega original.
 servers:
   - url: /api/admin/v1
     description: Gateway (misma URL base que el resto de la plataforma)
@@ -91,8 +97,8 @@ paths:
         - name: before
           in: query
           required: false
-          description: Cursor (`nextCursor` de la página anterior).
-          schema: { type: string, format: date-time }
+          description: Cursor opaco devuelto en `nextCursor`; no interpretar. Uno mal formado o alterado responde 400 VALIDATION_FAILED.
+          schema: { type: string, minLength: 1, maxLength: 200 }
       responses:
         '200':
           description: Reservas de prueba de la web, de la más reciente a la más antigua
@@ -267,4 +273,4 @@ components:
         items:
           type: array
           items: { $ref: '#/components/schemas/WebTestBooking' }
-        nextCursor: { type: string, format: date-time, nullable: true }
+        nextCursor: { type: string, nullable: true, minLength: 1, maxLength: 200, description: Cursor opaco devuelto para `before`; no interpretar. null en la última página. }

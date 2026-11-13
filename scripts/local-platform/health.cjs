@@ -12,7 +12,14 @@ const base = (option('url', 'http://127.0.0.1:3000')).replace(/\/+$/, '');
 const waitSeconds = Number(option('wait', '0'));
 const esbBase = option('esb', '').replace(/\/+$/, '');
 const brokerAddress = option('broker', '');
+const graphqlBase = option('graphql', '').replace(/\/+$/, '');
 const EXPECTED = 7;
+
+/** Servicio GraphQL (F12c-1): GET /health HTTP propio, sin llamar al Gateway. Solo se comprueba si se pasa --graphql. */
+async function graphqlAlive() {
+  if (!graphqlBase) return true;
+  try { const response = await fetch(`${graphqlBase}/health`, { signal: AbortSignal.timeout(3000) }); return response.ok; } catch { return false; }
+}
 
 /** RabbitMQ (F12b-2): solo se comprueba que el puerto responde; el estado de la outbox se ve en GET /health/deps del ESB (requiere la llave interna, que este script no lee). */
 function brokerAlive() {
@@ -55,7 +62,9 @@ async function main() {
   if (esbBase) process.stdout.write(`  ${esbOk ? 'OK  ' : 'FALLA'} esb ${esbBase}\n`);
   const brokerOk = await brokerAlive();
   if (brokerAddress) process.stdout.write(`  ${brokerOk ? 'OK  ' : 'FALLA'} rabbitmq ${brokerAddress}\n`);
-  if (!healthy(result) || !esbOk || !brokerOk) { process.stdout.write('La plataforma NO está sana.\n'); process.exit(1); }
-  process.stdout.write(`La plataforma está sana: el Gateway${esbBase ? ', el ESB' : ''}${brokerAddress ? ', RabbitMQ' : ''} y los siete servicios responden.\n`);
+  const graphqlOk = await graphqlAlive();
+  if (graphqlBase) process.stdout.write(`  ${graphqlOk ? 'OK  ' : 'FALLA'} graphql ${graphqlBase}\n`);
+  if (!healthy(result) || !esbOk || !brokerOk || !graphqlOk) { process.stdout.write('La plataforma NO está sana.\n'); process.exit(1); }
+  process.stdout.write(`La plataforma está sana: el Gateway${esbBase ? ', el ESB' : ''}${brokerAddress ? ', RabbitMQ' : ''}${graphqlBase ? ', el servicio GraphQL' : ''} y los siete servicios responden.\n`);
 }
 void main();

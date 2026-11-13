@@ -14,6 +14,7 @@ import { GatewayProblemError } from './web-errors';
 import { buildV2Problem, v2ProblemFromError } from './v2/problem';
 import { authenticateV2 } from './v2/v2-security';
 import type { DevAuthService } from './v2/dev-auth';
+import { decodeCreatedCursor, encodeCreatedCursor } from './v2/list-cursor';
 import type { V2StateStore } from './v2/state';
 import { webPassengerCount } from './v2/web-sales';
 
@@ -32,11 +33,16 @@ export class AdminApiController {
   listFares(req: Request, query: unknown) { return this.admin.listFares(req, query); }
   upsertFare(req: Request, body: unknown) { return this.admin.upsertFare(req, body); }
   async webBookings(_req: Request, query: { limit?: number | string; before?: string }) {
-    const limit = query.limit === undefined ? 20 : Number(query.limit); const before = query.before ? new Date(query.before) : undefined;
-    if (!Number.isInteger(limit) || limit < 1 || limit > 100 || (before && Number.isNaN(before.getTime()))) throw new GatewayProblemError(400, 'VALIDATION_FAILED', 'Invalid fields: limit, before');
-    const rows = await this.state.listWebBookings({ limit, ...(before ? { before } : {}) });
+    const limit = query.limit === undefined ? 20 : Number(query.limit); const rawBefore: unknown = query.before; const badType = rawBefore !== undefined && typeof rawBefore !== 'string'; // `before[]=` o `before=a&before=b` llegan como arreglo/objeto
+    const before = typeof rawBefore === 'string' && rawBefore !== '' ? decodeCreatedCursor(rawBefore) : undefined;
+    if (!Number.isInteger(limit) || limit < 1 || limit > 100 || badType || (rawBefore !== undefined && rawBefore !== '' && !before) || rawBefore === '') throw new GatewayProblemError(400, 'VALIDATION_FAILED', 'Invalid fields: limit, before');
+    // Se pide uno más para saber si quedan reservas: sin él, una página exacta emitía un nextCursor que llevaba a una página vacía.
+    const fetched = await this.state.listWebBookings({ limit: limit + 1, ...(before ? { before } : {}) });
+    const more = fetched.length > limit; const rows = fetched.slice(0, limit);
     const items = rows.map((row) => ({ bookingId: row.bookingId, createdAt: (row.createdAt ?? new Date(0)).toISOString(), channel: 'WEB' as const, test: true as const, passengers: webPassengerCount(row.salesChannel), owner: createHash('sha256').update(row.ownerId).digest('hex').slice(0, 12) }));
-    return { items, nextCursor: rows.length === limit ? items[items.length - 1]?.createdAt ?? null : null };
+    // Cursor compuesto (fecha de creación, bookingId): opaco; dos reservas del mismo milisegundo no se repiten ni se saltan en el borde de una página.
+    const last = rows.at(-1);
+    return { items, nextCursor: more && last ? encodeCreatedCursor(last.createdAt ?? new Date(0), last.bookingId) : null };
   }
 }
 const P = AdminApiController.prototype;

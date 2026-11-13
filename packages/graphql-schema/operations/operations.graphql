@@ -1,0 +1,134 @@
+# Operaciones conocidas del front (web y móvil). El servicio GraphQL solo ejecuta estas en producción (Q6).
+# Cada operación lleva nombre y sus fragmentos; `index.cjs` las separa en documentos de una sola operación.
+
+fragment MoneyFields on Money { currency total baseFare taxes }
+fragment SegmentFields on Segment {
+  segmentId flightNumber layoverMinutes marketingCarrier operatingCarrier aircraft durationMinutes status
+  departure { iataCode at terminal } arrival { iataCode at terminal }
+}
+fragment ItineraryFields on Itinerary {
+  itineraryId totalDurationMinutes stopsCount
+  segments { ...SegmentFields }
+  pricingOptions {
+    cabinClass fareBrand availableSeats
+    fareRules { isRefundable isChangeable }
+    baggageAllowance { personalItemIncluded carryOnIncluded checkedBaggageIncluded }
+    extraCheckedBaggagePrice { ...MoneyFields }
+    pricePerPassengerType { passengerType price { ...MoneyFields } }
+  }
+}
+fragment BookingFields on Booking {
+  bookingId pnr status createdAt updatedAt availableActions
+  grandTotal { ...MoneyFields }
+  itineraries { ...ItineraryFields }
+  passengers {
+    passengerId passengerType firstName lastName documentType documentNumberMasked nationality birthDate gender
+    assignedSeats { segmentId seatNumber }
+    extraBaggage { itineraryId quantity }
+  }
+  tickets { ticketId passengerId eTicketNumber status issuedAt failureReason segments { segmentId status couponNumber } }
+  changes { changedAt description }
+}
+fragment FlightStatusFields on FlightStatus {
+  flightNumber date marketingCarrier operatingCarrier aircraft status delayMinutes updatedAt
+  departure { iataCode terminal gate scheduledAt estimatedAt actualAt }
+  arrival { iataCode terminal gate scheduledAt estimatedAt actualAt }
+}
+fragment AdminFareFields on AdminFare {
+  fareId flightInstanceId cabinClass fareBrand
+  price { ...MoneyFields }
+  fareRules { isRefundable isChangeable }
+  baggageAllowance { personalItemIncluded carryOnIncluded checkedBaggageIncluded }
+  extraCheckedBaggagePrice { ...MoneyFields }
+}
+fragment PromotionFields on PromotionAgreement { allowsPromotions maxDiscountPercent destinations routes cabins validUntil conditions updatedAt }
+
+# ───────── Públicas ─────────
+query SearchFlights($input: SearchInput!) {
+  searchFlights(input: $input) { totalOffers offers { offerId airline { code name } grandTotal { ...MoneyFields } itineraries { ...ItineraryFields } } }
+}
+query SeatMap($offerId: ID!, $segmentId: ID!) {
+  seatMap(offerId: $offerId, segmentId: $segmentId) { segmentId cabins { cabinClass rows { rowNumber seats { seatNumber status isAvailable characteristics } } } }
+}
+query FlightStatus($flightNumber: String!, $date: Date!) { flightStatus(flightNumber: $flightNumber, date: $date) { ...FlightStatusFields } }
+query PlatformHealth {
+  platformHealth { status nodeId version uptimeSeconds latencyMs timestamp dependencies { name status latencyMs } }
+}
+
+# ───────── Cliente ─────────
+query Viewer { viewer { userId role } }
+query Hold($holdId: ID!) { hold(holdId: $holdId) { holdId status expiresAt remainingSeconds ttlMinutes lockedPrice { ...MoneyFields } } }
+query MyBookings($filter: BookingFilterInput, $first: Int, $after: String) {
+  myBookings(filter: $filter, first: $first, after: $after) {
+    edges { cursor node { bookingId pnr status origin destination departureDate availableActions grandTotal { ...MoneyFields } } }
+    pageInfo { endCursor hasNextPage }
+  }
+}
+query Booking($bookingId: ID!) { booking(bookingId: $bookingId) { ...BookingFields } }
+query BoardingPasses($bookingId: ID!) { boardingPasses(bookingId: $bookingId) { passengerId segmentId seat boardingGroup boardingPosition gate barcode barcodeType } }
+query BaggageOptions($bookingId: ID!) { baggageOptions(bookingId: $bookingId) { passengerId itineraryId maxAllowed alreadyPurchased price { ...MoneyFields } } }
+query SearchDateChange($bookingId: ID!, $changes: [DateChangeInput!]!) {
+  searchDateChange(bookingId: $bookingId, changes: $changes) {
+    changeOfferId expiresAt segments { ...SegmentFields } priceDifference { fareDifference taxDifference changeFee totalToPay }
+  }
+}
+query CancellationQuote($bookingId: ID!) { cancellationQuote(bookingId: $bookingId) { quoteId isRefundable refundAmount penaltyAmount currency expiresAt } }
+
+# ───────── Administrador ─────────
+query AdminFlights($date: Date, $first: Int, $after: String) {
+  adminFlights(date: $date, first: $first, after: $after) {
+    items { flightInstanceId flightNumber departureIata arrivalIata departureAt arrivalAt aircraft closed cabins { cabinClass capacity } }
+    pageInfo { endCursor hasNextPage }
+  }
+}
+query AdminFares($flightInstanceId: ID) { adminFares(flightInstanceId: $flightInstanceId) { ...AdminFareFields } }
+query FlightOperations($date: Date!, $origin: String, $destination: String, $status: FlightStatusCode, $first: Int, $after: String) {
+  flightOperations(date: $date, origin: $origin, destination: $destination, status: $status, first: $first, after: $after) {
+    totalFlights
+    items {
+      flightNumber date origin destination departureAt status aircraft totalSeats loadFactor activeHolds nextHoldExpiryAt checkInOpen
+      cabins { cabinClass totalSeats seatsByStatus { AVAILABLE HELD BOOKED TICKETED CHECKED_IN BOARDED } }
+      alerts { code severity message }
+    }
+    pageInfo { endCursor hasNextPage }
+  }
+}
+query PromotionAgreement { promotionAgreement { ...PromotionFields } }
+
+# ───────── Mutaciones del cliente ─────────
+mutation HoldOffer($input: HoldOfferInput!, $idempotencyKey: ID!) {
+  holdOffer(input: $input, idempotencyKey: $idempotencyKey) { holdId status expiresAt remainingSeconds ttlMinutes lockedPrice { ...MoneyFields } }
+}
+mutation ReleaseHold($holdId: ID!) { releaseHold(holdId: $holdId) }
+mutation CreateBooking($input: CreateBookingInput!, $idempotencyKey: ID!) {
+  createBooking(input: $input, idempotencyKey: $idempotencyKey) { outcome booking { ...BookingFields } }
+}
+mutation AddBaggage($input: AddBaggageInput!, $idempotencyKey: ID!) {
+  addBaggage(input: $input, idempotencyKey: $idempotencyKey) { passengerId itineraryId totalBaggage }
+}
+mutation ConfirmDateChange($input: ConfirmDateChangeInput!, $idempotencyKey: ID!) {
+  confirmDateChange(input: $input, idempotencyKey: $idempotencyKey) { outcome booking { ...BookingFields } }
+}
+mutation CancelBooking($bookingId: ID!, $quoteId: ID!, $reasonCode: CancelReasonCode, $reason: String, $idempotencyKey: ID!) {
+  cancelBooking(bookingId: $bookingId, quoteId: $quoteId, reasonCode: $reasonCode, reason: $reason, idempotencyKey: $idempotencyKey) {
+    outcome status cancelledAt ticketsVoided message
+    refund { refundId amount penaltyAmount currency percentage status }
+    inventoryRestoration { status seatsReleased }
+  }
+}
+mutation ChangeSeats($bookingId: ID!, $seats: [SeatChangeInput!]!, $idempotencyKey: ID!) {
+  changeSeats(bookingId: $bookingId, seats: $seats, idempotencyKey: $idempotencyKey) { seats { passengerId segmentId previousSeatNumber seatNumber status } }
+}
+mutation IssueTickets($bookingId: ID!) { issueTickets(bookingId: $bookingId) { issued booking { ...BookingFields } } }
+mutation CheckIn($bookingId: ID!) {
+  checkIn(bookingId: $bookingId) { bookingId status checkedInPassengers { passengerId status segments { segmentId seat status } } }
+}
+
+# ───────── Mutaciones del administrador ─────────
+mutation UpdateFlightStatus($flightNumber: String!, $input: FlightStatusUpdateInput!, $idempotencyKey: ID) {
+  updateFlightStatus(flightNumber: $flightNumber, input: $input, idempotencyKey: $idempotencyKey) {
+    previousStatus affectedBookings eventId flight { ...FlightStatusFields }
+  }
+}
+mutation UpsertFare($input: UpsertFareInput!) { upsertFare(input: $input) { ...AdminFareFields } }
+mutation SetPromotionAgreement($input: PromotionAgreementInput!, $idempotencyKey: ID!) { setPromotionAgreement(input: $input, idempotencyKey: $idempotencyKey) { ...PromotionFields } }

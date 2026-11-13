@@ -162,3 +162,5 @@
 ## Observaciones de audit-20 (backend previo al front)
 - Intermitente en Reservation: la primera corrida real falló PST-07 / C (esperaba QUOTE_EXPIRED, recibió BOOKING_NOT_CONFIRMED); la repetición pasó 19/19. Revisar si la prueba depende del tiempo de vencimiento de la cotización.
 - Intermitente en el gateway: la primera corrida completa falló V2-P1-43 (esperaba 200, recibió 503); las dos siguientes pasaron. Revisar si es un arranque lento de un servicio en la suite.
+
+- La paginación de GET /api/v2/vuelos/bookings no funciona en la nube: el gateway pasa page { limit, cursor } a Reservation (booking.controller.ts:35), pero la respuesta ignora ambos (limit=5 devolvió 20; con el cursor devolvió la misma página). Probable desajuste de nombres con el .proto, que el cliente gRPC descarta en silencio. Detectado el 12-11-2026; se corrige como primer punto de F12c-1.

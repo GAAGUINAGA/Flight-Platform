@@ -28,6 +28,10 @@ const SERVICES = [
 // aquí es que cada variable del canal WEB (ADR-F12c-02) siga usándose en su código y esté documentada en .env.example y en la guía de despliegue.
 const GATEWAY_RENDER = { src: 'platform/api-gateway/src', envExample: 'platform/api-gateway/.env.example', guide: 'docs/dev/f12c-backend-previo-despliegue.md', env: ['WEB_PAYMENT_MODE', 'WEB_MAX_ACTIVE_BOOKINGS', 'WEB_MAX_PASSENGERS_PER_DAY'] };
 
+// Servicio GraphQL (F12c-1, Cloud Run, sin secretos propios): su workflow usa --update-env-vars (conserva lo configurado a mano) y NUNCA --set-*;
+// cada variable que exige debe seguir usándose en su código y estar documentada en la guía de despliegue.
+const GRAPHQL = { workflow: 'deploy-graphql.yml', src: 'platform/graphql/src', guide: 'docs/dev/f12c1-graphql-despliegue.md', env: ['GATEWAY_BASE_URL', 'JWT_ISSUERS', 'CORS_ORIGINS'] };
+
 const read = (file) => fs.readFileSync(file, 'utf8');
 const listFiles = (dir) => fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? listFiles(path.join(dir, e.name)) : [path.join(dir, e.name)]));
 const field = (text, key) => { const m = new RegExp(`^\\s*${key}:\\s*(.+)$`, 'm').exec(text); return m ? m[1].trim() : ''; };
@@ -67,6 +71,14 @@ function check() {
     if (!gwCode.includes(v)) problems.push(`gateway: ${v} figura en el manifiesto pero el código ya no la usa (actualiza scripts/ci/check-deploy-env.cjs)`);
     if (!new RegExp(`^#?\\s*${v}=`, 'm').test(gwExample)) problems.push(`gateway: ${v} no está declarada en ${GATEWAY_RENDER.envExample}`);
     if (!gwGuide.includes(v)) problems.push(`gateway: ${v} no figura en la guía ${GATEWAY_RENDER.guide} (variables de Render)`);
+  }
+  const gqlWorkflow = read(path.join(workflows, GRAPHQL.workflow)); const gqlGuide = read(path.join(root, GRAPHQL.guide));
+  const gqlCode = listFiles(path.join(root, GRAPHQL.src)).filter((f) => f.endsWith('.ts')).map(read).join('\n');
+  if (/--set-(secrets|env-vars)/.test(gqlWorkflow)) problems.push(`graphql: ${GRAPHQL.workflow} usa --set-*, que borraría las variables configuradas a mano; debe usar --update-*`);
+  if (!/--update-env-vars/.test(gqlWorkflow)) problems.push(`graphql: ${GRAPHQL.workflow} no usa --update-env-vars`);
+  for (const v of GRAPHQL.env) {
+    if (!gqlCode.includes(v)) problems.push(`graphql: ${v} figura en el manifiesto pero el código ya no la usa (actualiza scripts/ci/check-deploy-env.cjs)`);
+    if (!gqlGuide.includes(v)) problems.push(`graphql: ${v} no figura en la guía ${GRAPHQL.guide}`);
   }
   return problems;
 }
