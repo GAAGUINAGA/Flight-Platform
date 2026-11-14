@@ -33,6 +33,8 @@ export interface ErrorPanelProps {
   onRetryPayment?: () => void;
   /** Se explica que la selección sigue reservada tras un pago rechazado (solo en la compra). */
   holdStillValid?: boolean;
+  /** Idempotency-Key de la acción que falló (panel de administración): se muestra en «Detalles técnicos» junto al X-Correlation-Id. */
+  idempotencyKey?: string | null;
 }
 
 /** Reenvío del correo de confirmación (EMAIL_NOT_VERIFIED): el mismo mensaje exista o no la cuenta. */
@@ -58,7 +60,7 @@ function ResendConfirmation() {
  * Presenta un error de la capa de datos: el mensaje del catálogo, la acción que corresponde a su `category`/`code`
  * (reintentar, esperar, iniciar sesión, buscar de nuevo, refrescar el mapa, confirmar el correo…) y el `correlationId` en «Detalles».
  */
-export function ErrorPanel({ error, onRetry, fixHref, fixLabel = 'Modificar búsqueda', searchHref = '/', onRefreshSeats, onRetryPayment, holdStillValid = false }: ErrorPanelProps) {
+export function ErrorPanel({ error, onRetry, fixHref, fixLabel = 'Modificar búsqueda', searchHref = '/', onRefreshSeats, onRetryPayment, holdStillValid = false, idempotencyKey = null }: ErrorPanelProps) {
   const location = useLocation();
   const action = actionFor(error);
   const waiting = useCountdown(action === 'wait' || action === 'retry' ? error.retryAfterSeconds : null);
@@ -85,6 +87,7 @@ export function ErrorPanel({ error, onRetry, fixHref, fixLabel = 'Modificar bús
         <details className={styles.details}>
           <summary>Detalles técnicos</summary>
           Si contactas a soporte, comparte este identificador: <code>{error.correlationId}</code> ({error.code})
+          {idempotencyKey ? <> · Clave de idempotencia: <code>{idempotencyKey}</code></> : null}
         </details>
       ) : null}
     </Notice>

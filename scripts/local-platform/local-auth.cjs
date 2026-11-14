@@ -19,6 +19,7 @@ const PRIVATE_NAME = 'web-auth-private.pem';
 const PUBLIC_NAME = 'web-auth-public.pem';
 const AUDIENCE = 'authenticated';
 const SCOPE = 'flights:read flights:hold flights:book flights:cancel';
+const ADMIN_SCOPE = 'flights:admin';
 const TOKEN_SECONDS = 3600;
 const MAX_BODY = 10 * 1024;
 const MAX_USERS = 500;
@@ -42,7 +43,7 @@ const b64 = (value) => Buffer.from(JSON.stringify(value)).toString('base64url');
 function createAuthServer({ port, privateKeyPem, origins }) {
   const privateKey = createPrivateKey(privateKeyPem); const publicKey = createPublicKey(privateKey);
   const issuer = issuerFor(port);
-  /** @type {Map<string, {id: string, email: string, name: string|null, salt: Buffer, hash: Buffer, createdAt: string}>} */
+  /** @type {Map<string, {id: string, email: string, name: string|null, role: 'customer'|'admin', salt: Buffer, hash: Buffer, createdAt: string}>} */
   const users = new Map();
   const refreshTokens = new Map(); // token → userId
   const flows = new Map();         // código → { userId, challenge, type }
@@ -51,7 +52,9 @@ function createAuthServer({ port, privateKeyPem, origins }) {
   const hashPassword = (password, salt) => scryptSync(password, salt, 32);
   const signToken = (user) => {
     const now = Math.floor(Date.now() / 1000);
-    const input = `${b64({ alg: 'RS256', typ: 'JWT', kid: 'local-web-1' })}.${b64({ iss: issuer, aud: AUDIENCE, sub: user.id, email: user.email, role: 'authenticated', app_role: 'customer', scope: SCOPE, email_verified: true, session_id: randomUUID(), iat: now, exp: now + TOKEN_SECONDS })}`;
+    // El rol sale SOLO de lo que el servicio guardó para el usuario (un registro siempre es `customer`); un administrador local lo crea `POST /local/admin-user`.
+    const admin = user.role === 'admin';
+    const input = `${b64({ alg: 'RS256', typ: 'JWT', kid: 'local-web-1' })}.${b64({ iss: issuer, aud: AUDIENCE, sub: user.id, email: user.email, role: 'authenticated', app_role: admin ? 'admin' : 'customer', scope: admin ? `${SCOPE} ${ADMIN_SCOPE}` : SCOPE, email_verified: true, session_id: randomUUID(), iat: now, exp: now + TOKEN_SECONDS })}`;
     return `${input}.${sign('RSA-SHA256', Buffer.from(input), privateKey).toString('base64url')}`;
   };
   const userBody = (user) => ({ id: user.id, aud: AUDIENCE, role: 'authenticated', email: user.email, email_confirmed_at: user.createdAt, app_metadata: { provider: 'email' }, user_metadata: user.name ? { full_name: user.name } : {}, created_at: user.createdAt, updated_at: user.createdAt });
@@ -108,9 +111,21 @@ function createAuthServer({ port, privateKeyPem, origins }) {
         if (users.has(email)) { fail(res, 422, 'user_already_exists', origin); return; }
         if (users.size >= MAX_USERS) { fail(res, 429, 'over_request_rate_limit', origin); return; }
         const salt = randomBytes(16); const name = typeof body.data?.full_name === 'string' ? body.data.full_name.slice(0, 80) : null;
-        const user = { id: randomUUID(), email, name, salt, hash: hashPassword(body.password, salt), createdAt: new Date().toISOString() };
+        const user = { id: randomUUID(), email, name, role: 'customer', salt, hash: hashPassword(body.password, salt), createdAt: new Date().toISOString() };
         users.set(email, user);
         send(res, 200, sessionBody(user), origin); return;
+      }
+      // Administrador LOCAL de pruebas (F12c-3, ADR-F12c3-02): solo desde un cliente sin `Origin` (el e2e, un script); una página web no puede crearlo. No devuelve token: se inicia sesión como cualquiera.
+      if (route === 'POST /local/admin-user') {
+        if (req.headers.origin) { fail(res, 403, 'forbidden', origin); return; }
+        const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
+        if (!validEmail(email)) { fail(res, 422, 'email_address_invalid', origin); return; }
+        if (typeof body.password !== 'string' || body.password.length < 8 || body.password.length > 200) { fail(res, 422, 'weak_password', origin); return; }
+        if (users.has(email)) { fail(res, 422, 'user_already_exists', origin); return; }
+        if (users.size >= MAX_USERS) { fail(res, 429, 'over_request_rate_limit', origin); return; }
+        const salt = randomBytes(16);
+        users.set(email, { id: randomUUID(), email, name: 'Administrador local', role: 'admin', salt, hash: hashPassword(body.password, salt), createdAt: new Date().toISOString() });
+        send(res, 201, { email, role: 'admin' }, origin); return;
       }
       if (route === 'POST /auth/v1/token') {
         const grant = url.searchParams.get('grant_type');

@@ -9,6 +9,8 @@ import styles from './layout.module.css';
 
 const NAV = [{ to: '/', label: 'Buscar vuelos', end: true }, { to: '/estado', label: 'Estado de vuelo', end: false }];
 const MY_BOOKINGS = { to: '/reservas', label: 'Mis reservas', end: false };
+/** Solo para una sesión con rol `admin` (comodidad de la interfaz: la autoridad es GraphQL y el Gateway). Un cliente no la ve. */
+const ADMIN_LINK = { to: '/admin', label: 'Administración', end: false };
 const ENV_LABEL = { produccion: '', pruebas: 'Pruebas', local: 'Local' } as const;
 
 /** Banda fija del entorno (diseño §3.14): visible en todo entorno que no sea producción. */
@@ -18,8 +20,10 @@ function EnvBand() {
   return <div className={styles.envBand} role="note"><span className={styles.envName}>{ENV_LABEL[config.envName]}</span>{brand.texts.testEnvironmentNotice}</div>;
 }
 
-function MobileMenu({ onClose, onSignOut, authenticated, returnTo }: { onClose: () => void; onSignOut: () => void; authenticated: boolean; returnTo: string }) {
-  const items = authenticated ? [...NAV, MY_BOOKINGS] : NAV;
+const navItems = (authenticated: boolean, admin: boolean) => (authenticated ? [...NAV, MY_BOOKINGS, ...(admin ? [ADMIN_LINK] : [])] : NAV);
+
+function MobileMenu({ onClose, onSignOut, authenticated, admin, returnTo }: { onClose: () => void; onSignOut: () => void; authenticated: boolean; admin: boolean; returnTo: string }) {
+  const items = navItems(authenticated, admin);
   const closeRef = useRef<HTMLButtonElement>(null); const drawerRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     closeRef.current?.focus();
@@ -58,13 +62,13 @@ function AppHeader() {
   const returnTo = `${location.pathname}${location.search}`;
   const signOut = (): void => { void client.signOut().then(() => navigate('/')); };
   const closeMenu = (): void => { setMenuOpen(false); menuButton.current?.focus(); };
-  const authenticated = session.status === 'authenticated';
+  const authenticated = session.status === 'authenticated'; const admin = session.status === 'authenticated' && session.user.role === 'admin';
   return (
     <header className={styles.header}>
       <div className={styles.headerInner}>
         <Link to="/" className={styles.logoLink} aria-label={`${brand.name}, ir al inicio`}><img className={styles.logo} src={logoUrl('dark')} alt="" width={166} height={36} /></Link>
         <nav className={styles.nav} aria-label="Principal">
-          {(authenticated ? [...NAV, MY_BOOKINGS] : NAV).map((item) => <NavLink key={item.to} to={item.to} end={item.end} className={({ isActive }) => `${styles.navLink} ${isActive ? styles.navLinkActive : ''}`}>{item.label}</NavLink>)}
+          {navItems(authenticated, admin).map((item) => <NavLink key={item.to} to={item.to} end={item.end} className={({ isActive }) => `${styles.navLink} ${isActive ? styles.navLinkActive : ''}`}>{item.label}</NavLink>)}
         </nav>
         <div className={styles.right}>
           {authenticated ? (
@@ -78,7 +82,7 @@ function AppHeader() {
           <button type="button" className={styles.menuButton} ref={menuButton} onClick={() => setMenuOpen(true)} aria-label="Abrir menú" aria-haspopup="dialog" aria-expanded={menuOpen}><Menu size={24} aria-hidden="true" /></button>
         </div>
       </div>
-      {menuOpen ? <MobileMenu onClose={closeMenu} onSignOut={signOut} authenticated={authenticated} returnTo={returnTo} /> : null}
+      {menuOpen ? <MobileMenu onClose={closeMenu} onSignOut={signOut} authenticated={authenticated} admin={admin} returnTo={returnTo} /> : null}
     </header>
   );
 }

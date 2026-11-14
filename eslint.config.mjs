@@ -5,7 +5,7 @@ import tsParser from '@typescript-eslint/parser';
 // Globales del navegador que usa la web (platform/web). Lista explícita: lo que no esté aquí es un error de lint.
 const browserGlobals = Object.fromEntries([
   'window', 'document', 'fetch', 'crypto', 'URL', 'URLSearchParams', 'Headers', 'Request', 'Response', 'RequestInfo', 'RequestInit', 'AbortController', 'AbortSignal',
-  'setTimeout', 'clearTimeout', 'Event', 'KeyboardEvent', 'HTMLElement', 'HTMLInputElement', 'HTMLSelectElement', 'HTMLButtonElement', 'HTMLFormElement', 'HTMLDivElement', 'Element',
+  'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Event', 'KeyboardEvent', 'HTMLElement', 'HTMLInputElement', 'HTMLSelectElement', 'HTMLButtonElement', 'HTMLFormElement', 'HTMLDivElement', 'HTMLHeadingElement', 'Element',
   'DOMException', 'NodeFilter', 'getComputedStyle', 'Uint8Array', 'Document'
 ].map((name) => [name, 'readonly']));
 

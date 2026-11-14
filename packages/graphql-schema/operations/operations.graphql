@@ -94,6 +94,12 @@ query FlightOperations($date: Date!, $origin: String, $destination: String, $sta
   }
 }
 query PromotionAgreement { promotionAgreement { ...PromotionFields } }
+query AdminWebBookings($first: Int, $after: String) {
+  adminWebBookings(first: $first, after: $after) {
+    items { bookingId channel createdAt owner passengers test }
+    pageInfo { endCursor hasNextPage }
+  }
+}
 
 # ───────── Mutaciones del cliente ─────────
 mutation HoldOffer($input: HoldOfferInput!, $idempotencyKey: ID!) {

@@ -4,7 +4,7 @@ import { cleanupKeys, FakeGateway, forged, makeApp, run, tokenFor, UUID_A } from
 afterAll(cleanupKeys);
 const ok = () => ({ status: 200, body: { bookingId: UUID_A, pnr: 'ABC123', status: 'CONFIRMED', grandTotal: { currency: 'USD', total: '1.00' }, createdAt: '2026-11-12T10:00:00Z' } });
 const adminOps: Array<[string, Record<string, unknown>]> = [
-  ['AdminFlights', {}], ['AdminFares', {}], ['FlightOperations', { date: '2026-12-01' }], ['PromotionAgreement', {}],
+  ['AdminFlights', {}], ['AdminFares', {}], ['FlightOperations', { date: '2026-12-01' }], ['PromotionAgreement', {}], ['AdminWebBookings', {}],
   ['UpdateFlightStatus', { flightNumber: 'FP103', input: { date: '2026-12-01', status: 'SCHEDULED' } }],
   ['SetPromotionAgreement', { input: { allowsPromotions: true, maxDiscountPercent: 10 }, idempotencyKey: UUID_A }]
 ];

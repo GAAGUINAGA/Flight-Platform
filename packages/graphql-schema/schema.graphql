@@ -166,6 +166,9 @@ type FlightOperation {
 type FlightOperationConnection { totalFlights: Int! items: [FlightOperation!]! pageInfo: PageInfo! }
 type DependencyHealth { name: String! status: DependencyStatus! latencyMs: Int }
 type PlatformHealth { status: HealthStatus! nodeId: String! version: String! uptimeSeconds: Int latencyMs: Int dependencies: [DependencyHealth!]! timestamp: DateTime! }
+# Reservas del canal web marcadas como de prueba: solo lo que entrega la API interna (`owner` es un hash opaco; sin datos personales)
+type WebTestBooking { bookingId: ID! channel: String! createdAt: DateTime! owner: String passengers: Int! test: Boolean! }
+type WebTestBookingConnection { items: [WebTestBooking!]! pageInfo: PageInfo! }
 input FlightStatusUpdateInput { date: Date! status: FlightStatusCode! estimatedDepartureAt: DateTime estimatedArrivalAt: DateTime departureGate: String reason: String }
 type FlightStatusUpdate { previousStatus: FlightStatusCode flight: FlightStatus! affectedBookings: Int! eventId: String }
 type PromotionAgreement {
@@ -200,6 +203,7 @@ type Query {
   flightOperations(date: Date!, origin: String, destination: String, status: FlightStatusCode, first: Int = 50, after: String): FlightOperationConnection! @admin  # GW: GET v2 /operaciones/vuelos
   platformHealth: PlatformHealth!                                                                  # GW: GET v2 /health (pública)
   promotionAgreement: PromotionAgreement @admin                                                    # GW: GET v2 /promociones/contrato (404 → null)
+  adminWebBookings(first: Int = 20, after: String): WebTestBookingConnection! @admin               # GW: ADMIN-API GET /web-bookings (cursor opaco: after ⇒ before; hacia reservas más antiguas)
 }
 
 # ───────── Mutaciones (idempotencyKey: UUID generado por el cliente por intención) ─────────

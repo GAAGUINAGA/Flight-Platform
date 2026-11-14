@@ -71,6 +71,43 @@ export async function signUp(request: APIRequestContext, prefix = 'e2e-compra'):
   return { email, password, token: body.access_token };
 }
 
+/**
+ * Crea un ADMINISTRADOR en el servicio de acceso local (`POST /local/admin-user`, ADR-F12c3-02: solo acepta clientes sin `Origin`, como este) y devuelve su token.
+ * Es el «usuario admin del acceso local de pruebas»; el token real de Supabase con rol admin lo prueba el humano.
+ */
+export async function createAdmin(request: APIRequestContext, prefix = 'e2e-admin'): Promise<TestUser> {
+  const email = `${prefix}-${Date.now()}-${Math.floor(Math.random() * 1e6)}@example.test`; const password = 'clave-de-prueba-123';
+  const created = await request.post(`${platform().authUrl}/local/admin-user`, { data: { email, password } });
+  if (created.status() !== 201) throw new Error(`No se pudo crear el administrador local (${created.status()})`);
+  const response = await request.post(`${platform().authUrl}/auth/v1/token?grant_type=password`, { data: { email, password }, headers: { apikey: 'local-anon-publica' } });
+  const body = await response.json() as { access_token?: string };
+  if (!body.access_token) throw new Error('El servicio de acceso local no devolvió un token de administrador');
+  return { email, password, token: body.access_token };
+}
+
+interface OpsFlight { flightNumber: string; date: string; origin: string; destination: string; departureAt: string; status: string }
+export interface TestFlight { flightNumber: string; date: string; origin: string; destination: string; departureAt: string }
+const ZONES: Record<string, string> = { UIO: 'America/Guayaquil', GYE: 'America/Guayaquil', CUE: 'America/Guayaquil', GPS: 'Pacific/Galapagos' };
+/** Hora local de un instante en la zona del aeropuerto, con el formato de un `datetime-local` (`AAAA-MM-DDTHH:mm`). */
+export function localInput(instant: string, origin: string): string {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat('en-CA', { timeZone: ZONES[origin] ?? 'UTC', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(new Date(instant)).map((part) => [part.type, part.value]));
+  return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}`;
+}
+
+/**
+ * Un vuelo sembrado PROGRAMADO (SCHEDULED) y lejano (8 a 14 días): el e2e lo retrasa, y un retraso no se deshace; así no estorba a los vuelos que usan la compra y el check-in.
+ * Cada corrida consume uno: `npm run local:seed` repone los datos. `null` si no hay.
+ */
+export async function findTestFlight(request: APIRequestContext, admin: TestUser): Promise<TestFlight | null> {
+  for (let offset = 14; offset >= 8; offset -= 1) {
+    const date = new Date(Date.now() + offset * 86_400_000).toISOString().slice(0, 10);
+    const reply = await graphql<{ flightOperations: { items: OpsFlight[] } }>(request, 'FlightOperations', { date, first: 50 }, admin.token);
+    const found = (reply.data?.flightOperations.items ?? []).filter((item) => item.status === 'SCHEDULED' && ZONES[item.origin] && ZONES[item.destination]).at(-1);
+    if (found) return { flightNumber: found.flightNumber, date: found.date, origin: found.origin, destination: found.destination, departureAt: found.departureAt };
+  }
+  return null;
+}
+
 /** Compra por la API (hold + reserva con pago aprobado) de 1 adulto en el primer vuelo que haya. Sirve para preparar situaciones sin recorrer la pantalla. */
 export async function bookByApi(request: APIRequestContext, user: TestUser, flight: FoundFlight): Promise<{ bookingId: string; pnr: string; holdId: string }> {
   const search = await graphql<{ searchFlights: { offers: TimedOffer[] } }>(request, 'SearchFlights', { input: { itineraries: [{ origin: flight.origin, destination: flight.destination, departureDate: flight.date }], passengers: { adults: 1 } } });

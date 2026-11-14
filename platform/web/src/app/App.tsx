@@ -9,6 +9,7 @@ import { FlightStatusPage } from '../pages/FlightStatusPage';
 import { HomePage } from '../pages/HomePage';
 import { ResultsPage } from '../pages/ResultsPage';
 import { ForbiddenPage, NotFoundPage, SessionExpiredPage, UnavailablePage } from '../pages/SystemPages';
+import { AdminGate } from '../admin/AdminGate';
 import { AfterSalesPage } from '../bookings/AfterSalesPage';
 import { BookingDetailPage } from '../bookings/BookingDetailPage';
 import { BookingsPage } from '../bookings/BookingsPage';
@@ -80,6 +81,7 @@ export function AppRoutes() {
           <Route path="reservas/:bookingId/confirmacion" element={<ConfirmationPage />} />
           <Route path="reservas/:bookingId/postventa" element={<AfterSalesPage />} />
           <Route path="reservas/:bookingId/checkin" element={<CheckInPage />} />
+          <Route path="admin/*" element={<AdminGate />} />
           <Route path="estado" element={<FlightStatusPage />} />
           <Route path="acceso" element={<LoginPage />} />
           <Route path={CALLBACK_PATH.slice(1)} element={<AuthCallbackPage />} />

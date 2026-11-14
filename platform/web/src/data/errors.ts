@@ -72,7 +72,7 @@ const MESSAGES: Readonly<Record<string, string>> = {
   FLIGHT_ALREADY_DEPARTED: 'El vuelo ya salió.',
   FLIGHT_CANCELLED: 'El vuelo fue cancelado.',
   FLIGHT_STATUS_NOT_AVAILABLE: 'No encontramos ese vuelo en esa fecha. La fecha es la de salida, en hora del aeropuerto de origen.',
-  INVALID_STATUS_TRANSITION: 'Ese cambio de estado del vuelo no es válido.',
+  INVALID_STATUS_TRANSITION: 'Ese cambio de estado no es válido desde el estado actual del vuelo. Actualiza la lista para ver su estado y elige un cambio permitido.',
   PROMOTION_DISCOUNT_OUT_OF_RANGE: 'El descuento debe estar entre 0 y 100.',
   UNKNOWN_GATEWAY_ERROR: 'No pudimos completar la operación.',
   GRAPHQL_VALIDATION_FAILED: 'No pudimos procesar la solicitud. Revisa los datos ingresados.',

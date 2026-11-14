@@ -89,6 +89,24 @@ describe('plataforma local · servicio de acceso de pruebas con el cliente de se
     expect(await session.resendConfirmation('nadie@example.test', `${ORIGIN}/acceso/retorno`)).toEqual({ ok: true });
   });
 
+  it('LAU-07 el administrador local (F12c-3): solo lo crea un cliente sin Origin; su token lleva app_role admin y el scope de administración; un registro nunca es admin', async () => {
+    const post = (path: string, body: object, headers: Record<string, string> = {}) => fetch(`${base}${path}`, { method: 'POST', headers: { 'content-type': 'application/json', apikey: 'local-anon', ...headers }, body: JSON.stringify(body) });
+    expect((await post('/local/admin-user', { email: 'intruso@example.test', password: 'secreto-123' }, { origin: ORIGIN })).status).toBe(403); // una página web no puede crear administradores
+    expect((await post('/auth/v1/token?grant_type=password', { email: 'intruso@example.test', password: 'secreto-123' })).status).toBe(400);
+    expect((await post('/local/admin-user', { email: 'corta@example.test', password: 'x' })).status).toBe(422);
+    expect((await post('/local/admin-user', { email: 'admin@example.test', password: 'secreto-123' })).status).toBe(201);
+    expect((await post('/local/admin-user', { email: 'admin@example.test', password: 'secreto-123' })).status).toBe(422); // ya existe
+    const session = client(); await session.start();
+    expect(await session.signIn('admin@example.test', 'secreto-123')).toEqual({ ok: true });
+    expect(session.getState()).toMatchObject({ status: 'authenticated', user: { email: 'admin@example.test', role: 'admin' } });
+    const { payload } = await jwtVerify((await session.getAccessToken())!, await importSPKI(publicKey, 'RS256'), { issuer, audience: AUDIENCE, algorithms: ['RS256'] });
+    expect(payload).toMatchObject({ app_role: 'admin', scope: 'flights:read flights:hold flights:book flights:cancel flights:admin' });
+    // Un registro normal sigue siendo cliente aunque pida otro rol en sus metadatos.
+    const other = client(); await other.start();
+    expect((await post('/auth/v1/signup', { email: 'listo@example.test', password: 'secreto-123', data: { app_role: 'admin', role: 'admin' } })).status).toBe(200);
+    expect(await other.signIn('listo@example.test', 'secreto-123')).toEqual({ ok: true }); expect(other.getState()).toMatchObject({ user: { role: 'customer' } });
+  });
+
   it('LAU-05 se niega a arrancar con NODE_ENV=production', () => {
     const run = spawnSync(process.execPath, [join(__dirname, 'local-auth.cjs'), '--port', '1'], { env: { ...process.env, NODE_ENV: 'production' }, encoding: 'utf8' });
     expect(run.status).toBe(1);
