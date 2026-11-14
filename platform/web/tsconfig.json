@@ -1,1 +1,26 @@
-{ "extends": "../../tsconfig.base.json", "compilerOptions": { "outDir": "dist", "rootDir": "src" }, "include": ["src/**/*.ts"] }
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "jsx": "react-jsx",
+    "strict": true,
+    "isolatedModules": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "outDir": "dist",
+    "types": ["vite/client", "node"],
+    "baseUrl": ".",
+    "paths": {
+      "@flight-platform/brand": ["../../packages/brand/src/index.ts"],
+      "@flight-platform/design-tokens": ["../../packages/design-tokens/src/index.ts"],
+      "@flight-platform/format": ["../../packages/format/src/index.ts"],
+      "@flight-platform/session": ["../../packages/session/src/index.ts"],
+      "@flight-platform/shared/dist/src/airport-zones": ["../../packages/shared/src/airport-zones.ts"]
+    }
+  },
+  "include": ["src", "test", "e2e", "vite.config.ts", "playwright.config.ts", "security-headers.ts"]
+}

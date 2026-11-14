@@ -5,13 +5,9 @@ import process from 'node:process';
  * `departureDate` es la fecha LOCAL del aeropuerto de origen: su ventana UTC es [00:00 local de D, 00:00 local de D+1).
  */
 
-/** IATA → zona IANA. Agregar un aeropuerto es un cambio de código aquí. */
-export const AIRPORT_ZONES: Readonly<Record<string, string>> = Object.freeze({
-  UIO: 'America/Guayaquil', GYE: 'America/Guayaquil', CUE: 'America/Guayaquil', LTX: 'America/Guayaquil', MEC: 'America/Guayaquil',
-  ESM: 'America/Guayaquil', TUA: 'America/Guayaquil', LOH: 'America/Guayaquil', PVO: 'America/Guayaquil', OCC: 'America/Guayaquil',
-  TPC: 'America/Guayaquil', XMS: 'America/Guayaquil', GPS: 'Pacific/Galapagos', SCY: 'Pacific/Galapagos',
-  BOG: 'America/Bogota', MDE: 'America/Bogota', LIM: 'America/Lima', MAD: 'Europe/Madrid', MIA: 'America/New_York'
-});
+// La tabla vive en `airport-zones.ts` (sin importaciones, para que el front pueda usar la misma): aquí solo se reexporta.
+import { AIRPORT_ZONES, zoneOf } from './airport-zones';
+export { AIRPORT_ZONES, zoneOf };
 
 export interface DayWindow {
   /** Si `exclude` es true, la ventana aplica a los aeropuertos que NO están en `iatas`. */
@@ -70,10 +66,6 @@ export function localDay(instant: Date | string, zone: string): string {
 /** Hora local (HH:mm) de un instante en la zona. */
 export function localTime(instant: Date | string, zone: string): string {
   return parts(new Date(instant).getTime(), zone).time;
-}
-
-export function zoneOf(iata: string): string | undefined {
-  return Object.prototype.hasOwnProperty.call(AIRPORT_ZONES, iata) ? AIRPORT_ZONES[iata] : undefined;
 }
 
 const warned = new Set<string>();

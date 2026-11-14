@@ -1,0 +1,12 @@
+{
+  "name": "@flight-platform/brand",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Marca PROVISIONAL: nombre y textos institucionales, rutas destacadas por origen, logotipo (SVG claro y oscuro), fotografías con licencia libre y su crédito, y la tipografía autoalojada. Para reemplazarla: docs/dev/f12c0-diseno-front.md §2.3.",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": ["dist", "src", "assets"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  }
+}

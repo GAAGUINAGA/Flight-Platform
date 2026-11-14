@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 184 40" role="img" aria-labelledby="t">
+  <title id="t">GabatAIR</title>
+  <!-- Logotipo PROVISIONAL para fondos oscuros. Reemplazar conservando el nombre del archivo y el viewBox (diseño F12c-0 §2.3). -->
+  <path d="M4 30 L22 8 L30 8 L20 22 L34 22 L30 30 Z" fill="#FFFFFF"/>
+  <text x="42" y="28" font-family="Inter, system-ui, Arial, sans-serif" font-size="24" font-weight="700" letter-spacing="-0.5" fill="#FFFFFF">GabatAIR</text>
+</svg>

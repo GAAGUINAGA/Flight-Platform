@@ -8,6 +8,7 @@ const leaked = ['microservices', 'platform', 'packages'].filter((directory) =>
 
 const workspaceConfigs = [
   'packages/contracts/tsconfig.json', 'packages/shared/tsconfig.json',
+  'packages/design-tokens/tsconfig.json', 'packages/brand/tsconfig.json', 'packages/session/tsconfig.json', 'packages/format/tsconfig.json',
   'platform/api-gateway/tsconfig.json', 'platform/graphql/tsconfig.json', 'platform/web/tsconfig.json',
   ...['ancillaries-service', 'inventory-service', 'operations-service', 'pricing-service', 'reservation-service', 'ticketing-service', 'webhooks-service', 'esb-service']
     .map((service) => `microservices/${service}/tsconfig.json`)

@@ -2,10 +2,14 @@
   "name": "@flight-platform/graphql-schema",
   "version": "0.1.0",
   "private": true,
-  "description": "Contrato GraphQL del front (SDL) y las operaciones conocidas; única fuente que usan el servicio GraphQL, la web y el móvil.",
+  "description": "Contrato GraphQL del front (SDL), las operaciones conocidas y sus tipos y documentos generados; única fuente que usan el servicio GraphQL, la web y el móvil.",
   "main": "index.cjs",
   "types": "index.d.ts",
-  "files": ["schema.graphql", "operations", "index.cjs", "index.d.ts"],
+  "files": ["schema.graphql", "operations", "generated", "index.cjs", "index.d.ts"],
+  "scripts": {
+    "codegen": "node scripts/codegen.cjs",
+    "codegen:check": "node scripts/codegen.cjs --check"
+  },
   "dependencies": {
     "graphql": "16.11.0"
   }

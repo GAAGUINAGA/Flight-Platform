@@ -1,0 +1,71 @@
+name: Web CI
+
+# App web (F12c-2a) y paquetes compartidos del front. Solo verificación: lint, codegen sin cambios pendientes, tipos, pruebas unitarias y de
+# componentes, construcción y comprobación del bundle. NO despliega: el sitio estático lo publica el humano en Render (render.yaml,
+# despliegue manual desde main tras la auditoría; docs/dev/f12c2a-web-despliegue.md). El extremo a extremo (Playwright) se ejecuta en local
+# y en la auditoría, contra la plataforma local.
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/web-ci.yml'
+      - 'platform/web/**'
+      - 'packages/brand/**'
+      - 'packages/design-tokens/**'
+      - 'packages/format/**'
+      - 'packages/session/**'
+      - 'packages/graphql-schema/**'
+      - 'packages/shared/src/airport-zones.ts'
+      - 'packages/packages-boundary.spec.ts'
+      - 'scripts/local-platform/local-auth.*'
+      - 'render.yaml'
+      - 'package-lock.json'
+      - 'tsconfig.base.json'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/web-ci.yml'
+      - 'platform/web/**'
+      - 'packages/brand/**'
+      - 'packages/design-tokens/**'
+      - 'packages/format/**'
+      - 'packages/session/**'
+      - 'packages/graphql-schema/**'
+      - 'packages/shared/src/airport-zones.ts'
+      - 'packages/packages-boundary.spec.ts'
+      - 'scripts/local-platform/local-auth.*'
+      - 'render.yaml'
+      - 'package-lock.json'
+      - 'tsconfig.base.json'
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    env:
+      # Valores de relleno PÚBLICOS solo para construir en CI (no son los de producción ni contienen secretos).
+      VITE_GRAPHQL_URL: https://graphql.ci.invalid/graphql
+      VITE_SUPABASE_URL: https://supabase.ci.invalid
+      VITE_SUPABASE_ANON_KEY: ci-anon-publica
+      VITE_ENV_NAME: pruebas
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version-file: '.nvmrc', cache: npm }
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run codegen:check -w @flight-platform/graphql-schema
+      # `format` y `brand` leen la tabla única de zonas del paquete shared ya construido.
+      - run: npm run build -w @flight-platform/shared
+      - run: npm run build -w @flight-platform/design-tokens
+      - run: npm run build -w @flight-platform/brand
+      - run: npm run build -w @flight-platform/session
+      - run: npm run build -w @flight-platform/format
+      - run: git diff --exit-code -- packages/design-tokens/tokens.css
+      - run: npx jest packages scripts/local-platform/local-auth.spec.ts --runInBand
+      - run: npm run build -w @flight-platform/web
+      - run: npm run check:bundle -w @flight-platform/web
+      - run: npm test -w @flight-platform/web
+      - run: npm audit --audit-level=high
+      - run: npm run audit:policy

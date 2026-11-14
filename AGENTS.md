@@ -63,6 +63,19 @@ cd microservices/pricing-service; npx prisma generate; cd ../..
 npx jest microservices/pricing-service/test/integration/inventory-real.spec.ts --runInBand --verbose
 ```
 
+Web (F12c-2a, `platform/web`; guía `docs/dev/f12c2a-web-despliegue.md`). Las pruebas de la web usan Vitest (`*.test.ts(x)`), las de los paquetes
+compartidos Jest (`*.spec.ts`, requieren `npm run build -w @flight-platform/shared`). El e2e necesita la plataforma local con la web y un navegador instalado (Edge o Chrome):
+
+```powershell
+npm run codegen -w @flight-platform/graphql-schema      # regenera tipos y documentos tras tocar el SDL o las operaciones
+npm run build -w @flight-platform/design-tokens          # regenera tokens.css tras tocar tokens.ts
+npx jest packages scripts/local-platform/local-auth.spec.ts --runInBand
+npm test -w @flight-platform/web
+npm run local:up -- -SkipDocker -Web                     # plataforma + acceso local de pruebas + web en http://localhost:5173
+npm run test:e2e -w @flight-platform/web
+npm run local:down
+```
+
 ## Reglas aprendidas (obligatorias)
 - Un solo developer activo a la vez. Trabaja en una rama `feat/<FASE>-<servicio>` en el checkout principal; sin worktrees.
 - Prisma: `prisma` y `@prisma/client` fijados en `6.12.0` exacto (versiones posteriores traen deepmerge-ts con vulnerabilidad alta).

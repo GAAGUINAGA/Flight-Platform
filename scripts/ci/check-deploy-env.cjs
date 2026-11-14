@@ -1,5 +1,5 @@
 'use strict';
-/* global __dirname, process */
+/* global __dirname, process, URL */
 /**
  * Compara lo que cada servicio exige en la nube (F12b-2) con lo que declara su workflow de despliegue.
  * deploy-service.yml usa `gcloud run deploy --set-secrets/--set-env-vars`, que REEMPLAZAN los secretos y variables del servicio:
@@ -31,6 +31,11 @@ const GATEWAY_RENDER = { src: 'platform/api-gateway/src', envExample: 'platform/
 // Servicio GraphQL (F12c-1, Cloud Run, sin secretos propios): su workflow usa --update-env-vars (conserva lo configurado a mano) y NUNCA --set-*;
 // cada variable que exige debe seguir usándose en su código y estar documentada en la guía de despliegue.
 const GRAPHQL = { workflow: 'deploy-graphql.yml', src: 'platform/graphql/src', guide: 'docs/dev/f12c1-graphql-despliegue.md', env: ['GATEWAY_BASE_URL', 'JWT_ISSUERS', 'CORS_ORIGINS'] };
+
+// Web (F12c-2a, sitio estático en Render): sus variables son PÚBLICAS (VITE_*, se incrustan en el bundle). Cada variable de render.yaml debe
+// seguir usándose en el código de la web y estar documentada en .env.example y en la guía; render.yaml no puede declarar nada que no sea VITE_*
+// (ni secretos), y los orígenes de connect-src de su CSP deben ser los de VITE_GRAPHQL_URL y VITE_SUPABASE_URL.
+const WEB = { render: 'render.yaml', src: 'platform/web/src', envExample: 'platform/web/.env.example', guide: 'docs/dev/f12c2a-web-despliegue.md', required: ['VITE_GRAPHQL_URL', 'VITE_SUPABASE_URL', 'VITE_SUPABASE_ANON_KEY'] };
 
 const read = (file) => fs.readFileSync(file, 'utf8');
 const listFiles = (dir) => fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? listFiles(path.join(dir, e.name)) : [path.join(dir, e.name)]));
@@ -80,6 +85,24 @@ function check() {
     if (!gqlCode.includes(v)) problems.push(`graphql: ${v} figura en el manifiesto pero el código ya no la usa (actualiza scripts/ci/check-deploy-env.cjs)`);
     if (!gqlGuide.includes(v)) problems.push(`graphql: ${v} no figura en la guía ${GRAPHQL.guide}`);
   }
+  const render = read(path.join(root, WEB.render)); const webExample = read(path.join(root, WEB.envExample)); const webGuide = read(path.join(root, WEB.guide));
+  const webCode = listFiles(path.join(root, WEB.src)).filter((f) => /\.tsx?$/.test(f) && !/\.test\.tsx?$/.test(f)).map(read).join('\n');
+  const renderVars = [...render.matchAll(/- key: ([A-Z0-9_]+)\s*\n\s*(value|sync):\s*(.+)/g)].map((m) => ({ key: m[1], kind: m[2], value: m[3].trim().replace(/^"(.*)"$/, '$1') }));
+  for (const v of WEB.required) if (!renderVars.some((entry) => entry.key === v)) problems.push(`web: ${v} no está declarada en ${WEB.render}`);
+  for (const entry of renderVars) {
+    if (entry.key === 'NODE_VERSION') continue;
+    if (!entry.key.startsWith('VITE_')) { problems.push(`web: ${WEB.render} declara ${entry.key}; la web solo admite variables públicas VITE_*`); continue; }
+    if (!webCode.includes(entry.key)) problems.push(`web: ${entry.key} figura en ${WEB.render} pero el código de la web ya no la usa`);
+    if (!new RegExp(`^#?\\s*${entry.key}=`, 'm').test(webExample)) problems.push(`web: ${entry.key} no está declarada en ${WEB.envExample}`);
+    if (!webGuide.includes(entry.key)) problems.push(`web: ${entry.key} no figura en la guía ${WEB.guide}`);
+  }
+  if (/service_role|SECRET|PASSWORD/i.test(render)) problems.push(`web: ${WEB.render} no debe contener secretos`);
+  const anon = renderVars.find((entry) => entry.key === 'VITE_SUPABASE_ANON_KEY');
+  if (anon && anon.kind !== 'sync') problems.push(`web: VITE_SUPABASE_ANON_KEY debe ir con «sync: false» en ${WEB.render} (su valor se configura en Render)`);
+  const connect = (/connect-src ([^;"]+)/.exec(render) ?? [])[1];
+  const origins = ['VITE_GRAPHQL_URL', 'VITE_SUPABASE_URL'].map((key) => { const entry = renderVars.find((item) => item.key === key); try { return entry ? new URL(entry.value).origin : ''; } catch { return ''; } });
+  if (!connect || connect.trim() !== origins.join(' ')) problems.push(`web: connect-src de la CSP de ${WEB.render} debe ser exactamente el origen de VITE_GRAPHQL_URL y el de VITE_SUPABASE_URL`);
+  if (!/source: \/\*\s*\n\s*destination: \/index\.html/.test(render)) problems.push(`web: ${WEB.render} no reescribe todas las rutas a /index.html`);
   return problems;
 }
 

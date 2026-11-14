@@ -2,3 +2,8 @@
 *.sh text eol=lf
 *.sql text eol=lf
 packages/contracts/src/generated/** text eol=lf
+# Archivos generados del front: sus pruebas los comparan byte a byte con lo que produce el generador.
+packages/graphql-schema/generated/** text eol=lf
+packages/design-tokens/tokens.css text eol=lf
+*.woff2 binary
+*.jpg binary

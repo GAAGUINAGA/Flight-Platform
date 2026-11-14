@@ -1,0 +1,13 @@
+{
+  "name": "@flight-platform/design-tokens",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Tokens de diseño (colores, tipografía, espaciado, radios, sombras, cortes) en un único archivo TS y el tokens.css generado. Neutral entre web y React Native.",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": ["dist", "src", "tokens.css"],
+  "scripts": {
+    "generate": "tsx scripts/generate-css.ts",
+    "build": "tsx scripts/generate-css.ts && tsc -p tsconfig.json"
+  }
+}

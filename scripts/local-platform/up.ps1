@@ -11,6 +11,8 @@
 .PARAMETER SkipBuild   No reconstruye (usa dist/ existente).
 .PARAMETER SkipDocker  No ejecuta docker compose (la base ya está levantada).
 .PARAMETER GatewayPort Puerto del Gateway (por defecto 3000).
+.PARAMETER Web         Levanta también la web (F12c-2a): la construye apuntando al GraphQL local, arranca el servicio de acceso LOCAL DE PRUEBAS
+                       (scripts/local-platform/local-auth.cjs, usuarios en memoria) y sirve el sitio en http://localhost:5173. Sin variables manuales.
 .PARAMETER ProfileFile Perfil de integración local (por defecto .local/integracion.env; plantilla en docs/dev/integracion-local.env.example).
 #>
 param(
@@ -20,7 +22,10 @@ param(
   [int]$GraphqlPort = 4000,
   [string]$ProfileFile,
   [int]$HealthTimeoutSec = 120,
-  [ValidateSet('esb', 'grpc')][string]$Transport = 'esb'
+  [ValidateSet('esb', 'grpc')][string]$Transport = 'esb',
+  [switch]$Web,
+  [int]$WebPort = 5173,
+  [int]$WebAuthPort = 54329
 )
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'common.ps1')
@@ -42,6 +47,8 @@ $busy = @($script:Services | Where-Object { Test-PortOpen $_.Port } | ForEach-Ob
 if (Test-PortOpen $script:Esb.Port) { $busy += "esb:$($script:Esb.Port)" }
 if (Test-PortOpen $GatewayPort) { $busy += "gateway:$GatewayPort" }
 if (Test-PortOpen $GraphqlPort) { $busy += "graphql:$GraphqlPort" }
+foreach ($name in @('web', 'web-auth')) { if (Test-Path -LiteralPath (Join-Path $script:PidDir "$name.pid")) { throw "Ya hay una plataforma en marcha (pid de $name). Ejecuta scripts/local-platform/down.ps1 primero." } }
+if ($Web) { if (Test-PortOpen $WebPort) { $busy += "web:$WebPort" }; if (Test-PortOpen $WebAuthPort) { $busy += "web-auth:$WebAuthPort" } }
 if ($busy.Count -gt 0) { throw "Puertos ocupados: $($busy -join ', '). Detén lo que los usa (o ejecuta down.ps1)." }
 
 # 2. Perfil de integración local
@@ -59,6 +66,10 @@ if (-not (Test-Path -LiteralPath $keyFile)) {
   Invoke-Checked 'generar la llave del dev-auth' { node -e "const c=require('crypto');const k=c.generateKeyPairSync('rsa',{modulusLength:2048,privateKeyEncoding:{type:'pkcs8',format:'pem'},publicKeyEncoding:{type:'spki',format:'pem'}});require('fs').writeFileSync(process.argv[1],k.privateKey,{mode:0o600});" $keyFile }
   Write-Host 'Llave del dev-auth generada en .local/dev-auth-key.pem (no se versiona).'
 }
+
+# 3b. Web (F12c-2a, solo con -Web): variables PÚBLICAS de la web local (ninguna es secreta) y llaves del servicio de acceso local de pruebas (.local/, no se imprimen).
+$webEnv = @{ VITE_GRAPHQL_URL = "http://127.0.0.1:$GraphqlPort/graphql"; VITE_SUPABASE_URL = "http://127.0.0.1:$WebAuthPort"; VITE_SUPABASE_ANON_KEY = 'local-anon-publica'; VITE_ENV_NAME = 'local' }
+if ($Web) { Invoke-Checked 'llaves del servicio de acceso local' { node scripts/local-platform/local-auth.cjs --init-keys --key-dir $script:LocalDir | Out-Null } }
 
 # 4. Postgres local (la administra docker compose; el humano ya lo tiene si usa -SkipDocker)
 if (-not $SkipDocker) {
@@ -85,12 +96,19 @@ if (-not $SkipBuild) {
   Invoke-Checked 'build del esb' { npm run build -w '@flight-platform/esb-service' --silent }
   Invoke-Checked 'build del gateway' { npm run build -w '@flight-platform/api-gateway' --silent }
   Invoke-Checked 'build del servicio graphql' { npm run build -w '@flight-platform/graphql' --silent }
+  if ($Web) {
+    $savedWebEnv = @{}
+    foreach ($key in $webEnv.Keys) { $savedWebEnv[$key] = [Environment]::GetEnvironmentVariable($key, 'Process'); [Environment]::SetEnvironmentVariable($key, [string]$webEnv[$key], 'Process') }
+    try { Invoke-Checked 'build de la web' { npm run build -w '@flight-platform/web' --silent } }
+    finally { foreach ($key in $savedWebEnv.Keys) { [Environment]::SetEnvironmentVariable($key, $savedWebEnv[$key], 'Process') } }
+  }
   Write-Host 'Construcción terminada.'
 }
 foreach ($svc in $script:Services) { if (-not (Test-Path -LiteralPath (Join-Path $svc.Dir 'dist/main.js'))) { throw "Falta $($svc.Dir)/dist/main.js: ejecuta sin -SkipBuild." } }
 if (-not (Test-Path -LiteralPath (Join-Path $script:Esb.Dir 'dist/main.js'))) { throw "Falta $($script:Esb.Dir)/dist/main.js: ejecuta sin -SkipBuild." }
 if (-not (Test-Path -LiteralPath 'platform/api-gateway/dist/src/main.js')) { throw 'Falta platform/api-gateway/dist/src/main.js: ejecuta sin -SkipBuild.' }
 if (-not (Test-Path -LiteralPath 'platform/graphql/dist/main.js')) { throw 'Falta platform/graphql/dist/main.js: ejecuta sin -SkipBuild.' }
+if ($Web -and -not (Test-Path -LiteralPath 'platform/web/dist/index.html')) { throw 'Falta platform/web/dist/index.html: ejecuta sin -SkipBuild.' }
 
 # 6. Procesos. Los servicios se llaman entre sí por 127.0.0.1 (en Windows `localhost` puede resolver a ::1 y ellos escuchan en IPv4).
 $grpcUrls = @{}
@@ -106,6 +124,10 @@ $devPublicKey = (Join-Path $script:Repo 'infra/dev-keys/dev-public.pem').Replace
 $devIssuer = $null
 if (Test-Path -LiteralPath $devPublicKey) { if (-not (@($baseIssuers) | Where-Object { $_.iss -eq 'flight-platform-dev' })) { $devIssuer = [ordered]@{ iss = 'flight-platform-dev'; aud = 'flight-platform'; publicKeyFile = $devPublicKey } } }
 else { Write-Warning 'No hay infra/dev-keys: el Gateway no aceptará tokens de desarrollo (los recorridos de GraphQL los necesitan; npm run dev:token -- --init-keys).' }
+# Emisor del servicio de acceso local de pruebas (solo con -Web): el Gateway y GraphQL verifican sus tokens con la llave PÚBLICA (se pasa la ruta).
+$webIssuer = $null
+if ($Web) { $webIssuer = [ordered]@{ iss = "http://127.0.0.1:$WebAuthPort/auth/v1"; aud = 'authenticated'; publicKeyFile = (Join-Path $script:LocalDir 'web-auth-public.pem').Replace('\', '/') } }
+$extraIssuers = @(); if ($devIssuer) { $extraIssuers += $devIssuer }; if ($webIssuer) { $extraIssuers += $webIssuer }
 # Canal WEB local: pago simulado (lo necesitan Reservation, que valida el pago, y el Gateway) y correo sin verificar. Un valor explícito en el perfil o la terminal gana.
 $webPaymentMode = if ($cfg.Contains('WEB_PAYMENT_MODE')) { $cfg['WEB_PAYMENT_MODE'] } elseif ($env:WEB_PAYMENT_MODE) { $env:WEB_PAYMENT_MODE } else { 'simulated' }
 $webRequireVerified = if ($cfg.Contains('WEB_REQUIRE_VERIFIED_EMAIL')) { $cfg['WEB_REQUIRE_VERIFIED_EMAIL'] } elseif ($env:WEB_REQUIRE_VERIFIED_EMAIL) { $env:WEB_REQUIRE_VERIFIED_EMAIL } else { 'false' }
@@ -134,9 +156,9 @@ try {
   # Lo que necesitan los recorridos locales (solo local: NODE_ENV=development e INTEGRATION_LOCAL=true; el Gateway lo rechaza en producción):
   # el emisor de desarrollo SUMADO a los del perfil/.env (JWT_ISSUERS_EXTRA), canal WEB con pago simulado y sin exigir correo verificado.
   # Un valor explícito en el perfil gana; el marcador .local/platform-config.json (sin secretos) lo lee el recorrido de GraphQL.
-  if ($devIssuer) { $gatewayVars['JWT_ISSUERS_EXTRA'] = (ConvertTo-Json -InputObject @($devIssuer) -Compress) }
+  if ($extraIssuers.Count -gt 0) { $gatewayVars['JWT_ISSUERS_EXTRA'] = (ConvertTo-Json -InputObject @($extraIssuers) -Compress) }
   $gatewayVars['WEB_PAYMENT_MODE'] = $webPaymentMode; $gatewayVars['WEB_REQUIRE_VERIFIED_EMAIL'] = $webRequireVerified
-  $marker = [ordered]@{ devIssuer = [bool]($devIssuer -or (@($baseIssuers) | Where-Object { $_.iss -eq 'flight-platform-dev' })); webPaymentMode = $gatewayVars['WEB_PAYMENT_MODE']; webRequireVerifiedEmail = $gatewayVars['WEB_REQUIRE_VERIFIED_EMAIL']; gatewayPort = $GatewayPort; graphqlPort = $GraphqlPort }
+  $marker = [ordered]@{ devIssuer = [bool]($devIssuer -or (@($baseIssuers) | Where-Object { $_.iss -eq 'flight-platform-dev' })); webPaymentMode = $gatewayVars['WEB_PAYMENT_MODE']; webRequireVerifiedEmail = $gatewayVars['WEB_REQUIRE_VERIFIED_EMAIL']; gatewayPort = $GatewayPort; graphqlPort = $GraphqlPort; web = [bool]$Web; webPort = $WebPort; webAuthPort = $WebAuthPort }
   Set-Content -LiteralPath (Join-Path $script:LocalDir 'platform-config.json') -Value (ConvertTo-Json -InputObject $marker)
   if (-not $gatewayVars.ContainsKey('SCHEDULER_ENABLED')) { $gatewayVars['SCHEDULER_ENABLED'] = 'true' }
   if (-not $gatewayVars.ContainsKey('SCHEDULER_EVERY_MS')) { $gatewayVars['SCHEDULER_EVERY_MS'] = '5000' }
@@ -145,12 +167,20 @@ try {
   # Servicio GraphQL (F12c-1): llama al Gateway por HTTP. Emisores JWT: los del perfil o del entorno de la terminal; sin ellos, el emisor de desarrollo (solo se pasa la RUTA de la llave pública).
   # GraphQL usa los MISMOS emisores que el Gateway: los del perfil (o de la terminal) más el de desarrollo.
   $gqlVars = Select-Profile $script:GraphqlPass
-  $gqlVars['JWT_ISSUERS'] = (ConvertTo-Json -InputObject @($baseIssuers + $(if ($devIssuer) { @($devIssuer) } else { @() })) -Compress)
-  if ($baseIssuers.Count -eq 0 -and -not $devIssuer) { throw 'GraphQL: sin emisores JWT (ni en el perfil ni en el entorno) y sin infra/dev-keys (npm run dev:token -- --init-keys).' }
-  if (-not $gqlVars.ContainsKey('CORS_ORIGINS')) { $gqlVars['CORS_ORIGINS'] = 'http://localhost:5173' }
+  $gqlVars['JWT_ISSUERS'] = (ConvertTo-Json -InputObject @($baseIssuers + $extraIssuers) -Compress)
+  if ($baseIssuers.Count -eq 0 -and $extraIssuers.Count -eq 0) { throw 'GraphQL: sin emisores JWT (ni en el perfil ni en el entorno) y sin infra/dev-keys (npm run dev:token -- --init-keys).' }
+  if (-not $gqlVars.ContainsKey('CORS_ORIGINS')) { $gqlVars['CORS_ORIGINS'] = $(if ($Web) { "http://localhost:$WebPort,http://127.0.0.1:$WebPort" } else { 'http://localhost:5173' }) }
   $gqlVars['NODE_ENV'] = 'development'; $gqlVars['PORT'] = [string]$GraphqlPort; $gqlVars['GATEWAY_BASE_URL'] = "http://127.0.0.1:$GatewayPort"
   $graphql = Start-LocalProcess 'graphql' (Join-Path $script:Repo 'platform/graphql') @('dist/main.js') $gqlVars
   $started += 'graphql'; Write-Host ("  {0,-12} 127.0.0.1:{1} (pid {2})" -f 'graphql', $GraphqlPort, $graphql.Id)
+  if ($Web) {
+    # Servicio de acceso LOCAL DE PRUEBAS (usuarios en memoria; solo 127.0.0.1) y la web construida, servida con las mismas cabeceras que en Render.
+    $webAuth = Start-LocalProcess 'web-auth' $script:Repo @('scripts/local-platform/local-auth.cjs', '--port', [string]$WebAuthPort, '--key-dir', $script:LocalDir, '--origins', "http://localhost:$WebPort,http://127.0.0.1:$WebPort") @{ NODE_ENV = 'development' }
+    $started += 'web-auth'; Write-Host ("  {0,-12} 127.0.0.1:{1} (pid {2})" -f 'web-auth', $WebAuthPort, $webAuth.Id)
+    $webVars = @{}; foreach ($key in $webEnv.Keys) { $webVars[$key] = $webEnv[$key] }
+    $webProcess = Start-LocalProcess 'web' (Join-Path $script:Repo 'platform/web') @((Join-Path $script:Repo 'node_modules/vite/bin/vite.js'), 'preview', '--host', '127.0.0.1', '--port', [string]$WebPort, '--strictPort') $webVars
+    $started += 'web'; Write-Host ("  {0,-12} 127.0.0.1:{1} (pid {2})" -f 'web', $WebPort, $webProcess.Id)
+  }
   Start-Sleep -Seconds 3
   foreach ($name in $started) {
     $pidValue = [int](Get-Content -LiteralPath (Join-Path $script:PidDir "$name.pid") -TotalCount 1)
@@ -165,6 +195,11 @@ try {
 # 7. Health de todos al final
 & node (Join-Path $PSScriptRoot 'health.cjs') --url "http://127.0.0.1:$GatewayPort" --esb "http://127.0.0.1:$($script:Esb.Port)" --broker '127.0.0.1:5672' --graphql "http://127.0.0.1:$GraphqlPort" --wait $HealthTimeoutSec
 if ($LASTEXITCODE -ne 0) { Write-Host 'La plataforma no quedó sana. Revisa .local/logs/. Para detener: scripts/local-platform/down.ps1'; exit 1 }
+if ($Web) {
+  $deadline = (Get-Date).AddSeconds(30)
+  while (-not ((Test-PortOpen $WebPort) -and (Test-PortOpen $WebAuthPort))) { if ((Get-Date) -gt $deadline) { Write-Host 'La web o su servicio de acceso local no respondieron. Revisa .local/logs/web.err.log y web-auth.err.log'; exit 1 }; Start-Sleep -Milliseconds 500 }
+  Write-Host "Web: http://localhost:$WebPort (GraphQL local; acceso local de pruebas en 127.0.0.1:$WebAuthPort, usuarios en memoria)."
+}
 Write-Host ''
 Write-Host "Listo. URL pública declarada: $($cfg['PUBLIC_BASE_URL'])"
 Write-Host "Servicio GraphQL: http://127.0.0.1:$GraphqlPort/graphql (solo local; no se abre en el firewall)."

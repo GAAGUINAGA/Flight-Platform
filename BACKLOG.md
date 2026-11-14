@@ -166,3 +166,16 @@
 - La paginación de GET /api/v2/vuelos/bookings no funciona en la nube: el gateway pasa page { limit, cursor } a Reservation (booking.controller.ts:35), pero la respuesta ignora ambos (limit=5 devolvió 20; con el cursor devolvió la misma página). Probable desajuste de nombres con el .proto, que el cliente gRPC descarta en silencio. Detectado el 12-11-2026; se corrige como primer punto de F12c-1.
 
 - docs/dev/f12c1-graphql-despliegue.md §2: el primer despliegue fallaría porque el servicio no arranca en producción sin GATEWAY_BASE_URL y JWT_ISSUERS; documentar el orden usado (crear el servicio con imagen provisional y sus variables antes del push). Además, cita el nombre antiguo ADR-F12c-01-pago-booking-cubre-tarifa (ahora ADR-F12b2fix-02).
+
+## Observaciones de F12c-2a (base de la web)
+- render.yaml: la URL del servicio GraphQL (VITE_GRAPHQL_URL y connect-src) se dedujo del patrón de Cloud Run del proyecto; verificarla con gcloud antes de publicar (docs/dev/f12c2a-web-despliegue.md §2).
+- Web sin recarga en caliente de React (no se instaló @vitejs/plugin-react para no sumar dependencias): evaluarlo si el desarrollo de F12c-2b lo pide.
+- Web sin reglas de lint de hooks (eslint-plugin-react-hooks): agregarlo en una entrega propia junto con su revisión de npm audit.
+- Aeropuertos del buscador: se ofrecen todos los de la tabla única de zonas (19), aunque no todos tengan vuelos sembrados; cuando exista un catálogo de rutas (H-1) limitar la lista a los que operan.
+- Fotografías de la marca provisional: son CC BY / CC BY-SA de Wikimedia Commons con crédito visible; al definir la marca definitiva reemplazarlas por material propio (diseño §2.3).
+- Al subir el proyecto a Node 22: actualizar Vitest 5, jsdom, @supabase/auth-js y evaluar @testing-library/jest-dom y @axe-core/playwright (hoy exigen Node 22; ADR-F12c2a-01).
+- npm audit informa vulnerabilidades bajas y moderadas (ninguna alta ni crítica): revisar cuáles vienen de las dependencias de desarrollo nuevas de la web.
+
+- Intermitente en reservation: rsv-12-real.spec.ts falló una vez (1 de 280) en la verificación de F12c-2a del 13-11-2026 y pasó 19/19 al repetirlo; no se guardó el detalle. Si reaparece, guardar la salida completa.
+
+- Observación de audit-28: npm run codegen:check no existe en la raíz; existe como npm run codegen:check -w @flight-platform/graphql-schema (el que usa el CI). Agregar el alias en la raíz o corregir la documentación.

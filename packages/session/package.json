@@ -1,0 +1,15 @@
+{
+  "name": "@flight-platform/session",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Sesión del front sobre Supabase Auth (Authorization Code + PKCE) con una interfaz de almacenamiento inyectable (web: localStorage; móvil: almacenamiento seguro). Sin UI ni DOM.",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": ["dist", "src"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@supabase/auth-js": "2.109.0"
+  }
+}

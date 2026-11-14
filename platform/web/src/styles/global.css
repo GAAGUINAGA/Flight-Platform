@@ -1,0 +1,38 @@
+/* Base de la app. Todos los valores salen de los tokens (packages/design-tokens → tokens.css). Mínimo de texto: 12 px. */
+*, *::before, *::after { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  font-family: var(--font-family);
+  font-size: var(--font-size-md);
+  line-height: var(--font-line-height-normal);
+  color: var(--color-text);
+  background: var(--color-background);
+  font-synthesis: none;
+}
+h1, h2, h3, h4, p { margin-top: 0; }
+h1 { font-size: var(--font-size-display); line-height: var(--font-line-height-tight); font-weight: var(--font-weight-bold); margin-bottom: var(--space-s4); }
+h2 { font-size: var(--font-size-xl); line-height: var(--font-line-height-tight); font-weight: var(--font-weight-bold); margin-bottom: var(--space-s4); }
+h3 { font-size: var(--font-size-lg); line-height: var(--font-line-height-tight); font-weight: var(--font-weight-semibold); margin-bottom: var(--space-s3); }
+p { margin-bottom: var(--space-s4); }
+a { color: var(--color-link); text-underline-offset: 3px; }
+button, input, select { font: inherit; color: inherit; }
+button { cursor: pointer; }
+button:disabled { cursor: not-allowed; }
+img { max-width: 100%; display: block; }
+svg { flex-shrink: 0; }
+small { font-size: var(--font-size-xs); }
+/* Foco siempre visible con teclado */
+:focus-visible { outline: 3px solid var(--color-focus); outline-offset: 2px; border-radius: var(--radius-sm); }
+main:focus { outline: none; }
+#root { min-height: 100vh; display: flex; flex-direction: column; }
+
+@media (max-width: 640px) {
+  h1 { font-size: var(--font-size-xxl); }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
+}
+@media print {
+  header, footer, nav { display: none !important; }
+}

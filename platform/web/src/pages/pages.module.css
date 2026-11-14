@@ -1,0 +1,44 @@
+/* Estado de vuelo, acceso y oferta provisional. */
+.gap { margin-top: var(--space-s6); }
+.statusForm { display: grid; grid-template-columns: 1fr 1fr auto; gap: var(--space-s4); align-items: start; }
+.statusForm > button { margin-top: 22px; }
+.statusResult { margin-top: var(--space-s8); display: flex; flex-direction: column; gap: var(--space-s4); }
+.statusHead { display: flex; justify-content: space-between; align-items: center; gap: var(--space-s4); flex-wrap: wrap; }
+.statusRoute { margin: 0; }
+.badge { display: inline-flex; align-items: center; gap: var(--space-s2); padding: var(--space-s2) var(--space-s4); border-radius: var(--radius-pill); border: 1px solid currentColor; font-size: var(--font-size-sm); font-weight: var(--font-weight-bold); }
+.info { background: var(--color-info-soft); color: var(--color-info); }
+.success { background: var(--color-success-soft); color: var(--color-success); }
+.warning { background: var(--color-warning-soft); color: var(--color-warning); }
+.error { background: var(--color-error-soft); color: var(--color-error); }
+.delay { margin: 0; font-weight: var(--font-weight-semibold); color: var(--color-warning); }
+.endpoints { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-s6); }
+.endpointTitle { display: flex; align-items: center; gap: var(--space-s2); font-size: var(--font-size-md); }
+.endpointTitle svg { color: var(--color-primary); }
+.rows { margin: 0 0 var(--space-s3); display: grid; gap: var(--space-s2); }
+.row { display: flex; justify-content: space-between; gap: var(--space-s4); font-size: var(--font-size-sm); border-bottom: 1px solid var(--color-line); padding-bottom: var(--space-s2); }
+.row dt { color: var(--color-text-muted); }
+.row dd { margin: 0; font-weight: var(--font-weight-semibold); text-align: right; }
+
+/* Acceso */
+.authLayout { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-s12); align-items: center; max-width: 1000px; margin: var(--space-s6) auto 0; }
+.authIntro h1 { font-size: var(--font-size-display); }
+.authIntro p { color: var(--color-text-muted); max-width: 360px; }
+.authIntro svg { color: var(--color-line-strong); margin-top: var(--space-s6); }
+.authForm { display: flex; flex-direction: column; gap: var(--space-s4); }
+.authForm h2 { margin: 0; }
+.authLinks { display: flex; flex-wrap: wrap; gap: var(--space-s2) var(--space-s6); font-size: var(--font-size-sm); }
+.authLinks a { display: inline-flex; align-items: center; min-height: 32px; font-weight: var(--font-weight-semibold); }
+
+/* Oferta provisional */
+.summary { display: flex; flex-direction: column; gap: var(--space-s2); margin: var(--space-s4) 0; }
+.summary strong { font-size: var(--font-size-lg); }
+
+@media (max-width: 960px) {
+  .authLayout { gap: var(--space-s6); }
+}
+@media (max-width: 640px) {
+  .statusForm, .endpoints, .authLayout { grid-template-columns: 1fr; }
+  .statusForm > button { margin-top: 0; }
+  .authIntro svg { display: none; }
+  .authIntro h1 { font-size: var(--font-size-xxl); }
+}

@@ -1,0 +1,64 @@
+# Sitio estático de la web (F12c-2a) en Render. Guía: docs/dev/f12c2a-web-despliegue.md.
+# Este archivo describe SOLO la web; el Gateway (también en Render) se administra aparte y no figura aquí.
+# Las URLs de VITE_GRAPHQL_URL y VITE_SUPABASE_URL son públicas y deben coincidir con los orígenes de `connect-src`
+# (lo comprueba platform/web/test/deploy-config.test.ts). Si cambia una, se cambia en los dos lugares.
+services:
+  - type: web
+    name: flight-web
+    runtime: static
+    branch: main
+    autoDeploy: false
+    buildCommand: npm ci && npm run build -w @flight-platform/web
+    staticPublishPath: platform/web/dist
+    pullRequestPreviewsEnabled: false
+    buildFilter:
+      paths:
+        - platform/web/**
+        - packages/brand/**
+        - packages/design-tokens/**
+        - packages/format/**
+        - packages/session/**
+        - packages/graphql-schema/**
+        - packages/shared/src/airport-zones.ts
+        - package-lock.json
+        - render.yaml
+    envVars:
+      - key: NODE_VERSION
+        value: 20.19.0
+      - key: VITE_GRAPHQL_URL
+        value: https://graphql-service-gtl24uc77a-ue.a.run.app/graphql
+      - key: VITE_SUPABASE_URL
+        value: https://cjqcrdmcznqzmnahxmvd.supabase.co
+      - key: VITE_SUPABASE_ANON_KEY
+        sync: false
+      - key: VITE_ENV_NAME
+        value: pruebas
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    headers:
+      - path: /*
+        name: Content-Security-Policy
+        value: "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src https://graphql-service-gtl24uc77a-ue.a.run.app https://cjqcrdmcznqzmnahxmvd.supabase.co; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+      - path: /*
+        name: Strict-Transport-Security
+        value: max-age=63072000; includeSubDomains
+      - path: /*
+        name: X-Content-Type-Options
+        value: nosniff
+      - path: /*
+        name: Referrer-Policy
+        value: strict-origin-when-cross-origin
+      - path: /*
+        name: X-Frame-Options
+        value: DENY
+      - path: /*
+        name: Permissions-Policy
+        value: camera=(), microphone=(), geolocation=(), payment=()
+      - path: /assets/*
+        name: Cache-Control
+        value: public, max-age=31536000, immutable
+      - path: /index.html
+        name: Cache-Control
+        value: no-cache
