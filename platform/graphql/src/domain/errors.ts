@@ -58,6 +58,10 @@ const MESSAGES: Record<string, string> = {
   FLIGHT_STATUS_NOT_AVAILABLE: 'No hay estado disponible para ese vuelo.',
   INVALID_STATUS_TRANSITION: 'Ese cambio de estado del vuelo no es válido.',
   PROMOTION_DISCOUNT_OUT_OF_RANGE: 'El descuento debe estar entre 0 y 100.',
+  WEB_ACTIVE_BOOKINGS_LIMIT: 'Alcanzaste el número máximo de reservas activas de tu cuenta.',
+  WEB_PASSENGERS_PER_DAY_LIMIT: 'Alcanzaste el número máximo de pasajeros que tu cuenta puede reservar por día.',
+  EMAIL_NOT_VERIFIED: 'Confirma tu correo electrónico para continuar.',
+  WEB_PAYMENTS_DISABLED: 'La venta en línea no está disponible por ahora.',
   UNKNOWN_GATEWAY_ERROR: 'No pudimos completar la operación.',
   GRAPHQL_VALIDATION_FAILED: 'La consulta no es válida.',
   GRAPHQL_OPERATION_NOT_ALLOWED: 'Esa operación no está permitida.',
@@ -100,14 +104,31 @@ export function safeInvalidParams(value: unknown): InvalidParam[] {
   });
 }
 
+/**
+ * Lista CERRADA de los `ProblemDetails.type` del canal WEB del Gateway (ADR-F12c-02/03) y el código propio que los representa.
+ * El `type` es una URL interna: NUNCA se reenvía; solo estos cuatro se traducen y cualquier otro se ignora (§6.3).
+ */
+const WEB_CHANNEL_CODES: ReadonlyMap<string, string> = new Map([
+  ['https://flight-platform.dev/problems/web-active-bookings-limit', 'WEB_ACTIVE_BOOKINGS_LIMIT'],
+  ['https://flight-platform.dev/problems/web-passengers-per-day-limit', 'WEB_PASSENGERS_PER_DAY_LIMIT'],
+  ['https://flight-platform.dev/problems/email-not-verified', 'EMAIL_NOT_VERIFIED'],
+  ['https://flight-platform.dev/problems/web-payments-disabled', 'WEB_PAYMENTS_DISABLED']
+]);
+/** Coincidencia EXACTA con la URL completa que emite el Gateway: sin sufijos, prefijos, expresiones regulares ni normalización. */
+function webChannelCode(type: unknown): string | undefined {
+  return typeof type === 'string' ? WEB_CHANNEL_CODES.get(type) : undefined;
+}
+
 export interface GatewayFailure { status: number; body?: unknown; retryAfter?: string | null; invalidBody?: boolean }
 /** Traduce una respuesta de error del Gateway (ProblemDetails v2) a un error público. */
 export function fromGatewayFailure(failure: GatewayFailure): PublicError {
-  const problem = typeof failure.body === 'object' && failure.body !== null ? failure.body as { code?: unknown; invalidParams?: unknown } : {};
-  const rawCode = typeof problem.code === 'string' ? problem.code : undefined;
+  const problem = typeof failure.body === 'object' && failure.body !== null ? failure.body as { code?: unknown; type?: unknown; invalidParams?: unknown } : {};
+  const webCode = failure.invalidBody ? undefined : webChannelCode(problem.type);
+  const rawCode = webCode ?? (typeof problem.code === 'string' ? problem.code : undefined);
   const category = categoryFor(failure.status, rawCode);
   let code = rawCode ?? (category === 'UNAUTHENTICATED' ? 'UNAUTHENTICATED' : category === 'UNAVAILABLE' ? 'PROVIDER_UNAVAILABLE' : category === 'INTERNAL' ? 'INTERNAL_ERROR' : category === 'NOT_FOUND' ? 'NOT_FOUND' : 'UNKNOWN_GATEWAY_ERROR');
-  if (code === 'UNAUTHORIZED' || category === 'UNAUTHENTICATED') code = 'UNAUTHENTICATED';
+  if (webCode) code = webCode;
+  else if (code === 'UNAUTHORIZED' || category === 'UNAUTHENTICATED') code = 'UNAUTHENTICATED';
   else if (category === 'FORBIDDEN') code = 'FORBIDDEN';
   else if (!(code in MESSAGES) || failure.invalidBody) code = category === 'INTERNAL' ? 'INTERNAL_ERROR' : category === 'UNAVAILABLE' ? 'PROVIDER_UNAVAILABLE' : 'UNKNOWN_GATEWAY_ERROR';
   const seconds = failure.retryAfter !== undefined && failure.retryAfter !== null ? Number(failure.retryAfter) : NaN;

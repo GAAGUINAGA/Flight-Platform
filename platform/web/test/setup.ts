@@ -1,4 +1,4 @@
-import { cleanup } from '@testing-library/react';
+import { cleanup, configure } from '@testing-library/react';
 import { afterEach, expect, vi } from 'vitest';
 
 // Aserciones mínimas de DOM (sin dependencia adicional): las que usan las pruebas de componentes.
@@ -15,6 +15,8 @@ expect.extend({
 // jsdom no implementa el desplazamiento de la ventana ni de los elementos.
 // Las pruebas con entorno node (análisis de archivos) no tienen ventana.
 if (typeof window !== 'undefined') {
+  // Las esperas de Testing Library (1 s por omisión) se quedan cortas cuando varios archivos de pantalla y axe corren en paralelo y comparten CPU.
+  configure({ asyncUtilTimeout: 8000 });
   window.scrollTo = vi.fn() as unknown as typeof window.scrollTo;
   Element.prototype.scrollIntoView = vi.fn();
   afterEach(() => { cleanup(); window.localStorage.clear(); });

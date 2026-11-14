@@ -6,6 +6,10 @@ export interface AppConfig {
   supabaseUrl: string;
   supabaseAnonKey: string;
   envName: EnvName;
+  /** Habilita los escenarios de rechazo y pendiente del pago simulado (solo entornos de prueba; por omisión, apagado). */
+  testPaymentScenarios: boolean;
+  /** Ventana de check-in que se MUESTRA como ayuda (la autoridad es el servidor; mismos valores por defecto que Operations: 48 h y 60 min). */
+  checkIn: { openHours: number; closeMinutes: number };
   /** Estado de carga amable (diseño §9.1): mensajes a partir de `slowMs` y `verySlowMs`; a los `timeoutMs` la operación falla como indisponible. */
   loading: { slowMs: number; verySlowMs: number; timeoutMs: number };
   /** Reintentos automáticos SOLO de lecturas ante indisponibilidad (las mutaciones nunca se reintentan solas). */
@@ -24,7 +28,9 @@ export function readConfig(env: Env = import.meta.env): AppConfig {
     supabaseUrl: text(env, 'VITE_SUPABASE_URL'),
     supabaseAnonKey: text(env, 'VITE_SUPABASE_ANON_KEY'),
     envName: envName === 'produccion' || envName === 'local' ? envName : 'pruebas',
+    testPaymentScenarios: text(env, 'VITE_TEST_PAYMENT_SCENARIOS') === 'true' && envName !== 'produccion',
     loading: { slowMs: positive(env, 'VITE_LOADING_SLOW_MS', 1500), verySlowMs: positive(env, 'VITE_LOADING_VERY_SLOW_MS', 8000), timeoutMs: positive(env, 'VITE_REQUEST_TIMEOUT_MS', 25_000) },
+    checkIn: { openHours: positive(env, 'VITE_CHECKIN_OPEN_HOURS', 48), closeMinutes: positive(env, 'VITE_CHECKIN_CLOSE_MINUTES', 60) },
     retry: { max: 3, baseDelayMs: 500 }
   };
 }

@@ -139,6 +139,16 @@ describe('session · Supabase Auth con PKCE sobre almacenamiento inyectado (F12c
     expect(client.getState().status).toBe('anonymous');
   });
 
+  it('SES-06b reenviar la confirmación habla con Supabase, responde igual exista o no la cuenta y solo informa límite o red', async () => {
+    const { client, calls } = make({ 'POST /resend': (call) => (call.body.email === 'limite@example.test' ? authError(429, 'over_email_send_rate_limit') : call.body.email === 'no-existe@example.test' ? authError(400, 'user_not_found') : { body: {} }) });
+    await client.start();
+    expect(await client.resendConfirmation('ana@example.test', 'https://web.test/acceso/retorno')).toEqual({ ok: true });
+    expect(calls[0]).toMatchObject({ method: 'POST', body: { type: 'signup', email: 'ana@example.test' } });
+    expect(calls[0].url).toContain('/auth/v1/resend'); expect(calls[0].url).toContain(encodeURIComponent('https://web.test/acceso/retorno'));
+    expect(await client.resendConfirmation('no-existe@example.test', 'https://web.test/acceso/retorno')).toEqual({ ok: true });
+    expect(await client.resendConfirmation('limite@example.test', 'https://web.test/acceso/retorno')).toEqual({ ok: false, reason: 'rate_limited' });
+  });
+
   it('SES-07 un token vencido se refresca al pedirlo; si el refresco falla la sesión queda anónima y marcada como expirada', async () => {
     const { client, calls } = make({
       'POST /token?grant_type=password': () => ({ body: sessionBody({ expiresIn: 1, refresh: 'refresh-viejo' }) }),

@@ -11,8 +11,10 @@ App: `platform/web` (React + Vite + TypeScript). Habla **solo** con el servicio 
 | `VITE_GRAPHQL_URL` | sí | URL completa del servicio GraphQL, terminada en `/graphql` |
 | `VITE_SUPABASE_URL` | sí | URL del proyecto de Supabase (sin `/auth/v1`) |
 | `VITE_SUPABASE_ANON_KEY` | sí | Llave `anon` de Supabase (pública por diseño). **Nunca** la `service_role` |
-| `VITE_ENV_NAME` | no | `produccion`, `pruebas` (por omisión) o `local`. Distinto de `produccion` muestra la banda «Entorno de pruebas» |
+| `VITE_ENV_NAME` | no | `produccion`, `pruebas` (por omisión) o `local`. `render.yaml` fija `produccion` (sin banda). Distinto de `produccion` muestra la banda «Entorno de pruebas» |
 | `VITE_LOADING_SLOW_MS`, `VITE_LOADING_VERY_SLOW_MS`, `VITE_REQUEST_TIMEOUT_MS` | no | Umbrales del estado de carga (1500 / 8000) y tiempo máximo por operación (25000) |
+| `VITE_TEST_PAYMENT_SCENARIOS` | no | F12c-2b. `true` habilita en el paso de pago los escenarios de rechazo y pendiente del procesamiento simulado. Por omisión apagado, y **se ignora con `VITE_ENV_NAME=produccion`**. No va en `render.yaml` |
+| `VITE_CHECKIN_OPEN_HOURS`, `VITE_CHECKIN_CLOSE_MINUTES` | no | F12c-2b. Ventana de check-in que se MUESTRA como ayuda (48 h y 60 min, como Operations). La autoridad es el servidor |
 
 La construcción **falla** si falta alguna de las tres obligatorias (así no se publica un sitio que no puede conectarse). Plantilla: `platform/web/.env.example`.
 
@@ -63,7 +65,8 @@ Las plantillas de correo deben usar `{{ .ConfirmationURL }}` (por omisión). El 
 2. Cabeceras: `curl -sI <URL-WEB>/ ` muestra `content-security-policy`, `strict-transport-security`, `x-content-type-options: nosniff`, `referrer-policy` y `x-frame-options: DENY`.
 3. En el navegador, sin errores de CSP en la consola; una búsqueda devuelve ofertas y «Estado de un vuelo» responde. La primera petición del día puede tardar (arranque en frío): la app lo avisa a los 1,5 s y a los 8 s.
 4. Registro, confirmación por correo, inicio de sesión y recuperación de contraseña con una cuenta de prueba.
-5. La banda «Entorno de pruebas» aparece mientras `VITE_ENV_NAME` no sea `produccion`.
+5. La banda «Entorno de pruebas» aparece mientras `VITE_ENV_NAME` no sea `produccion` (el `render.yaml` de F12c-2b fija `produccion`: el sitio publicado no lleva banda).
+6. F12c-2b: ver `docs/dev/f12c2b-web-compra.md` (orden de despliegue: primero `graphql-service`, después la web).
 
 ## 7. Local
 

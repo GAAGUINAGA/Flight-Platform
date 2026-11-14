@@ -147,6 +147,8 @@ function createAuthServer({ port, privateKeyPem, origins }) {
         }
         send(res, 200, {}, origin); return;
       }
+      // Reenvío de la confirmación: en local todas las cuentas nacen confirmadas; responde igual exista o no, sin enviar nada.
+      if (route === 'POST /auth/v1/resend') { send(res, 200, { message_id: randomUUID() }, origin); return; }
       if (route === 'PUT /auth/v1/user') {
         const user = userFromBearer(req);
         if (!user) { fail(res, 401, 'bad_jwt', origin); return; }

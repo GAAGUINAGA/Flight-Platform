@@ -32,7 +32,7 @@ services:
       - key: VITE_SUPABASE_ANON_KEY
         sync: false
       - key: VITE_ENV_NAME
-        value: pruebas
+        value: produccion
     routes:
       - type: rewrite
         source: /*

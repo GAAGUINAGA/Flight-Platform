@@ -3,7 +3,7 @@ import { actionFor, AppError, CATEGORIES, isTransient, knownCodes, messageFor, t
 
 /** Códigos de ProblemDetails v2 (diseño F12c-0 §6.3) tal como los entrega el servicio GraphQL (`UNAUTHORIZED` llega como `UNAUTHENTICATED`). */
 const CONTRACT_CODES = ['VALIDATION_FAILED', 'UNAUTHENTICATED', 'FORBIDDEN', 'NOT_FOUND', 'RATE_LIMIT_EXCEEDED', 'IDEMPOTENCY_KEY_REUSED', 'INTERNAL_ERROR', 'PROVIDER_UNAVAILABLE', 'OFFER_NO_LONGER_AVAILABLE', 'HOLD_EXPIRED', 'HOLD_ALREADY_CONSUMED', 'SEAT_TAKEN', 'SEAT_CABIN_MISMATCH', 'INFANT_SEAT_NOT_ALLOWED', 'INFANT_WITHOUT_ADULT', 'PASSENGER_COUNT_MISMATCH', 'DOCUMENT_EXPIRED', 'PASSPORT_REQUIRED_INTERNATIONAL', 'PAYMENT_REFERENCE_INVALID', 'PAYMENT_NOT_AUTHORIZED', 'AMOUNT_MISMATCH', 'PNR_CREATION_FAILED', 'BOOKING_NOT_CONFIRMED', 'TICKET_ISSUANCE_FAILED', 'TICKET_ALREADY_ISSUED', 'BAGGAGE_LIMIT_EXCEEDED', 'FARE_NOT_CHANGEABLE', 'CHANGE_OFFER_EXPIRED', 'QUOTE_EXPIRED', 'ALREADY_CANCELLED', 'BOOKING_NOT_CANCELLABLE', 'CUTOFF_PASSED', 'CHECK_IN_NOT_AVAILABLE', 'CHECK_IN_FAILED', 'BOARDING_PASS_NOT_AVAILABLE', 'FLIGHT_ALREADY_DEPARTED', 'FLIGHT_CANCELLED', 'FLIGHT_STATUS_NOT_AVAILABLE', 'INVALID_STATUS_TRANSITION', 'PROMOTION_DISCOUNT_OUT_OF_RANGE'];
-const SERVICE_CODES = ['GATEWAY_UNAVAILABLE', 'UNKNOWN_GATEWAY_ERROR', 'GRAPHQL_VALIDATION_FAILED', 'GRAPHQL_OPERATION_NOT_ALLOWED', 'GRAPHQL_QUERY_TOO_COMPLEX', 'GRAPHQL_PARSE_FAILED', 'GRAPHQL_BAD_REQUEST', 'GRAPHQL_TIMEOUT', 'PAYLOAD_TOO_LARGE'];
+const SERVICE_CODES = ['WEB_ACTIVE_BOOKINGS_LIMIT', 'WEB_PASSENGERS_PER_DAY_LIMIT', 'EMAIL_NOT_VERIFIED', 'WEB_PAYMENTS_DISABLED', 'GATEWAY_UNAVAILABLE', 'UNKNOWN_GATEWAY_ERROR', 'GRAPHQL_VALIDATION_FAILED', 'GRAPHQL_OPERATION_NOT_ALLOWED', 'GRAPHQL_QUERY_TOO_COMPLEX', 'GRAPHQL_PARSE_FAILED', 'GRAPHQL_BAD_REQUEST', 'GRAPHQL_TIMEOUT', 'PAYLOAD_TOO_LARGE'];
 
 describe('errores por category y code · catálogo en español', () => {
   it('ERR-01 el catálogo cubre cada código del contrato v2 y los propios del servicio, con mensajes en español sin datos del usuario', () => {
@@ -38,6 +38,24 @@ describe('errores por category y code · catálogo en español', () => {
     expect(action('GONE', 'HOLD_EXPIRED')).toBe('search-again');
     expect(action('NOT_FOUND', 'FLIGHT_STATUS_NOT_AVAILABLE')).toBe('none');
     expect(action('FORBIDDEN', 'GRAPHQL_OPERATION_NOT_ALLOWED')).toBe('reload');
+  });
+
+  it('ERR-03b acciones de la compra: asiento tomado, pago rechazado, correo sin confirmar, topes de la cuenta y venta apagada (la categoría no decide sola)', () => {
+    const action = (category: ErrorCategory, code: string) => actionFor({ category, code });
+    expect(action('CONFLICT', 'SEAT_TAKEN')).toBe('refresh-seats');
+    expect(action('UNPROCESSABLE', 'PAYMENT_NOT_AUTHORIZED')).toBe('retry-payment');
+    expect(action('FORBIDDEN', 'EMAIL_NOT_VERIFIED')).toBe('confirm-email');
+    expect(action('RATE_LIMITED', 'WEB_ACTIVE_BOOKINGS_LIMIT')).toBe('account-limit');
+    expect(action('RATE_LIMITED', 'WEB_PASSENGERS_PER_DAY_LIMIT')).toBe('account-limit');
+    expect(action('UNPROCESSABLE', 'WEB_PAYMENTS_DISABLED')).toBe('sales-disabled');
+    expect(action('UNAVAILABLE', 'PROVIDER_UNAVAILABLE')).toBe('retry'); // 503 con Retry-After: reintentar después
+    expect(action('GONE', 'HOLD_EXPIRED')).toBe('search-again');
+  });
+
+  it('ERR-03c los mensajes de la compra hablan de la cuenta, nunca de «pruebas»: topes, correo y venta apagada', () => {
+    for (const code of ['WEB_ACTIVE_BOOKINGS_LIMIT', 'WEB_PASSENGERS_PER_DAY_LIMIT', 'EMAIL_NOT_VERIFIED', 'WEB_PAYMENTS_DISABLED', 'PAYMENT_NOT_AUTHORIZED', 'SEAT_TAKEN', 'HOLD_EXPIRED']) expect(messageFor(code, 'INTERNAL')).not.toMatch(/prueba|demostraci/i);
+    expect(messageFor('WEB_ACTIVE_BOOKINGS_LIMIT', 'RATE_LIMITED')).toContain('reservas activas de tu cuenta');
+    expect(messageFor('WEB_PAYMENTS_DISABLED', 'UNPROCESSABLE')).toContain('venta en línea no está disponible');
   });
 
   it('ERR-04 solo la indisponibilidad es transitoria; cualquier excepción ajena se convierte en un error genérico sin detalles', () => {

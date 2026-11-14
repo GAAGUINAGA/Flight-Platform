@@ -49,7 +49,11 @@ const MESSAGES: Readonly<Record<string, string>> = {
   DOCUMENT_EXPIRED: 'El documento de uno de los pasajeros está vencido.',
   PASSPORT_REQUIRED_INTERNATIONAL: 'Los vuelos internacionales requieren pasaporte.',
   PAYMENT_REFERENCE_INVALID: 'La referencia de pago no es válida.',
-  PAYMENT_NOT_AUTHORIZED: 'El pago no fue autorizado.',
+  PAYMENT_NOT_AUTHORIZED: 'El pago fue rechazado.',
+  WEB_ACTIVE_BOOKINGS_LIMIT: 'Alcanzaste el número máximo de reservas activas de tu cuenta. Cancela una reserva o espera a que se complete un viaje para reservar otra.',
+  WEB_PASSENGERS_PER_DAY_LIMIT: 'Alcanzaste el número máximo de pasajeros que tu cuenta puede reservar por día. Inténtalo de nuevo mañana.',
+  EMAIL_NOT_VERIFIED: 'Confirma tu correo electrónico para poder reservar.',
+  WEB_PAYMENTS_DISABLED: 'La venta en línea no está disponible por ahora. Inténtalo más tarde.',
   AMOUNT_MISMATCH: 'El monto del pago no coincide con el total.',
   PNR_CREATION_FAILED: 'No pudimos crear la reserva. Inténtalo de nuevo.',
   BOOKING_NOT_CONFIRMED: 'La reserva todavía no está confirmada.',
@@ -103,12 +107,28 @@ export function messageFor(code: string, category: ErrorCategory): string {
 }
 
 /** Qué ofrece la pantalla ante el error. Se decide por categoría y, donde hace falta, por código. */
-export type ErrorAction = 'retry' | 'wait' | 'login' | 'search-again' | 'fix-input' | 'go-home' | 'reload' | 'none';
+export type ErrorAction =
+  | 'retry' | 'wait' | 'login' | 'search-again' | 'fix-input' | 'go-home' | 'reload' | 'none'
+  /** SEAT_TAKEN: refrescar el mapa y elegir otro asiento. */
+  | 'refresh-seats'
+  /** PAYMENT_NOT_AUTHORIZED: el pago fue rechazado; la selección sigue vigente y se puede intentar de nuevo. */
+  | 'retry-payment'
+  /** EMAIL_NOT_VERIFIED: confirmar el correo (con enlace para reenviarlo). */
+  | 'confirm-email'
+  /** Topes de la cuenta en el canal web: se explican, no se reintentan. */
+  | 'account-limit'
+  /** WEB_PAYMENTS_DISABLED: la venta en línea no está disponible. */
+  | 'sales-disabled';
 
 const SEARCH_AGAIN = new Set(['OFFER_NO_LONGER_AVAILABLE', 'HOLD_EXPIRED', 'CHANGE_OFFER_EXPIRED']);
 
 export function actionFor(error: Pick<AppError, 'category' | 'code'>): ErrorAction {
   if (error.code === 'GRAPHQL_OPERATION_NOT_ALLOWED') return 'reload';
+  if (error.code === 'SEAT_TAKEN') return 'refresh-seats';
+  if (error.code === 'PAYMENT_NOT_AUTHORIZED') return 'retry-payment';
+  if (error.code === 'EMAIL_NOT_VERIFIED') return 'confirm-email';
+  if (error.code === 'WEB_ACTIVE_BOOKINGS_LIMIT' || error.code === 'WEB_PASSENGERS_PER_DAY_LIMIT') return 'account-limit';
+  if (error.code === 'WEB_PAYMENTS_DISABLED') return 'sales-disabled';
   if (SEARCH_AGAIN.has(error.code)) return 'search-again';
   switch (error.category) {
     case 'UNAUTHENTICATED': return 'login';

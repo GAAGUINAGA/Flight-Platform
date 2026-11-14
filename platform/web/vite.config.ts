@@ -40,9 +40,11 @@ export default defineConfig(({ mode }) => {
     preview: { host: '127.0.0.1', port: 5173, strictPort: true, ...(urls ? { headers: securityHeaders(urls) } : {}) },
     test: {
       environment: 'jsdom',
-      include: ['src/**/*.test.{ts,tsx}', 'test/**/*.test.ts'],
+      include: ['src/**/*.test.{ts,tsx}', 'test/**/*.test.{ts,tsx}'],
       setupFiles: ['test/setup.ts'],
       restoreMocks: true,
+      // Las pruebas de pantalla y axe corren en paralelo y comparten CPU: 5 s por omisión es justo.
+      testTimeout: 30_000,
       env: { DEBUG_PRINT_LIMIT: '600', VITE_GRAPHQL_URL: 'https://graphql.test/graphql', VITE_SUPABASE_URL: 'https://supabase.test', VITE_SUPABASE_ANON_KEY: 'anon-test', VITE_ENV_NAME: 'pruebas' }
     }
   };

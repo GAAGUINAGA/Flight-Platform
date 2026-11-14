@@ -118,15 +118,16 @@ describe('resultados de búsqueda', () => {
     expect(past.client.calls).toHaveLength(0);
   });
 
-  it('RES-09 «Elegir» lleva a la pantalla provisional: invita a iniciar sesión y avisa que la compra llega en la próxima versión', async () => {
+  it('RES-09 «Elegir» guarda la oferta con sus criterios y lleva a la compra; sin sesión, al inicio de sesión con regreso a la oferta', async () => {
     const user = userEvent.setup();
-    renderApp(ROUTE, { handlers: { SearchFlights: () => searchResult() } });
+    const { purchase } = renderApp(ROUTE, { handlers: { SearchFlights: () => searchResult() } });
     await user.click(await screen.findByRole('button', { name: 'Elegir la oferta FP103 por USD 254,78' }));
-    expect(await screen.findByRole('heading', { name: 'Ya casi puedes comprar aquí' })).toBeInTheDocument();
-    expect(screen.getByText('La compra en línea llega en la próxima versión.')).toBeInTheDocument();
-    expect(screen.getByText('Total desde USD 254,78')).toBeInTheDocument();
-    expect(within(screen.getByRole('main')).getByRole('link', { name: 'Iniciar sesión' })).toHaveAttribute('href', '/acceso?returnTo=%2Foferta%2Fof-1');
-    await waitFor(() => expect(screen.getByRole('link', { name: 'Volver a los resultados' })).toHaveAttribute('href', ROUTE));
+    // Sin sesión: la compra exige iniciar sesión y vuelve a la oferta (RequireSession).
+    expect(await screen.findByRole('heading', { name: 'Iniciar sesión' })).toBeInTheDocument();
+    expect(purchase.getState().offer?.offerId).toBe('of-1');
+    expect(purchase.getState().back).toBe(ROUTE);
+    expect(purchase.getState().counts).toEqual({ adults: 2, youths: 0, children: 0, infants: 0 });
+    await waitFor(() => expect(screen.getByRole('link', { name: 'Crear una cuenta' })).toHaveAttribute('href', '/registro?returnTo=%2Foferta%2Fof-1'));
   });
 
   it('RES-10 ida y vuelta: cada oferta muestra sus dos tramos y la consulta lleva los dos itinerarios', async () => {

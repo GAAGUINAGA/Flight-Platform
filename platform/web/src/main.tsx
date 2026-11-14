@@ -8,7 +8,8 @@ import { AppRoutes, SESSION_EXPIRED_EVENT } from './app/App';
 import { ServicesProvider, type Services } from './app/services';
 import { missingConfig, readConfig } from './config';
 import { createGraphqlClient } from './data/graphql-client';
-import { browserStore, deviceIdProvider } from './data/identity';
+import { browserStore, deviceIdProvider, sessionBrowserStore } from './data/identity';
+import { PurchaseStore } from './purchase/purchase-store';
 
 /** Arranque: crea UNA vez la sesión (Supabase, PKCE, almacenamiento del navegador) y la capa de datos (solo el servicio GraphQL). */
 function bootstrap(): void {
@@ -29,7 +30,7 @@ function bootstrap(): void {
     retry: config.retry,
     onSessionRejected: () => { void session.signOut().finally(() => window.dispatchEvent(new Event(SESSION_EXPIRED_EVENT))); }
   });
-  const services: Services = { config, client, session };
+  const services: Services = { config, client, session, purchase: new PurchaseStore(sessionBrowserStore()) };
   void session.start();
   root.render(
     <StrictMode>

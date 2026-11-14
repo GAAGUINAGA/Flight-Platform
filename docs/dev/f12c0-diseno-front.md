@@ -803,6 +803,7 @@ Solo existe el formato de **`ProblemDetails` de v2** (`application/problem+json`
 | 429 | `RATE_LIMITED` | `RATE_LIMIT_EXCEEDED` (`Retry-After` → `retryAfterSeconds`) |
 | 502/503/504 | `UNAVAILABLE` | `PROVIDER_UNAVAILABLE`, `RATE_LIMIT_EXCEEDED` (`Retry-After` → `retryAfterSeconds`) |
 | 5xx otros, cuerpo no válido, tiempo agotado | `INTERNAL`/`UNAVAILABLE` | `INTERNAL_ERROR` / `GATEWAY_UNAVAILABLE` |
+| Canal WEB (adenda F12c-2b) | por HTTP (429 `RATE_LIMITED`, 403 `FORBIDDEN`, 422 `UNPROCESSABLE`) | `WEB_ACTIVE_BOOKINGS_LIMIT`, `WEB_PASSENGERS_PER_DAY_LIMIT` (429), `EMAIL_NOT_VERIFIED` (403), `WEB_PAYMENTS_DISABLED` (422): el servicio traduce una lista cerrada de `ProblemDetails.type` del Gateway; el `type` nunca se reenvía (ADR-F12c-04, adenda) |
 
 Reglas: (1) `message` sale de un **catálogo propio** por `code` (español, sin valores del usuario); el `detail` del Gateway no se reenvía salvo `invalidParams[].name` y `reason` si pasan una lista de caracteres seguros; (2) un código desconocido se transmite como `UNKNOWN_GATEWAY_ERROR` con la `category` por HTTP; (3) nunca stack trace ni mensajes internos (PLAN §2.5); (4) con errores en un campo no nulo, GraphQL anula el padre: las consultas devuelven `data: null` + `errors`, y por eso los campos que pueden faltar legítimamente son anulables (`promotionAgreement`: 404 → `null`); (5) el cliente decide la acción por `category`/`code` (reintentar, refrescar mapa, volver a cotizar, iniciar sesión), no por el texto.
 

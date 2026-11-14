@@ -8,7 +8,15 @@ import { AuthCallbackPage, CALLBACK_PATH, LoginPage, NewPasswordPage, RecoverPag
 import { FlightStatusPage } from '../pages/FlightStatusPage';
 import { HomePage } from '../pages/HomePage';
 import { ResultsPage } from '../pages/ResultsPage';
-import { ForbiddenPage, NotFoundPage, SelectOfferPage, SessionExpiredPage, UnavailablePage } from '../pages/SystemPages';
+import { ForbiddenPage, NotFoundPage, SessionExpiredPage, UnavailablePage } from '../pages/SystemPages';
+import { AfterSalesPage } from '../bookings/AfterSalesPage';
+import { BookingDetailPage } from '../bookings/BookingDetailPage';
+import { BookingsPage } from '../bookings/BookingsPage';
+import { CheckInPage } from '../bookings/CheckInPage';
+import { ConfirmationPage } from '../bookings/ConfirmationPage';
+import { OfferPage } from '../purchase/OfferPage';
+import { PassengersPage } from '../purchase/PassengersPage';
+import { PaymentPage } from '../purchase/PaymentPage';
 import { useServices, useSession } from './services';
 
 /** Evento que emite el arranque cuando el servicio rechaza un token que la app creía vigente. */
@@ -64,7 +72,14 @@ export function AppRoutes() {
         <Route element={<AppLayout />}>
           <Route index element={<HomePage />} />
           <Route path="resultados" element={<ResultsPage />} />
-          <Route path="oferta/:offerId" element={<SelectOfferPage />} />
+          <Route path="oferta/:offerId" element={<OfferPage />} />
+          <Route path="compra/pasajeros" element={<PassengersPage />} />
+          <Route path="compra/pago" element={<PaymentPage />} />
+          <Route path="reservas" element={<BookingsPage />} />
+          <Route path="reservas/:bookingId" element={<BookingDetailPage />} />
+          <Route path="reservas/:bookingId/confirmacion" element={<ConfirmationPage />} />
+          <Route path="reservas/:bookingId/postventa" element={<AfterSalesPage />} />
+          <Route path="reservas/:bookingId/checkin" element={<CheckInPage />} />
           <Route path="estado" element={<FlightStatusPage />} />
           <Route path="acceso" element={<LoginPage />} />
           <Route path={CALLBACK_PATH.slice(1)} element={<AuthCallbackPage />} />

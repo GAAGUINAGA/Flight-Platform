@@ -2,3 +2,4 @@ export { AIRPORTS, AIRPORT_NAMES, airportOf, airportLabel, cityOf, isKnownAirpor
 export { addDays, dayOffset, dayOffsetLabel, formatDate, formatDuration, formatLocalDate, formatLocalTime, formatLocalTimeWithZone, isIsoDate, localDate, todayAt, zoneLabel } from './datetime';
 export { compareAmounts, formatAmount, formatMoney, type MoneyLike } from './money';
 export { maskDocument } from './document';
+export { boardingPassQr, MAX_QR_VALUE_LENGTH, type QrMatrix } from './boarding-qr';

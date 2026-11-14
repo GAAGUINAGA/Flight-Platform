@@ -26,6 +26,15 @@ export function browserStore(): KeyValueStore {
   } catch { return memoryStore(); }
 }
 
+/** `sessionStorage` (vive solo en la pestaña) si está disponible; si no, memoria. Solo para datos NO personales (la selección de la compra). */
+export function sessionBrowserStore(): KeyValueStore {
+  try {
+    const store = window.sessionStorage; const probe = 'fp.probe';
+    store.setItem(probe, '1'); store.removeItem(probe);
+    return store;
+  } catch { return memoryStore(); }
+}
+
 export function memoryStore(): KeyValueStore {
   const values = new Map<string, string>();
   return { getItem: (key) => values.get(key) ?? null, setItem: (key, value) => { values.set(key, value); }, removeItem: (key) => { values.delete(key); } };

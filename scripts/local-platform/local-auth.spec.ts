@@ -83,6 +83,12 @@ describe('plataforma local · servicio de acceso de pruebas con el cliente de se
     expect((await fetch(`${base}/auth/v1/user`, { headers: { authorization: 'Bearer a.b.c' } })).status).toBe(401);
   });
 
+  it('LAU-06 reenviar la confirmación (F12c-2b) responde igual exista o no la cuenta, sin enviar nada', async () => {
+    const session = client(); await session.start();
+    expect(await session.resendConfirmation('ana@example.test', `${ORIGIN}/acceso/retorno`)).toEqual({ ok: true });
+    expect(await session.resendConfirmation('nadie@example.test', `${ORIGIN}/acceso/retorno`)).toEqual({ ok: true });
+  });
+
   it('LAU-05 se niega a arrancar con NODE_ENV=production', () => {
     const run = spawnSync(process.execPath, [join(__dirname, 'local-auth.cjs'), '--port', '1'], { env: { ...process.env, NODE_ENV: 'production' }, encoding: 'utf8' });
     expect(run.status).toBe(1);

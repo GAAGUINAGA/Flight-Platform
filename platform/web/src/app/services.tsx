@@ -5,9 +5,10 @@ import type { AppConfig } from '../config';
 import { AppError, toAppError } from '../data/errors';
 import type { GraphqlClient } from '../data/graphql-client';
 import { newCorrelationId } from '../data/identity';
+import type { PurchaseState, PurchaseStore } from '../purchase/purchase-store';
 
 /** Servicios de la app (configuración, capa de datos y sesión) entregados por contexto: las pantallas no crean clientes. */
-export interface Services { config: AppConfig; client: GraphqlClient; session: SessionClient }
+export interface Services { config: AppConfig; client: GraphqlClient; session: SessionClient; purchase: PurchaseStore }
 
 const ServicesContext = createContext<Services | null>(null);
 
@@ -24,6 +25,13 @@ export function useServices(): Services {
 export function useSession(): SessionState {
   const { session } = useServices();
   return useSyncExternalStore(session.subscribe, session.getState, session.getState);
+}
+
+/** La compra en curso (selección, asientos, hold y pasajeros) y su almacén. */
+export function usePurchase(): { state: PurchaseState; store: PurchaseStore } {
+  const { purchase } = useServices();
+  const state = useSyncExternalStore(purchase.subscribe, purchase.getState, purchase.getState);
+  return { state, store: purchase };
 }
 
 /** Fase del estado de carga amable (diseño §9.1): normal → lenta (>1,5 s) → muy lenta (>8 s). */

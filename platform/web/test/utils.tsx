@@ -9,9 +9,12 @@ import { AppRoutes } from '../src/app/App';
 import { ServicesProvider, type Services } from '../src/app/services';
 import type { AppConfig } from '../src/config';
 import type { ExecuteOptions, GraphqlClient } from '../src/data/graphql-client';
+import { memoryStore } from '../src/data/identity';
+import { IntentBook } from '../src/purchase/intent';
+import { PurchaseStore } from '../src/purchase/purchase-store';
 
 export const testConfig: AppConfig = {
-  graphqlUrl: 'https://graphql.test/graphql', supabaseUrl: 'https://supabase.test', supabaseAnonKey: 'anon-test', envName: 'pruebas',
+  graphqlUrl: 'https://graphql.test/graphql', supabaseUrl: 'https://supabase.test', supabaseAnonKey: 'anon-test', envName: 'pruebas', testPaymentScenarios: false, checkIn: { openHours: 48, closeMinutes: 60 },
   loading: { slowMs: 1500, verySlowMs: 8000, timeoutMs: 25_000 }, retry: { max: 3, baseDelayMs: 500 }
 };
 
@@ -33,7 +36,7 @@ export function fakeClient(handlers: Record<string, Handler> = {}): GraphqlClien
 }
 
 export const customer: SessionUser = { id: 'u-1', email: 'ana@example.test', name: 'Ana Pérez', role: 'customer', emailVerified: true };
-export interface FakeSession extends SessionClient { set(state: SessionState): void; calls: Array<{ method: string; args: unknown[] }>; results: Partial<Record<'signIn' | 'signUp' | 'requestPasswordReset' | 'updatePassword' | 'exchangeCode', AuthResult<Record<string, unknown>>>> }
+export interface FakeSession extends SessionClient { set(state: SessionState): void; calls: Array<{ method: string; args: unknown[] }>; results: Partial<Record<'signIn' | 'signUp' | 'requestPasswordReset' | 'resendConfirmation' | 'updatePassword' | 'exchangeCode', AuthResult<Record<string, unknown>>>> }
 /** Sesión simulada con el mismo contrato que `@flight-platform/session`. */
 export function fakeSession(initial: SessionState = { status: 'anonymous', expired: false }): FakeSession {
   let state = initial; const listeners = new Set<(state: SessionState) => void>();
@@ -48,6 +51,7 @@ export function fakeSession(initial: SessionState = { status: 'anonymous', expir
     signIn: (...args) => { const result = (results.signIn ?? { ok: true }) as AuthResult; if (result.ok) signedIn(); return record('signIn', args, result); },
     signUp: (...args) => { const result = (results.signUp ?? { ok: true, needsEmailConfirmation: true }) as AuthResult<{ needsEmailConfirmation: boolean }>; if (result.ok && !result.needsEmailConfirmation) signedIn(); return record('signUp', args, result); },
     signOut: () => { set({ status: 'anonymous', expired: false }); return record('signOut', [], undefined); },
+    resendConfirmation: (...args) => record('resendConfirmation', args, (results.resendConfirmation ?? { ok: true }) as AuthResult),
     requestPasswordReset: (...args) => record('requestPasswordReset', args, (results.requestPasswordReset ?? { ok: true }) as AuthResult),
     updatePassword: (...args) => record('updatePassword', args, (results.updatePassword ?? { ok: true }) as AuthResult),
     exchangeCode: (...args) => { const result = (results.exchangeCode ?? { ok: true, recovery: false }) as AuthResult<{ recovery: boolean }>; if (result.ok) signedIn(); return record('exchangeCode', args, result); },
@@ -55,18 +59,25 @@ export function fakeSession(initial: SessionState = { status: 'anonymous', expir
   };
 }
 
-export interface AppHarness extends RenderResult { client: ReturnType<typeof fakeClient>; session: FakeSession }
+export interface AppHarness extends RenderResult { client: ReturnType<typeof fakeClient>; session: FakeSession; purchase: PurchaseStore }
 /** Monta la app completa (rutas reales) en una ruta, con datos y sesión simulados. */
-export function renderApp(route: string | { pathname: string; search?: string; state?: unknown }, options: { handlers?: Record<string, Handler>; session?: FakeSession; config?: Partial<AppConfig> } = {}): AppHarness {
+export function renderApp(route: string | { pathname: string; search?: string; state?: unknown }, options: { handlers?: Record<string, Handler>; session?: FakeSession; config?: Partial<AppConfig>; purchase?: PurchaseStore } = {}): AppHarness {
   const client = fakeClient(options.handlers); const session = options.session ?? fakeSession();
-  const services: Services = { config: { ...testConfig, ...options.config }, client, session };
+  const purchase = options.purchase ?? new PurchaseStore(memoryStore(), new IntentBook(counterIds()));
+  const services: Services = { config: { ...testConfig, ...options.config }, client, session, purchase };
   const view = render(<ServicesProvider services={services}><MemoryRouter initialEntries={[route]}><AppRoutes /></MemoryRouter></ServicesProvider>);
-  return { ...view, client, session };
+  return { ...view, client, session, purchase };
 }
 
-/** axe sobre el documento montado: sin infracciones. El contraste no se evalúa aquí (jsdom no calcula estilos): lo cubren las pruebas de tokens y el e2e. */
+/** Identificadores predecibles (`id-1`, `id-2`…) para comprobar qué clave y qué correlación viajó en cada operación. */
+export function counterIds(): () => string { let n = 0; return () => { n += 1; return `id-${n}`; }; }
+
+/**
+ * axe sobre el documento montado: sin infracciones de WCAG 2.0/2.1 A y AA (las mismas etiquetas que el e2e en el navegador real).
+ * El contraste no se evalúa aquí (jsdom no calcula estilos): lo cubren las pruebas de tokens y el e2e.
+ */
 export async function expectAccessible(container: HTMLElement = document.body): Promise<void> {
-  const results = await axe.run(container, { rules: { 'color-contrast': { enabled: false } } });
+  const results = await axe.run(container, { runOnly: { type: 'tag', values: ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'] }, rules: { 'color-contrast': { enabled: false } } });
   expect(results.violations.map((violation) => `${violation.id}: ${violation.nodes.map((node) => node.html).join(' | ')}`)).toEqual([]);
 }
 

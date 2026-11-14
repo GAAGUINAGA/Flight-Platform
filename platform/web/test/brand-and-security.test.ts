@@ -72,17 +72,27 @@ describe('seguridad del código de la web', () => {
     const withStorage = code.filter((file) => /localStorage|sessionStorage|indexedDB|document\.cookie/.test(read(file))).map(rel);
     expect(withStorage).toEqual(['src/data/identity.ts']);
     const identity = read(join(root, 'src/data/identity.ts'));
-    expect(identity.match(/setItem\(/g)?.length).toBe(3); // la sonda, el identificador de dispositivo y la implementación en memoria
+    expect(identity.match(/setItem\(/g)?.length).toBe(4); // las dos sondas (local y de pestaña), el identificador de dispositivo y la implementación en memoria
     expect(identity).not.toMatch(/document(Number)?|passport|email|password/i);
   });
 
   it('SEG-04 solo variables públicas VITE_* conocidas; ninguna clave ni secreto en el código', () => {
     const used = new Set(code.flatMap((file) => read(file).match(/VITE_[A-Z0-9_]+/g) ?? []));
-    expect([...used].sort()).toEqual(['VITE_ENV_NAME', 'VITE_GRAPHQL_URL', 'VITE_LOADING_SLOW_MS', 'VITE_LOADING_VERY_SLOW_MS', 'VITE_REQUEST_TIMEOUT_MS', 'VITE_SUPABASE_ANON_KEY', 'VITE_SUPABASE_URL']);
+    expect([...used].sort()).toEqual(['VITE_CHECKIN_CLOSE_MINUTES', 'VITE_CHECKIN_OPEN_HOURS', 'VITE_ENV_NAME', 'VITE_GRAPHQL_URL', 'VITE_LOADING_SLOW_MS', 'VITE_LOADING_VERY_SLOW_MS', 'VITE_REQUEST_TIMEOUT_MS', 'VITE_SUPABASE_ANON_KEY', 'VITE_SUPABASE_URL', 'VITE_TEST_PAYMENT_SCENARIOS']);
     for (const file of code) {
       expect(read(file), rel(file)).not.toMatch(/service_role|SERVICE_ROLE|BEGIN (RSA |EC )?PRIVATE KEY|eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}/);
       expect(read(file), rel(file)).not.toMatch(/console\.(log|debug|info)\(/);
     }
+  });
+
+  it('SEG-06 la web nunca pide datos de una tarjeta, no muestra las marcas internas de prueba y no almacena documentos', () => {
+    for (const file of code) {
+      const text = read(file);
+      expect(text, rel(file)).not.toMatch(/cc-(number|exp|csc)|cvv|cvc|N[úu]mero de (la )?tarjeta|WEB_TEST|salesChannel/i);
+    }
+    const store = read(join(root, 'src/purchase/purchase-store.ts'));
+    expect(store).toMatch(/satisfies Persisted/); // lo que se guarda es una lista cerrada: oferta, selección, asientos, hold y correlación
+    expect(store.match(/type Persisted = Pick<PurchaseState, ([^>]+)>/)?.[1]).not.toMatch(/drafts|holder/);
   });
 
   it('SEG-05 los enlaces externos abren sin dar acceso a la ventana de origen', () => {

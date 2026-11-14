@@ -5,7 +5,7 @@ import { formatDate } from '@flight-platform/format';
 import { SearchFlightsOperation } from '@flight-platform/graphql-schema/generated/operations';
 import type { CabinClass } from '@flight-platform/graphql-schema/generated/types';
 import { usePageTitle } from '../app/page';
-import { useQuery } from '../app/services';
+import { useQuery, useServices } from '../app/services';
 import { ErrorPanel } from '../components/ErrorPanel';
 import { pageClass } from '../components/layout/AppLayout';
 import { ButtonLink } from '../components/ui/Button';
@@ -21,7 +21,7 @@ import styles from '../search/search.module.css';
 /** Resultados (diseño F12c-0 §3.2): varias ofertas con orden y filtros EN EL CLIENTE (el servicio devuelve hasta 10, sin paginar). */
 export function ResultsPage() {
   usePageTitle('Resultados de búsqueda');
-  const [params] = useSearchParams(); const navigate = useNavigate();
+  const [params] = useSearchParams(); const navigate = useNavigate(); const { purchase } = useServices();
   const key = params.toString();
   const criteria = useMemo(() => fromSearchParams(new URLSearchParams(key)), [key]);
   const invalid = !criteria || Object.keys(validateSearch(criteria)).length > 0;
@@ -43,7 +43,8 @@ export function ResultsPage() {
   }
 
   const choose = (offer: Offer): void => {
-    navigate(`/oferta/${encodeURIComponent(offer.offerId)}`, { state: { route: routeLabel(criteria.legs), total: offer.grandTotal, back: `/resultados?${key}` } });
+    purchase.start(offer, `/resultados?${key}`, criteria.passengers);
+    navigate(`/oferta/${encodeURIComponent(offer.offerId)}`);
   };
   const offers = query.status === 'success' ? query.data.searchFlights.offers : [];
   const visible = selectOffers(offers, { directOnly, cabin }, sortBy);

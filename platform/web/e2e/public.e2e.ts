@@ -18,7 +18,7 @@ async function search(page: import('@playwright/test').Page): Promise<void> {
   await expect(page).toHaveURL(/\/resultados\?tipo=ida/);
 }
 
-test('E2E-01 buscar → resultados con varias ofertas, horas en la zona del aeropuerto, filtros y orden en el cliente → pantalla provisional', async ({ page }) => {
+test('E2E-01 buscar → resultados con varias ofertas, horas en la zona del aeropuerto, filtros y orden en el cliente → «Elegir» exige sesión', async ({ page }) => {
   const seen = watch(page);
   await search(page);
   const cards = page.getByRole('article');
@@ -36,10 +36,11 @@ test('E2E-01 buscar → resultados con varias ofertas, horas en la zona del aero
   await page.getByRole('checkbox', { name: 'Solo vuelos directos' }).uncheck();
 
   await cards.first().getByRole('button', { name: /^Elegir/ }).click();
-  await expect(page.getByRole('heading', { name: 'Ya casi puedes comprar aquí' })).toBeVisible();
-  await expect(page.getByRole('main').getByRole('link', { name: 'Iniciar sesión' })).toBeVisible();
-  await expectAccessible(page, 'Oferta provisional');
-  await page.getByRole('link', { name: 'Volver a los resultados' }).click();
+  // La compra exige sesión: sin ella lleva al inicio de sesión (con regreso a la oferta); volver atrás conserva los resultados.
+  await expect(page).toHaveURL(/\/acceso\?returnTo=%2Foferta%2F/);
+  await expect(page.getByRole('main').getByRole('heading', { name: 'Iniciar sesión' })).toBeVisible();
+  await expectAccessible(page, 'Inicio de sesión desde la oferta');
+  await page.goBack();
   await expect(cards.first()).toBeVisible();
 
   // La web solo habla con su propio origen, el servicio GraphQL y el servicio de acceso; nunca con el Gateway (puerto 3000).

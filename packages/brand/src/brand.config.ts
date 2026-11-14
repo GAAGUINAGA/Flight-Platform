@@ -56,10 +56,12 @@ export const brand = {
     { icon: 'plane', title: 'Durante el vuelo', text: 'Viaja con tu itinerario y tu pase de abordar a la mano.' }
   ],
   texts: {
-    about: 'Aerolínea de demostración. Los vuelos, precios y reservas de este sitio son datos de prueba.',
+    about: 'Compra tus vuelos, elige tus asientos y gestiona tus reservas en un solo lugar.',
     testEnvironmentNotice: 'Entorno de pruebas: los vuelos y las reservas no son reales y no se realiza ningún cobro.',
-    purchaseComingSoon: 'La compra en línea llega en la próxima versión.',
-    footerLegal: 'Marca y contenidos provisionales. Sitio de demostración sin fines comerciales.',
+    /** Nota discreta, solo en el paso de pago (el procesamiento es simulado). */
+    demoPaymentNote: 'Pago procesado en modo de demostración; no se realiza ningún cargo.',
+    /** Pie de página («Acerca de»): aviso de proyecto académico; no se repite en el recorrido de compra. */
+    footerLegal: 'GabatAIR es un proyecto académico de demostración, sin fines comerciales.',
     photoCreditsTitle: 'Créditos de fotografías'
   },
   footer: [

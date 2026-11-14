@@ -1,19 +1,14 @@
 import type { ReactNode } from 'react';
-import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
-import { CloudOff, Compass, LockKeyhole, ShieldX, Ticket, type LucideIcon } from 'lucide-react';
-import { brand } from '@flight-platform/brand';
-import { formatMoney, type MoneyLike } from '@flight-platform/format';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { CloudOff, Compass, LockKeyhole, ShieldX, type LucideIcon } from 'lucide-react';
 import { usePageTitle } from '../app/page';
-import { useSession } from '../app/services';
 import { useCountdown } from '../components/ErrorPanel';
 import { pageClass } from '../components/layout/AppLayout';
 import { Button, ButtonLink } from '../components/ui/Button';
-import { Notice } from '../components/ui/Notice';
 import ui from '../components/ui/ui.module.css';
 import { loginPath, safeReturnTo } from '../session/return-to';
-import styles from './pages.module.css';
 
-/** Pantallas de sistema (diseño F12c-0 §3.14) y la pantalla provisional de «elegir oferta» (la compra llega en F12c-2b). */
+/** Pantallas de sistema (diseño F12c-0 §3.14). */
 function StatePage({ icon: Icon, title, children }: { icon: LucideIcon; title: string; children: ReactNode }) {
   return (
     <div className={pageClass}>
@@ -83,32 +78,3 @@ export function UnavailablePage() {
   );
 }
 
-interface OfferState { route?: string; total?: MoneyLike; back?: string }
-
-/** Provisional: desde Resultados, «Elegir» llega aquí. Invita a iniciar sesión o avisa que la compra llega en la próxima versión. */
-export function SelectOfferPage() {
-  usePageTitle('Tu selección');
-  const session = useSession(); const location = useLocation();
-  const state = (location.state ?? {}) as OfferState;
-  const back = safeReturnTo(state.back, '/');
-  return (
-    <StatePage icon={Ticket} title="Ya casi puedes comprar aquí">
-      {state.route ? (
-        <div className={styles.summary}>
-          <strong>{state.route}</strong>
-          {state.total && typeof state.total.total === 'string' ? <span>Total desde {formatMoney(state.total)}</span> : null}
-        </div>
-      ) : null}
-      <Notice kind="info" title={brand.texts.purchaseComingSoon}>
-        <p>Por ahora puedes buscar vuelos y consultar su estado. La selección de asientos, los pasajeros y el pago simulado se habilitan en la siguiente entrega.</p>
-      </Notice>
-      {session.status === 'authenticated'
-        ? <p>Tu sesión está iniciada: cuando la compra esté disponible podrás continuar sin registrarte de nuevo.</p>
-        : <p>Mientras tanto, crea tu cuenta o inicia sesión para tenerla lista.</p>}
-      <div className={ui.actions}>
-        {session.status === 'authenticated' ? null : <><ButtonLink to={loginPath(`${location.pathname}`)}>Iniciar sesión</ButtonLink><ButtonLink variant="secondary" to="/registro">Crear cuenta</ButtonLink></>}
-        <ButtonLink variant="secondary" to={back}>Volver a los resultados</ButtonLink>
-      </div>
-    </StatePage>
-  );
-}

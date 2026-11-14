@@ -47,6 +47,8 @@ export interface SessionClient {
   /** Siempre responde igual exista o no la cuenta. */
   requestPasswordReset(email: string, redirectTo: string): Promise<AuthResult>;
   updatePassword(password: string): Promise<AuthResult>;
+  /** Reenvía el correo de confirmación de la cuenta (para quien aún no confirmó). Responde igual exista o no la cuenta. */
+  resendConfirmation(email: string, redirectTo: string): Promise<AuthResult>;
   /** Retorno del enlace del correo (confirmación o recuperación): canjea el `code` con el verificador PKCE guardado. */
   exchangeCode(code: string): Promise<AuthResult<{ recovery: boolean }>>;
   /** Token de acceso vigente (refrescado si hace falta) o `null` si no hay sesión. */
@@ -158,6 +160,12 @@ export function createSessionClient(config: SessionConfig): SessionClient {
       if (!error) return { ok: true };
       const reason = failure(error);
       // Para no revelar si la cuenta existe, solo se informan los fallos que no dependen de ella.
+      return reason === 'rate_limited' || reason === 'network' ? { ok: false, reason } : { ok: true };
+    },
+    async resendConfirmation(email, redirectTo) {
+      const { error } = await auth.resend({ type: 'signup', email, options: { emailRedirectTo: redirectTo } });
+      if (!error) return { ok: true };
+      const reason = failure(error);
       return reason === 'rate_limited' || reason === 'network' ? { ok: false, reason } : { ok: true };
     },
     async updatePassword(password) {

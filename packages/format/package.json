@@ -5,11 +5,15 @@
   "description": "Formato sin pantalla para la web y el móvil: fechas y horas en hora local del aeropuerto (tabla única de zonas), dinero es-EC sin flotantes, duraciones y enmascarado de documento.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
-  "files": ["dist", "src"],
+  "files": [
+    "dist",
+    "src"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@flight-platform/shared": "0.1.0"
+    "@flight-platform/shared": "0.1.0",
+    "qrcode-generator": "1.4.4"
   }
 }

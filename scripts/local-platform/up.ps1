@@ -68,7 +68,7 @@ if (-not (Test-Path -LiteralPath $keyFile)) {
 }
 
 # 3b. Web (F12c-2a, solo con -Web): variables PÚBLICAS de la web local (ninguna es secreta) y llaves del servicio de acceso local de pruebas (.local/, no se imprimen).
-$webEnv = @{ VITE_GRAPHQL_URL = "http://127.0.0.1:$GraphqlPort/graphql"; VITE_SUPABASE_URL = "http://127.0.0.1:$WebAuthPort"; VITE_SUPABASE_ANON_KEY = 'local-anon-publica'; VITE_ENV_NAME = 'local' }
+$webEnv = @{ VITE_GRAPHQL_URL = "http://127.0.0.1:$GraphqlPort/graphql"; VITE_SUPABASE_URL = "http://127.0.0.1:$WebAuthPort"; VITE_SUPABASE_ANON_KEY = 'local-anon-publica'; VITE_ENV_NAME = 'local'; VITE_TEST_PAYMENT_SCENARIOS = 'true' }
 if ($Web) { Invoke-Checked 'llaves del servicio de acceso local' { node scripts/local-platform/local-auth.cjs --init-keys --key-dir $script:LocalDir | Out-Null } }
 
 # 4. Postgres local (la administra docker compose; el humano ya lo tiene si usa -SkipDocker)

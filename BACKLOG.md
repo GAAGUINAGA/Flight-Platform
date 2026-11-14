@@ -181,3 +181,11 @@
 - Observación de audit-28: npm run codegen:check no existe en la raíz; existe como npm run codegen:check -w @flight-platform/graphql-schema (el que usa el CI). Agregar el alias en la raíz o corregir la documentación.
 
 - docs/dev/f12c2a-web-despliegue.md: advertir que CORS_ORIGINS del servicio GraphQL y la Site URL de Supabase van SIN barra final (con barra, el navegador falla con NETWORK_ERROR por CORS), y que Render puede agregar un sufijo al nombre del sitio (flight-web-238b). Detectado al publicar el 13-11-2026.
+
+- E2E-07 (web, F12c-2a) falló una vez en una corrida completa de Playwright y pasa sola y en las demás corridas; sospecha: el foco de la ventana con la máquina ocupada. Detectado en F12c-2b.
+- El mapa de asientos de una reserva (postventa) pasa el bookingId en el lugar del offerId, porque la consulta exige un offerId con formato válido aunque el servicio solo use el tramo (ADR-F12c2b-01). Si el gateway llegara a validar que la oferta exista, esa pantalla se rompería: considerar una operación propia del mapa por reserva.
+- Verificaciones locales: tras construir la web con valores de producción (para inspeccionar el paquete), local:up debe correr SIN -SkipBuild, o la web local apunta a la nube. Y en PowerShell 5.1, las variables con JSON se pasan a docker con --env-file, no con -e.
+
+- E2E-07 (web, F12c-2a) falló una vez en una corrida completa de Playwright y pasa sola y en las demás corridas; sospecha: el foco de la ventana con la máquina ocupada. Detectado en F12c-2b.
+- El mapa de asientos de una reserva (postventa) pasa el bookingId en el lugar del offerId, porque la consulta exige un offerId con formato válido aunque el servicio solo use el tramo (ADR-F12c2b-01). Si el gateway llegara a validar que la oferta exista, esa pantalla se rompería: considerar una operación propia del mapa por reserva.
+- Verificaciones locales: tras construir la web con valores de producción (para inspeccionar el paquete), local:up debe correr SIN -SkipBuild, o la web local apunta a la nube. Y en PowerShell 5.1, las variables con JSON se pasan a docker con --env-file, no con -e.

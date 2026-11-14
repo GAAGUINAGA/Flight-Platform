@@ -8,6 +8,7 @@ import { loginPath } from '../../session/return-to';
 import styles from './layout.module.css';
 
 const NAV = [{ to: '/', label: 'Buscar vuelos', end: true }, { to: '/estado', label: 'Estado de vuelo', end: false }];
+const MY_BOOKINGS = { to: '/reservas', label: 'Mis reservas', end: false };
 const ENV_LABEL = { produccion: '', pruebas: 'Pruebas', local: 'Local' } as const;
 
 /** Banda fija del entorno (diseño §3.14): visible en todo entorno que no sea producción. */
@@ -18,6 +19,7 @@ function EnvBand() {
 }
 
 function MobileMenu({ onClose, onSignOut, authenticated, returnTo }: { onClose: () => void; onSignOut: () => void; authenticated: boolean; returnTo: string }) {
+  const items = authenticated ? [...NAV, MY_BOOKINGS] : NAV;
   const closeRef = useRef<HTMLButtonElement>(null); const drawerRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     closeRef.current?.focus();
@@ -40,7 +42,7 @@ function MobileMenu({ onClose, onSignOut, authenticated, returnTo }: { onClose: 
           <h2 id="menu-title">Menú</h2>
           <button type="button" className={styles.close} onClick={onClose} ref={closeRef} aria-label="Cerrar menú"><X size={24} aria-hidden="true" /></button>
         </div>
-        {NAV.map((item) => <Link key={item.to} className={styles.drawerLink} to={item.to} onClick={onClose}>{item.label}</Link>)}
+        {items.map((item) => <Link key={item.to} className={styles.drawerLink} to={item.to} onClick={onClose}>{item.label}</Link>)}
         {authenticated
           ? <button type="button" className={styles.drawerLink} onClick={() => { onClose(); onSignOut(); }}>Cerrar sesión</button>
           : <><Link className={styles.drawerLink} to={loginPath(returnTo)} onClick={onClose}>Iniciar sesión</Link><Link className={styles.drawerLink} to="/registro" onClick={onClose}>Crear cuenta</Link></>}
@@ -62,7 +64,7 @@ function AppHeader() {
       <div className={styles.headerInner}>
         <Link to="/" className={styles.logoLink} aria-label={`${brand.name}, ir al inicio`}><img className={styles.logo} src={logoUrl('dark')} alt="" width={166} height={36} /></Link>
         <nav className={styles.nav} aria-label="Principal">
-          {NAV.map((item) => <NavLink key={item.to} to={item.to} end={item.end} className={({ isActive }) => `${styles.navLink} ${isActive ? styles.navLinkActive : ''}`}>{item.label}</NavLink>)}
+          {(authenticated ? [...NAV, MY_BOOKINGS] : NAV).map((item) => <NavLink key={item.to} to={item.to} end={item.end} className={({ isActive }) => `${styles.navLink} ${isActive ? styles.navLinkActive : ''}`}>{item.label}</NavLink>)}
         </nav>
         <div className={styles.right}>
           {authenticated ? (

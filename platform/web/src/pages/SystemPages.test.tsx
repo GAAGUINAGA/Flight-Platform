@@ -52,7 +52,7 @@ describe('errores y pantallas de sistema', () => {
   });
 
   it('SIS-03 404: una ruta inexistente muestra un mensaje único con salidas', () => {
-    renderApp('/reservas/de-otra-persona');
+    renderApp('/ruta/que-no-existe');
     expect(main().getByRole('heading', { name: 'No encontramos esa página' })).toBeInTheDocument();
     expect(main().getByRole('link', { name: 'Buscar vuelos' })).toHaveAttribute('href', '/');
     expect(document.title).toBe(`No encontrado · ${brand.name}`);

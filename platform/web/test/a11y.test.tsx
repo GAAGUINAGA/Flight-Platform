@@ -20,7 +20,6 @@ const SCREENS: Array<{ name: string; route: string; handlers?: Record<string, Ha
   { name: 'Resultados · cargando', route: RESULTS, handlers: { SearchFlights: () => new Promise(() => undefined) }, ready: () => screen.findByText('Buscando vuelos…') },
   { name: 'Resultados · error con espera', route: RESULTS, handlers: { SearchFlights: unavailable }, ready: () => screen.findByRole('alert') },
   { name: 'Resultados · búsqueda inválida', route: '/resultados?tipo=ida', ready: () => screen.findByText('Esta búsqueda no es válida o ya venció.') },
-  { name: 'Oferta provisional', route: '/oferta/of-1', ready: () => screen.findByText('Ya casi puedes comprar aquí') },
   { name: 'Estado de un vuelo · formulario', route: '/estado', ready: () => screen.findByLabelText('Número de vuelo') },
   { name: 'Estado de un vuelo · resultado', route: '/estado?vuelo=FP103&fecha=2026-12-10', handlers: { FlightStatus: () => status }, ready: () => screen.findByTestId('flight-status') },
   { name: 'Estado de un vuelo · no encontrado', route: '/estado?vuelo=FP999&fecha=2026-12-10', handlers: { FlightStatus: () => { throw new AppError({ category: 'NOT_FOUND', code: 'FLIGHT_STATUS_NOT_AVAILABLE', correlationId: 'c' }); } }, ready: () => screen.findByRole('alert') },
