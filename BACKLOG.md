@@ -179,3 +179,5 @@
 - Intermitente en reservation: rsv-12-real.spec.ts falló una vez (1 de 280) en la verificación de F12c-2a del 13-11-2026 y pasó 19/19 al repetirlo; no se guardó el detalle. Si reaparece, guardar la salida completa.
 
 - Observación de audit-28: npm run codegen:check no existe en la raíz; existe como npm run codegen:check -w @flight-platform/graphql-schema (el que usa el CI). Agregar el alias en la raíz o corregir la documentación.
+
+- docs/dev/f12c2a-web-despliegue.md: advertir que CORS_ORIGINS del servicio GraphQL y la Site URL de Supabase van SIN barra final (con barra, el navegador falla con NETWORK_ERROR por CORS), y que Render puede agregar un sufijo al nombre del sitio (flight-web-238b). Detectado al publicar el 13-11-2026.
