@@ -5,7 +5,7 @@ import { holdOfferRequest, offerHoldRequest } from './schemas';
 
 export interface PriceLock { holdId: string; ownerId: string; offerId: string; lockedPriceMinor: number; expiresAt: Date; status: string; selections: Selection[]; passengersBreakdown: PassengerMix; fareSnapshot: OfferSnapshot }
 export interface Selection { itineraryId: string; cabinClass: string; fareBrand: string }
-export interface OfferHoldStore { findOffer(id: string): Promise<{ snapshot: OfferSnapshot; mix: PassengerMix; expiresAt: Date } | null>; createPriceLock(lock: PriceLock): Promise<void>; getPriceLock(holdId: string, ownerId: string): Promise<PriceLock | null>; setPriceLockStatus(holdId: string, ownerId: string, status: string): Promise<void> }
+export interface OfferHoldStore { findOffer(id: string): Promise<{ snapshot: OfferSnapshot; mix: PassengerMix; expiresAt: Date } | null>; /** Inserta el precio bloqueado de un hold. Devuelve false (sin error) si ese hold ya tenía su precio bloqueado: la repetición idempotente no es un fallo. */ createPriceLock(lock: PriceLock): Promise<boolean>; getPriceLock(holdId: string, ownerId: string): Promise<PriceLock | null>; setPriceLockStatus(holdId: string, ownerId: string, status: string): Promise<void> }
 export interface HoldConfig { holdTtlMinutes: number; currency: string }
 const money = (minor: number, currency: string): MoneyAmount => ({ currency, total: minorToDecimal(minor) });
 
@@ -27,13 +27,17 @@ export class OfferHolds {
     const seats = request.passengersBreakdown.adults + request.passengersBreakdown.youths + request.passengersBreakdown.children;
     const ttlMinutes = request.ttlMinutes ?? this.config.holdTtlMinutes;
     const inventoryHold = await this.inventory.createHold({ ownerId: request.ownerId, expiresAt: new Date(this.clock.now().getTime() + ttlMinutes * 60_000).toISOString(), idempotencyKey: request.idempotencyKey, segments: selected.flatMap(({ itinerary, selection }) => itinerary.segments.map((segment) => ({ flightInstanceId: segment.flightInstanceId, cabinClass: selection.cabinClass as 'ECONOMY' | 'PREMIUM_ECONOMY' | 'BUSINESS' | 'FIRST', seats }))) });
+    let lockedMinor = lockedPriceMinor;
     try {
-      await this.store.createPriceLock({ holdId: inventoryHold.holdId, ownerId: request.ownerId, offerId: request.offerId, lockedPriceMinor, expiresAt: new Date(inventoryHold.expiresAt), status: inventoryHold.status, selections: request.itinerarySelections, passengersBreakdown: request.passengersBreakdown, fareSnapshot: offer.snapshot });
+      const created = await this.store.createPriceLock({ holdId: inventoryHold.holdId, ownerId: request.ownerId, offerId: request.offerId, lockedPriceMinor, expiresAt: new Date(inventoryHold.expiresAt), status: inventoryHold.status, selections: request.itinerarySelections, passengersBreakdown: request.passengersBreakdown, fareSnapshot: offer.snapshot });
+      // Repetición con la misma Idempotency-Key: Inventory devolvió el hold existente y su precio ya está bloqueado; se devuelve ese mismo (nunca se libera un hold que ya es de otra llamada).
+      if (!created) lockedMinor = (await this.store.getPriceLock(inventoryHold.holdId, request.ownerId))?.lockedPriceMinor ?? lockedPriceMinor;
     } catch (error) {
-      await this.inventory.releaseHold({ holdId: inventoryHold.holdId, ownerId: request.ownerId });
+      // Compensación: no debe ocultar la causa original si la liberación también falla.
+      await this.inventory.releaseHold({ holdId: inventoryHold.holdId, ownerId: request.ownerId }).catch(() => undefined);
       throw error;
     }
-    return { holdId: inventoryHold.holdId, status: inventoryHold.status, expiresAt: inventoryHold.expiresAt, ttlMinutes, lockedPrice: money(lockedPriceMinor, this.config.currency) };
+    return { holdId: inventoryHold.holdId, status: inventoryHold.status, expiresAt: inventoryHold.expiresAt, ttlMinutes, lockedPrice: money(lockedMinor, this.config.currency) };
   }
   async get(input: unknown) {
     const request = validate(offerHoldRequest, input);

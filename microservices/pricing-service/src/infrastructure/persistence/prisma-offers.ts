@@ -28,9 +28,11 @@ export class PrismaOfferStore implements OfferStore, OfferHoldStore, PostSaleSto
     const offer = await this.prisma.offer.findUnique({ where: { id } });
     return offer ? { snapshot: offer.snapshot as unknown as OfferSnapshot, mix: offer.passengerMix as unknown as PassengerMix, expiresAt: offer.expiresAt } : null;
   }
-  async createPriceLock(lock: PriceLock): Promise<void> {
+  async createPriceLock(lock: PriceLock): Promise<boolean> {
     const fareSnapshot = JSON.parse(JSON.stringify({ offer: lock.fareSnapshot, selections: lock.selections, passengersBreakdown: lock.passengersBreakdown }));
-    await this.prisma.priceLock.create({ data: { holdId: lock.holdId, ownerId: lock.ownerId, offerId: lock.offerId, lockedPriceMinor: lock.lockedPriceMinor, passengerPrices: {}, extraBagByItinerary: {}, fareSnapshot, expiresAt: lock.expiresAt, status: lock.status } });
+    // Una sola sentencia (INSERT ... ON CONFLICT DO NOTHING): atómica y compatible con el pooler de Supabase en modo transacción; sin lectura previa.
+    const { count } = await this.prisma.priceLock.createMany({ data: [{ holdId: lock.holdId, ownerId: lock.ownerId, offerId: lock.offerId, lockedPriceMinor: lock.lockedPriceMinor, passengerPrices: {}, extraBagByItinerary: {}, fareSnapshot, expiresAt: lock.expiresAt, status: lock.status }], skipDuplicates: true });
+    return count === 1;
   }
   async getPriceLock(holdId: string, ownerId: string): Promise<PriceLock | null> {
     const lock = await this.prisma.priceLock.findFirst({ where: { holdId, ownerId } });

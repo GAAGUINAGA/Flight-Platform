@@ -80,7 +80,32 @@ export function safeGrpcError(error: unknown): SafeGrpcError {
       if (details === 'PERMISSION_DENIED' && code === status.PERMISSION_DENIED) return { code, details };
     }
   }
+  // Un error de negocio de una dependencia llega como error gRPC de cliente `{ code, details }` (sin `getError()`):
+  // si trae un código del catálogo con su estado exacto se devuelve tal cual; lo demás sigue siendo INTERNAL_ERROR.
+  const catalog = catalogErrorOf(error);
+  if (catalog) return catalog;
   return { code: status.INTERNAL, details: 'INTERNAL_ERROR' };
+}
+
+function catalogErrorOf(error: unknown): SafeGrpcError | undefined {
+  if (typeof error !== 'object' || error === null) return undefined;
+  const { code, details } = error as { code?: unknown; details?: unknown };
+  if (typeof code !== 'number' || typeof details !== 'string') return undefined;
+  return ERROR_CODES.includes(details as ErrorCode) && GRPC_STATUS_BY_CODE[details as ErrorCode] === code ? { code, details } : undefined;
+}
+
+/**
+ * Causa de un INTERNAL_ERROR para el registro: solo tipo y códigos acotados (Prisma `P2xxx`, errno de red,
+ * estado y código de catálogo de gRPC). Nunca el mensaje, `meta` ni valores: pueden contener datos personales.
+ */
+export function describeInternalError(error: unknown): string {
+  if (typeof error !== 'object' || error === null) return `internal error: type=${typeof error}`;
+  const { name, code, details } = error as { name?: unknown; code?: unknown; details?: unknown };
+  const parts = [`type=${typeof name === 'string' && /^[A-Za-z0-9_]{1,64}$/.test(name) ? name : 'unknown'}`];
+  if (typeof code === 'string' && /^[A-Z][A-Z0-9_]{1,31}$|^P\d{4}$/.test(code)) parts.push(`code=${code}`);
+  if (typeof code === 'number' && Number.isInteger(code)) parts.push(`grpc_code=${code}`);
+  if (typeof details === 'string' && ERROR_CODES.includes(details as ErrorCode)) parts.push(`details=${details}`);
+  return `internal error: ${parts.join(' ')}`;
 }
 
 export function toRpcException(error: unknown): RpcException {

@@ -195,3 +195,5 @@
 - Pricing: al guardar una tarifa, el total se recalcula siempre como base + tasas, y un total distinto enviado se ignora SIN error; debería rechazarse con VALIDATION_FAILED para no engañar a quien edita. Detectado en el e2e de F12c-3.
 - E2E-16 (web, F12c-2b) intermitente: falló una vez al pagar tras volver a iniciar sesión ('Revisa los datos ingresados') y pasó al repetirla; causa no encontrada. Revisar si al volver de la sesión vencida se pierde algún dato del formulario.
 - El e2e del panel (F12c-3) retrasa un vuelo de prueba local en cada corrida (un retraso no se deshace); reponer con npm run local:seed antes de repetirlo.
+
+- Los filtros de errores de Inventory y Operations registran solo el nombre del error al traducir una excepción a INTERNAL_ERROR; aplicar el mismo registro de tipo y código de la causa que Pricing (sin datos personales). Sugerido en la corrección de los holds concurrentes.

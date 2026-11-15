@@ -9,7 +9,7 @@ import {
   decimalToMinor, ERROR_CODES, FixedClock, GRPC_STATUS_BY_CODE, minorToDecimal,
   buildRequestContext, createGrpcMetadata, requireRole, safeGrpcError, toRpcException, validate,
   InternalKeyInterceptor, requestContextFromMetadata, loggerOptions, DomainRpcExceptionFilter, DomainError,
-  GRPC_DEADLINE_MS, withGrpcCallContext, addGrpcHealthCheck, rpcString
+  GRPC_DEADLINE_MS, withGrpcCallContext, addGrpcHealthCheck, rpcString, describeInternalError
 } from '../src/index';
 import { z } from 'zod';
 
@@ -61,6 +61,26 @@ describe('shared foundations', () => {
       .toEqual({ code: status.INTERNAL, details: 'INTERNAL_ERROR' });
     expect(safeGrpcError({ getError: () => { throw new Error('private detail'); } }))
       .toEqual({ code: status.INTERNAL, details: 'INTERNAL_ERROR' });
+  });
+
+  it('returns a dependency business error (gRPC client error with a catalog code and its exact status) instead of INTERNAL_ERROR', () => {
+    const client = (code: number, details: string) => Object.assign(new Error(`${code} ${details}: private detail`), { code, details });
+    expect(safeGrpcError(client(status.FAILED_PRECONDITION, 'OFFER_NO_LONGER_AVAILABLE'))).toEqual({ code: status.FAILED_PRECONDITION, details: 'OFFER_NO_LONGER_AVAILABLE' });
+    expect(safeGrpcError(client(status.ABORTED, 'SEAT_TAKEN'))).toEqual({ code: status.ABORTED, details: 'SEAT_TAKEN' });
+    // Estado que no corresponde al código, texto libre, errores propios de gRPC y los de autenticación de la dependencia siguen siendo INTERNAL_ERROR.
+    for (const bad of [client(status.INTERNAL, 'SEAT_TAKEN'), client(status.INTERNAL, 'database secret'), client(status.UNAVAILABLE, 'No connection established'), client(status.UNAUTHENTICATED, 'UNAUTHENTICATED'), client(status.PERMISSION_DENIED, 'PERMISSION_DENIED'), client(status.INTERNAL, 'INTERNAL_ERROR')]) {
+      expect(safeGrpcError(bad)).toEqual({ code: status.INTERNAL, details: 'INTERNAL_ERROR' });
+    }
+  });
+
+  it('describes the cause of an internal error with the type and bounded codes only', () => {
+    const prisma = Object.assign(new Error('Unique constraint failed on the fields: (`owner_id`) value ana@example.com'), { name: 'PrismaClientKnownRequestError', code: 'P2002', meta: { target: ['ana@example.com'] } });
+    expect(describeInternalError(prisma)).toBe('internal error: type=PrismaClientKnownRequestError code=P2002');
+    expect(describeInternalError(Object.assign(new Error('14 UNAVAILABLE: ana@example.com'), { code: 14, details: 'ana@example.com' }))).toBe('internal error: type=Error grpc_code=14');
+    expect(describeInternalError(Object.assign(new Error('x'), { code: 13, details: 'SEAT_TAKEN' }))).toBe('internal error: type=Error grpc_code=13 details=SEAT_TAKEN');
+    expect(describeInternalError(Object.assign(new Error('x'), { code: 'ECONNREFUSED' }))).toBe('internal error: type=Error code=ECONNREFUSED');
+    expect(describeInternalError('ana@example.com')).toBe('internal error: type=string');
+    expect(describeInternalError(Object.assign(new Error('x'), { name: 'ana@example.com', code: 'with spaces' }))).toBe('internal error: type=unknown');
   });
 
   it('converts money and supports a fixed clock', () => {

@@ -1,5 +1,5 @@
 import { Catch, CallHandler, ExecutionContext, Injectable, Logger, NestInterceptor, RpcExceptionFilter } from '@nestjs/common';
-import { requestContextFromMetadata, safeGrpcError } from '@flight-platform/shared';
+import { describeInternalError, requestContextFromMetadata, safeGrpcError } from '@flight-platform/shared';
 import { Observable, throwError, tap } from 'rxjs';
 import { Logger as PinoLogger } from 'pino';
 
@@ -10,7 +10,7 @@ export class PricingExceptionFilter implements RpcExceptionFilter<unknown> {
     const safe = safeGrpcError(error);
     const fields = error instanceof Error && 'validationFields' in error ? (error as Error & { validationFields?: string[] }).validationFields : undefined;
     if (safe.details === 'VALIDATION_FAILED' && fields?.length) this.logger.warn(`validation failed fields: ${fields.join(',')}`);
-    if (safe.details === 'INTERNAL_ERROR') this.logger.error(`internal error: ${error instanceof Error ? error.name : typeof error}`);
+    if (safe.details === 'INTERNAL_ERROR') this.logger.error(describeInternalError(error));
     return throwError(() => safe);
   }
 }
