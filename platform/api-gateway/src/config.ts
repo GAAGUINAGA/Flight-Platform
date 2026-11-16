@@ -36,7 +36,10 @@ export interface GatewayConfig {
   web: WebSalesConfig;
   /** Límites por administrador del panel ampliado (F12c-4, ADR-F12c4-01). Ausente = valores por omisión. */
   admin?: AdminLimitsConfig;
+  /** Cabinas que los clientes NO ven en v2 (`HIDDEN_CABINS`, lista de CabinClass; vacía = no se oculta nada). Mitigación temporal: no afecta a las tarifas, los vuelos ni la API interna de administración. */
+  hiddenCabins?: string[];
 }
+export const CABIN_CLASSES = ['ECONOMY', 'PREMIUM_ECONOMY', 'BUSINESS', 'FIRST'] as const;
 
 export interface AdminLimitsConfig {
   /** Búsquedas por PNR por administrador y hora (cuentan todos los intentos, salvo los ya rechazados por el propio límite). */
@@ -189,8 +192,10 @@ export function loadConfig(env: Environment = process.env): GatewayConfig {
   if (!/^[A-Z0-9]{2}$/.test(admin.flights.airlinePrefix)) throw new Error('ADMIN_FLIGHT_PREFIX must be two letters or digits');
   if (admin.flights.minDurationMinutes >= admin.flights.maxDurationMinutes) throw new Error('ADMIN_FLIGHT_MIN_MINUTES must be lower than ADMIN_FLIGHT_MAX_MINUTES');
   if (!admin.flights.currencies.length || admin.flights.currencies.some((value) => !/^[A-Z]{3}$/.test(value))) throw new Error('ADMIN_FARE_CURRENCIES must be a list of ISO 4217 codes');
+  const hiddenCabins = [...new Set((env.HIDDEN_CABINS ?? '').split(',').map((value) => value.trim().toUpperCase()).filter(Boolean))];
+  if (hiddenCabins.some((value) => !(CABIN_CLASSES as readonly string[]).includes(value))) throw new Error(`HIDDEN_CABINS must be a comma-separated list of: ${CABIN_CLASSES.join(', ')}`);
   return {
-    transport, esbUrl: esbUrl || 'http://localhost:3100', esbUrlConfigured: Boolean(esbUrl), web, admin,
+    transport, esbUrl: esbUrl || 'http://localhost:3100', esbUrlConfigured: Boolean(esbUrl), web, admin, hiddenCabins,
     v2, port, internalApiKey: required(env.INTERNAL_API_KEY, 'INTERNAL_API_KEY'), jwtIssuers,
     corsOrigins: (env.CORS_ORIGINS ?? '').split(',').map((x: string) => x.trim()).filter(Boolean),
     publicLimit: Number(env.RATE_LIMIT_PUBLIC_PER_MIN ?? 60), authLimit: Number(env.RATE_LIMIT_AUTH_PER_MIN ?? 120),

@@ -41,6 +41,8 @@ export class V2HoldController {
     const seats = parseSeats(body.assignedSeats);
     // Identificadores que no son UUID no pueden corresponder a ninguna oferta nuestra.
     if (!isUuid(body.offerId) || body.itinerarySelections.some((selection) => !isUuid(selection.itineraryId))) throw gone();
+    // Mitigación `HIDDEN_CABINS`: una opción de una cabina oculta (p. ej. una oferta vieja) ya no está disponible.
+    const hidden = this.config.hiddenCabins ?? []; if (hidden.length && body.itinerarySelections.some((selection) => hidden.includes(String(selection.cabinClass).toUpperCase()))) throw gone();
     const result = await this.call(req, 'holdOffer', { offerId: body.offerId, itinerarySelections: body.itinerarySelections, passengersBreakdown, ownerId: req.auth!.ownerId, idempotencyKey: req.header('idempotency-key'), ...(body.ttlMinutes !== undefined ? { ttlMinutes: body.ttlMinutes } : {}) }) as { holdId: string; status: string; expiresAt: string; ttlMinutes: number; lockedPrice: Json };
     // Asientos apartados: si alguno no se puede (SEAT_TAKEN) el hold no queda creado: se libera y el error se devuelve tal cual.
     if (seats.length) await this.holdSeats(req, result.holdId, result.expiresAt, seats, passengersBreakdown).catch(async (error: unknown) => { await this.call(req, 'releaseOfferHold', { holdId: result.holdId, ownerId: req.auth!.ownerId }).catch(() => undefined); throw error; });

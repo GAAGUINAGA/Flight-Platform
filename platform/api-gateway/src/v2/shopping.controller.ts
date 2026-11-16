@@ -22,7 +22,17 @@ export class V2ShoppingController {
   async search(req: Request, body: { itineraries: unknown[]; passengers?: Partial<ReturnType<typeof normalizeBreakdown>> }): Promise<Json> {
     const passengers = normalizeBreakdown(body.passengers); assertBreakdown(passengers);
     const response = await callGatewayGrpc(this.config, 'pricing', 'searchOffers', { legs: body.itineraries, passengers }, correlation(req)) as { totalOffers: number; offers: Json[] };
-    return { totalOffers: response.totalOffers, offers: response.offers.map((offer) => ({ offerId: offer.offerId, airline: { code: offer.airlineCode, name: offer.airlineName }, itineraries: Array.isArray(offer.itineraries) ? offer.itineraries.map((item: Json) => publicItinerary(item)) : [], grandTotal: offer.grandTotal })) };
+    const offers = response.offers.map((offer) => ({ offerId: offer.offerId, airline: { code: offer.airlineCode, name: offer.airlineName }, itineraries: Array.isArray(offer.itineraries) ? offer.itineraries.map((item: Json) => publicItinerary(item)) : [], grandTotal: offer.grandTotal }));
+    return this.visible(response.totalOffers, offers);
+  }
+
+  /** Mitigación `HIDDEN_CABINS`: quita las opciones de tarifa de las cabinas ocultas y las ofertas que se quedan sin opciones. Sin cabinas ocultas, la respuesta no cambia. */
+  private visible(totalOffers: number, offers: Json[]): Json {
+    const hidden = this.config.hiddenCabins ?? [];
+    if (hidden.length === 0) return { totalOffers, offers };
+    const kept = offers.map((offer) => ({ ...offer, itineraries: (offer.itineraries as Json[]).map((itinerary) => ({ ...itinerary, pricingOptions: (itinerary.pricingOptions as Json[]).filter((option) => !hidden.includes(String(option.cabinClass))) })) }))
+      .filter((offer) => (offer.itineraries as Json[]).length > 0 && (offer.itineraries as Json[]).every((itinerary) => (itinerary.pricingOptions as Json[]).length > 0));
+    return { totalOffers: totalOffers - (offers.length - kept.length), offers: kept };
   }
 
   async seatmap(req: Request, offerId: string, segmentId: string): Promise<Json> {
