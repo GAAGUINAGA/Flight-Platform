@@ -2,7 +2,7 @@ import { status as grpcStatus } from '@grpc/grpc-js';
 import { HttpException } from '@nestjs/common';
 
 // Duck typing: `web-errors` importa este módulo y un import directo de GatewayProblemError sería circular.
-const isGatewayProblem = (error: unknown): error is { statusCode: number; code: string; safeDetail?: string; problemType?: string } =>
+const isGatewayProblem = (error: unknown): error is { statusCode: number; code: string; safeDetail?: string; problemType?: string; invalidParams?: Array<{ name: string; reason: string }> } =>
   error instanceof Error && typeof (error as { statusCode?: unknown }).statusCode === 'number' && typeof (error as { code?: unknown }).code === 'string' && error.constructor.name === 'GatewayProblemError';
 
 /** Códigos del enum `ProblemDetails.code` del contrato v2 y el HTTP con el que el contrato los lista. */
@@ -14,7 +14,9 @@ export const V2_PROBLEM_STATUS: Readonly<Record<string, number>> = {
   PNR_CREATION_FAILED: 500, BOOKING_NOT_CONFIRMED: 409, TICKET_ISSUANCE_FAILED: 500, TICKET_ALREADY_ISSUED: 409,
   BAGGAGE_LIMIT_EXCEEDED: 422, FARE_NOT_CHANGEABLE: 409, CHANGE_OFFER_EXPIRED: 410, QUOTE_EXPIRED: 409, ALREADY_CANCELLED: 409, BOOKING_NOT_CANCELLABLE: 409, CUTOFF_PASSED: 409,
   CHECK_IN_NOT_AVAILABLE: 409, CHECK_IN_FAILED: 422, BOARDING_PASS_NOT_AVAILABLE: 409, FLIGHT_ALREADY_DEPARTED: 409, FLIGHT_CANCELLED: 409, FLIGHT_STATUS_NOT_AVAILABLE: 404, INVALID_STATUS_TRANSITION: 409,
-  PROMOTION_DISCOUNT_OUT_OF_RANGE: 422
+  PROMOTION_DISCOUNT_OUT_OF_RANGE: 422,
+  // Solo de la API interna de administración (F12c-4c): crear y abrir vuelos.
+  FLIGHT_ALREADY_EXISTS: 409, FLIGHT_NOT_READY: 409
 };
 
 const TITLES: Readonly<Record<string, string>> = {
@@ -50,7 +52,7 @@ export function v2ProblemFromError(error: unknown, request: V2RequestInfo): V2Pr
   if (isGatewayProblem(error)) {
     // Los guards de v1 lanzan VALIDATION_FAILED con 401/403: en v2 son UNAUTHORIZED/FORBIDDEN.
     const code = error.code in V2_PROBLEM_STATUS && !(error.code === 'VALIDATION_FAILED' && error.statusCode !== 400) ? error.code : codeForStatus(error.statusCode);
-    return buildV2Problem(code, request, { status: error.statusCode, detail: error.safeDetail, problemType: error.problemType });
+    return buildV2Problem(code, request, { status: error.statusCode, detail: error.safeDetail, problemType: error.problemType, invalidParams: error.invalidParams });
   }
   if (typeof error === 'object' && error !== null && 'code' in error && typeof error.code === 'number') {
     const details = (error as { details?: unknown }).details;

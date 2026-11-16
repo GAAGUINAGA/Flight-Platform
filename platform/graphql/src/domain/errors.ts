@@ -57,6 +57,8 @@ const MESSAGES: Record<string, string> = {
   FLIGHT_CANCELLED: 'El vuelo fue cancelado.',
   FLIGHT_STATUS_NOT_AVAILABLE: 'No hay estado disponible para ese vuelo.',
   INVALID_STATUS_TRANSITION: 'Ese cambio de estado del vuelo no es válido.',
+  FLIGHT_ALREADY_EXISTS: 'Ya existe un vuelo con ese número en esa fecha.',
+  FLIGHT_NOT_READY: 'El vuelo tiene tarifas incompletas y sigue cerrado: falta una tarifa válida en alguna cabina. Complétala en Tarifas y vuelve a abrirlo.',
   PROMOTION_DISCOUNT_OUT_OF_RANGE: 'El descuento debe estar entre 0 y 100.',
   WEB_ACTIVE_BOOKINGS_LIMIT: 'Alcanzaste el número máximo de reservas activas de tu cuenta.',
   WEB_PASSENGERS_PER_DAY_LIMIT: 'Alcanzaste el número máximo de pasajeros que tu cuenta puede reservar por día.',

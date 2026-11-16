@@ -13,11 +13,11 @@ const INTROSPECTION = { query: '{ __schema { queryType { name } types { name } }
 const names = parse(readFileSync(operationsPath, 'utf8')).definitions.filter((definition) => definition.kind === Kind.OPERATION_DEFINITION).map((definition) => definition.kind === Kind.OPERATION_DEFINITION ? definition.name?.value : undefined);
 
 describe('GQL-KNOWN: lista de operaciones permitidas (Q6)', () => {
-  it('GQL-KNOWN-01 packages/graphql-schema genera la lista a partir de las 30 operaciones de operations.graphql, una por documento y con nombre', () => {
-    const known = knownOperations(); expect(names).toHaveLength(30); expect(new Set(names).size).toBe(30); expect([...known.keys()].sort()).toEqual([...names].sort());
+  it('GQL-KNOWN-01 packages/graphql-schema genera la lista a partir de las 35 operaciones de operations.graphql, una por documento y con nombre', () => {
+    const known = knownOperations(); expect(names).toHaveLength(35); expect(new Set(names).size).toBe(35); expect([...known.keys()].sort()).toEqual([...names].sort());
     for (const [name, text] of known) { const document = parse(text); expect(document.definitions.filter((definition) => definition.kind === Kind.OPERATION_DEFINITION)).toHaveLength(1); expect(canonicalText(document)).toBe(text); expect({ name, ok: text.includes(`${name}`) }).toEqual({ name, ok: true }); }
   });
-  it('GQL-KNOWN-02 producción: las 30 operaciones publicadas se aceptan (ninguna recibe 403 de operación no permitida)', async () => {
+  it('GQL-KNOWN-02 producción: las 35 operaciones publicadas se aceptan (ninguna recibe 403 de operación no permitida)', async () => {
     const { app } = makeApp(PROD, new FakeGateway());
     for (const name of names) { const reply = await post(app, { query: operationText(name as string), operationName: name, variables: {} }); expect({ name, notAllowed: reply.status === 403 && reply.body.errors?.[0]?.extensions?.code === 'GRAPHQL_OPERATION_NOT_ALLOWED' }).toEqual({ name, notAllowed: false }); }
   });

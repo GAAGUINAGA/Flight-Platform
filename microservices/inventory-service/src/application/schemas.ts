@@ -55,7 +55,19 @@ export const upsertRequest = z.object({
   aircraft: opt(rpcString(32))
 });
 
-export const createHoldRequest = z.object({
+/** Creación estricta de un vuelo cerrado (F12c-4c): id y avión obligatorios, cada cabina con al menos un asiento. */
+export const createRequest = z.object({
+  flightInstanceId: uuid,
+  flightNumber,
+  departureIata: iata,
+  arrivalIata: iata,
+  departureAt: isoDateTime,
+  arrivalAt: isoDateTime,
+  cabins: z.array(z.object({ cabinClass: cabin, capacity: z.number().int().min(1).max(1000) }).strict()).min(1).max(4),
+  aircraft: rpcString(32)
+});
+
+export const createHoldRequest =z.object({
   ownerId,
   segments: z
     .array(z.object({ flightInstanceId: uuid, cabinClass: cabin, seats }).strict())

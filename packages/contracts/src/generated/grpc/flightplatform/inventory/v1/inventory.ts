@@ -161,6 +161,15 @@ export interface InventoryServiceClient {
   expireHolds(request: Empty): Observable<ExpireHoldsResponse>;
 
   listCabinOccupancy(request: ListFlightInstancesRequest): Observable<ListCabinOccupancyResponse>;
+
+  /**
+   * Aditivos F12c-4c (ADR-F12c4-01, adenda 4b/4c): creación ESTRICTA de un vuelo CERRADO (mismos campos que el upsert; el id lo da el llamador,
+   * mismos datos con el mismo id devuelve el existente, otro vuelo del mismo número y día local de salida es FLIGHT_ALREADY_EXISTS) y apertura a la venta.
+   */
+
+  createFlightInstance(request: UpsertFlightInstanceRequest): Observable<FlightInstanceResponse>;
+
+  openFlightInstance(request: GetFlightInstanceRequest): Observable<FlightInstanceResponse>;
 }
 
 export interface InventoryServiceController {
@@ -203,6 +212,19 @@ export interface InventoryServiceController {
   listCabinOccupancy(
     request: ListFlightInstancesRequest,
   ): Promise<ListCabinOccupancyResponse> | Observable<ListCabinOccupancyResponse> | ListCabinOccupancyResponse;
+
+  /**
+   * Aditivos F12c-4c (ADR-F12c4-01, adenda 4b/4c): creación ESTRICTA de un vuelo CERRADO (mismos campos que el upsert; el id lo da el llamador,
+   * mismos datos con el mismo id devuelve el existente, otro vuelo del mismo número y día local de salida es FLIGHT_ALREADY_EXISTS) y apertura a la venta.
+   */
+
+  createFlightInstance(
+    request: UpsertFlightInstanceRequest,
+  ): Promise<FlightInstanceResponse> | Observable<FlightInstanceResponse> | FlightInstanceResponse;
+
+  openFlightInstance(
+    request: GetFlightInstanceRequest,
+  ): Promise<FlightInstanceResponse> | Observable<FlightInstanceResponse> | FlightInstanceResponse;
 }
 
 export function InventoryServiceControllerMethods() {
@@ -221,6 +243,8 @@ export function InventoryServiceControllerMethods() {
       "closeFlightInstance",
       "expireHolds",
       "listCabinOccupancy",
+      "createFlightInstance",
+      "openFlightInstance",
     ];
     for (const method of grpcMethods) {
       const descriptor: any = Reflect.getOwnPropertyDescriptor(constructor.prototype, method);

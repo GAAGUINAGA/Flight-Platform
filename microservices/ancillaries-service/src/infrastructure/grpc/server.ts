@@ -21,6 +21,7 @@ import { PrismaSeatMapStore } from '../persistence/prisma-seat-map';
 import { PrismaSeatAssignmentStore } from '../persistence/prisma-seat-assignments';
 import { FakePricingGateway } from '../clients/fakes';
 import { Baggage } from '../../application/baggage';
+import { AircraftCatalog } from '../../application/aircraft-catalog';
 import { PrismaBaggageStore } from '../persistence/prisma-baggage';
 import { PrismaBookingOwnershipStore } from '../persistence/prisma-booking-ownership';
 
@@ -57,7 +58,7 @@ const buildDeps = (runtime?: AncillariesRuntime, supplied?: AncillariesDeps): An
   const layouts = new PrismaSeatMapStore(runtime.prisma);
   const ownership = new PrismaBookingOwnershipStore(runtime.prisma);
   const assignmentStore = new PrismaSeatAssignmentStore(runtime.prisma);
-  return { seatMap: new GetSeatMapForOffer(pricing, layouts, layouts), seats: new SeatAssignments(pricing, layouts, assignmentStore, ownership, assignmentStore, assignmentStore), baggage: new Baggage(new PrismaBaggageStore(runtime.prisma), Number(process.env.BAGGAGE_MAX_ALLOWED ?? '3'), ownership) };
+  return { aircraft: new AircraftCatalog(layouts), seatMap: new GetSeatMapForOffer(pricing, layouts, layouts), seats: new SeatAssignments(pricing, layouts, assignmentStore, ownership, assignmentStore, assignmentStore), baggage: new Baggage(new PrismaBaggageStore(runtime.prisma), Number(process.env.BAGGAGE_MAX_ALLOWED ?? '3'), ownership) };
 };
 export async function createAncillariesServer(options: { url: string; internalApiKey: string; runtime?: AncillariesRuntime; deps?: AncillariesDeps; logger?: PinoLogger }): Promise<INestMicroservice> {
   if (Buffer.byteLength(options.internalApiKey) < 32) throw new Error('INTERNAL_API_KEY must be at least 32 bytes');

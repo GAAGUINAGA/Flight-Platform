@@ -15,7 +15,9 @@ export const ERROR_CODES = [
   // Interno: no figura en el OpenAPI; el Gateway lo traduce a HTTP (F4).
   'NOT_FOUND',
   // Internos (ADR-F12c-03): topes por usuario del canal WEB que aplica Reservation. No figuran en el OpenAPI; el Gateway los traduce a 429 RATE_LIMIT_EXCEEDED con tipo propio.
-  'WEB_ACTIVE_LIMIT_EXCEEDED', 'WEB_PASSENGERS_LIMIT_EXCEEDED'
+  'WEB_ACTIVE_LIMIT_EXCEEDED', 'WEB_PASSENGERS_LIMIT_EXCEEDED',
+  // Internos (F12c-4c, ADR-F12c4-01 adenda): creación y apertura de vuelos por el administrador. No figuran en el OpenAPI público.
+  'FLIGHT_ALREADY_EXISTS', 'FLIGHT_NOT_READY'
 ] as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[number];
@@ -47,7 +49,9 @@ export const GRPC_STATUS_BY_CODE: Record<ErrorCode, number> = {
   FLIGHT_STATUS_NOT_AVAILABLE: status.NOT_FOUND,
   NOT_FOUND: status.NOT_FOUND,
   WEB_ACTIVE_LIMIT_EXCEEDED: status.RESOURCE_EXHAUSTED,
-  WEB_PASSENGERS_LIMIT_EXCEEDED: status.RESOURCE_EXHAUSTED
+  WEB_PASSENGERS_LIMIT_EXCEEDED: status.RESOURCE_EXHAUSTED,
+  FLIGHT_ALREADY_EXISTS: status.ALREADY_EXISTS,
+  FLIGHT_NOT_READY: status.FAILED_PRECONDITION
 };
 
 export class DomainError extends Error {

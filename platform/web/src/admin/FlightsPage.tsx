@@ -13,6 +13,8 @@ import { Notice } from '../components/ui/Notice';
 import ui from '../components/ui/ui.module.css';
 import { usePagedList } from './hooks';
 import { DataTable, FlightStatusBadge, updatedText } from './parts';
+import { CreateFlightPanel, type CreatedFlight } from './CreateFlightPanel';
+import { OpenFlightPanel, type OpenTarget } from './OpenFlightPanel';
 import { StatusChangePanel, type StatusResult, type StatusTarget } from './StatusChangePanel';
 import { STATUS_LABEL } from './status-rules';
 import a from './admin.module.css';
@@ -45,6 +47,9 @@ export function FlightsPage() {
     setDone(null);
     setSelected({ flightNumber: flight.flightNumber, origin: flight.departureIata, destination: flight.arrivalIata, departureAt: flight.departureAt, arrivalAt: flight.arrivalAt, date: known.get(flight.flightNumber)?.date ?? localDate(flight.departureAt, flight.departureIata), current: statusOf(flight) });
   };
+  const [creating, setCreating] = useState(false); const [created, setCreated] = useState<CreatedFlight | null>(null); const [opening, setOpening] = useState<OpenTarget | null>(null); const [opened, setOpened] = useState<string | null>(null);
+  const createdDone = (flight: CreatedFlight): void => { setCreated(flight); setCreating(false); setDate(flight.departureLocal.slice(0, 10)); flights.reload(); statuses.reload(); };
+  const openedDone = (target: OpenTarget): void => { setOpened(target.flightNumber); setOpening(null); flights.reload(); };
   const finished = (result: StatusResult, target: StatusTarget): void => {
     setOverrides((previous) => ({ ...previous, [`${target.flightNumber}|${target.departureAt}`]: result.flight.status }));
     setDone({ result, target }); setSelected(null); statuses.reload();
@@ -54,8 +59,17 @@ export function FlightsPage() {
     <>
       <div className={a.between}>
         <div><span className={ui.eyebrow}>Operaciones</span><h1>Vuelos</h1></div>
-        <span className={a.muted}>{updatedText(flights.updatedAt)}</span>
+        <div className={a.row}><span className={a.muted}>{updatedText(flights.updatedAt)}</span><Button onClick={() => { setCreating(true); setCreated(null); setOpened(null); setSelected(null); setOpening(null); }} disabled={creating}>Crear vuelo</Button></div>
       </div>
+      {created ? (
+        <Notice kind="success" title={`Vuelo ${created.flightNumber} creado: ${created.closed ? 'quedó cerrado, pendiente de revisión' : 'abierto a la venta'}.`}>
+          <p data-testid="create-result">{cityOf(created.origin)} → {cityOf(created.destination)} · salida {created.departureLocal.replace('T', ' ')} (hora de {cityOf(created.origin)}) · llegada {created.arrivalLocal.replace('T', ' ')} (hora de {cityOf(created.destination)}) · {created.fares.length} tarifa(s) guardadas y verificadas.</p>
+          {created.closed ? <p>Revísalo en la lista y ábrelo con «Abrir a la venta».</p> : <p><Link to={`/estado?vuelo=${encodeURIComponent(created.flightNumber)}&fecha=${encodeURIComponent(created.departureLocal.slice(0, 10))}`}>Ver el estado público del vuelo</Link></p>}
+        </Notice>
+      ) : null}
+      {opened ? <Notice kind="success" title={`El vuelo ${opened} se abrió a la venta.`}><p data-testid="open-result">Ya aparece en la web y en las búsquedas de Booking.</p></Notice> : null}
+      {creating ? <CreateFlightPanel sources={flights.items.map((flight) => ({ flightInstanceId: flight.flightInstanceId, flightNumber: flight.flightNumber, aircraft: flight.aircraft }))} onDone={createdDone} onCancel={() => setCreating(false)} /> : null}
+      {opening ? <OpenFlightPanel key={opening.flightInstanceId} target={opening} onDone={openedDone} onCancel={() => setOpening(null)} /> : null}
       <form className={`${ui.card} ${a.toolbar}`} aria-label="Elegir la fecha" onSubmit={(event) => event.preventDefault()} noValidate>
         <TextField label="Fecha de salida" type="date" value={date} onChange={(event) => { setDate(event.target.value); setSelected(null); setDone(null); setOverrides({}); }} error={validDate ? undefined : 'Elige una fecha válida.'} hint="Fecha local del aeropuerto de origen" />
         <Button variant="secondary" onClick={() => { flights.reload(); statuses.reload(); }} loading={flights.refreshing}>Actualizar</Button>
@@ -87,7 +101,12 @@ export function FlightsPage() {
                     <td><FlightStatusBadge status={statusOf(flight)} /></td>
                     <td>{flight.closed ? 'Cerrada' : 'Abierta'}</td>
                     <td className={a.num}>{flight.cabins.reduce((sum, cabin) => sum + cabin.capacity, 0)}</td>
-                    <td><Button size="small" variant="secondary" onClick={() => open(flight)} aria-label={`Cambiar estado del vuelo ${flight.flightNumber}`}>Cambiar estado</Button></td>
+                    <td>
+                      <div className={a.row}>
+                        <Button size="small" variant="secondary" onClick={() => open(flight)} aria-label={`Cambiar estado del vuelo ${flight.flightNumber}`}>Cambiar estado</Button>
+                        {flight.closed ? <Button size="small" onClick={() => { setOpened(null); setCreating(false); setOpening({ flightInstanceId: flight.flightInstanceId, flightNumber: flight.flightNumber, origin: flight.departureIata, destination: flight.arrivalIata, departureAt: flight.departureAt, cabins: flight.cabins.map((cabin) => ({ cabinClass: cabin.cabinClass, capacity: cabin.capacity })) }); }} aria-label={`Abrir a la venta el vuelo ${flight.flightNumber}`}>Abrir a la venta</Button> : null}
+                      </div>
+                    </td>
                   </tr>
                 ))}
               </tbody>

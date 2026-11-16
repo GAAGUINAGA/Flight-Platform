@@ -20,5 +20,14 @@ export class ReservationQueries {
     const detail = await this.get({ bookingId: stored.id, ownerId: stored.ownerId });
     return adminBookingView(stored, detail as unknown as Record<string, unknown>);
   }
+  /**
+   * Reserva (bookingId) y dueño de un PNR, solo para Operations en el check-in de la aerolínea (F12c-4b). El controlador exige rol admin (la identidad de
+   * servicio de Operations); el dueño nunca sale por la API del panel. Un PNR inexistente es NOT_FOUND.
+   */
+  async adminResolveOwner(input: { pnr: string }): Promise<{ bookingId: string; ownerId: string }> {
+    const stored = await this.store.findByPnr(input.pnr);
+    if (!stored) throw new DomainError('NOT_FOUND');
+    return { bookingId: stored.id, ownerId: stored.ownerId };
+  }
   async byFlightInstance(input: { flightInstanceId: string; limit?: number; cursor?: string }) { const result = await this.store.listByFlightInstance({ ...input, limit: Math.min(input.limit || 20, 50) }); return { items: result.items.map((value) => ({ ...summary(value), ownerId: value.ownerId })), nextCursor: result.nextCursor }; }
 }

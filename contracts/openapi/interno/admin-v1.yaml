@@ -22,6 +22,10 @@ info:
     - 2026-11-15 (F12c-4a, audit-39 H3; adenda al ADR-F12c4-01): `POST /bookings/search` deja de declarar `400` por «solicitud inválida» y declara el comportamiento real: un cuerpo inválido
       (ausente, ilegible, que no es objeto, sin `pnr`, de otro tipo, vacío, largo o con campos de más) responde `404 NOT_FOUND`, indistinguible de un PNR inexistente o ajeno, y se registra.
       El único `400` posible es el de la comprobación de transporte (sin HTTPS). Se define «intento» en la descripción de la ruta. Esta ruta no valida el cuerpo contra este documento (lo valida el punto único de la búsqueda).
+    - 2026-11-15 (F12c-4b y F12c-4c; adenda 4b/4c del ADR-F12c4-01): se **agregan** `GET /aircraft` (catálogo de aviones con los asientos de cada cabina), `POST /flights` (crear un vuelo con su tarifa: nace CERRADO;
+      se abre solo si `openForSale` y todas las tarifas quedaron guardadas), `POST /flights/{flightInstanceId}/open` (abrir a la venta un vuelo cerrado), `POST /bookings/check-in` (check-in hecho por la aerolínea, solo con el PNR)
+      y `POST /bookings/boarding-passes` (pases de abordar de esa reserva), con sus esquemas, y se amplía el enum de `ProblemDetails.code`. `POST /flights`, `/flights/{id}/open`, `/bookings/check-in` y `/bookings/boarding-passes`
+      siguen el patrón de punto único de `/bookings/search` (no se validan contra este documento: cada intento de un administrador autenticado queda registrado). Solo agregados: nada existente cambia.
     - 2026-11-15 (F12c-4a, audit-40 H1; decisión del humano, PLAN §4.4 regla 4; adenda al ADR-F12c4-01): solo documentación, sin cambio de comportamiento. El orden dentro del punto único es leer el cuerpo → **límite** → validar → buscar
       (antes se decía validar → límite). Con el límite alcanzado, cualquier intento, también uno con cuerpo inválido, recibe `429` con `Retry-After` y se registra `RATE_LIMITED`; el `404` por cuerpo inválido solo aplica si no se alcanzó el límite.
 servers:
@@ -57,6 +61,76 @@ paths:
         '400': { $ref: '#/components/responses/Problem400' }
         '401': { $ref: '#/components/responses/Problem401' }
         '403': { $ref: '#/components/responses/Problem403' }
+    post:
+      operationId: createAdminFlight
+      summary: Crear un vuelo con su tarifa (nace CERRADO)
+      description: |
+        Orden: valida todo sin escribir → crea el vuelo CERRADO (id derivado de la `Idempotency-Key`) → guarda las tarifas → las RELEE y compara → abre a la venta solo si `openForSale` y todas coinciden.
+        Un fallo intermedio deja un vuelo CERRADO (invisible en búsquedas y holds): `503` con el id en `detail`; reintentar con la MISMA `Idempotency-Key` y el mismo cuerpo lo completa.
+        La salida es la hora LOCAL del aeropuerto de origen (`AAAA-MM-DDTHH:mm`); la llegada se calcula con la duración. Se rechazan horas locales inexistentes o ambiguas, anticipación fuera de
+        60 min – 400 días, duración fuera de 20 min – 20 h, prefijo distinto del de la aerolínea, aeropuertos desconocidos o iguales, avión fuera del catálogo y cabinas sin tarifa. Moneda: solo USD.
+        Cada intento queda registrado (acción `CREATE_FLIGHT`, con el número de vuelo, sin tarifas). Un vuelo no se puede borrar.
+      parameters:
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AdminCreateFlight' }
+      responses:
+        '201':
+          description: Vuelo creado
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminCreatedFlight' }
+        '200':
+          description: "Reintento con la misma `Idempotency-Key` y el mismo cuerpo (cabecera `Idempotent-Replayed: true`)"
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminCreatedFlight' }
+        '400': { $ref: '#/components/responses/Problem400' }
+        '401': { $ref: '#/components/responses/Problem401' }
+        '403': { $ref: '#/components/responses/Problem403' }
+        '409': { $ref: '#/components/responses/Problem409' }
+        '503': { $ref: '#/components/responses/Problem503' }
+  /flights/{flightInstanceId}/open:
+    post:
+      operationId: openAdminFlight
+      summary: Abrir a la venta un vuelo cerrado
+      description: |
+        Solo si toda cabina con asientos tiene al menos una tarifa guardada y válida (USD, base + tasas = total, reglas y equipaje; se relee de Pricing al abrir, y es la misma comprobación de la apertura automática al crear): si no, `409 FLIGHT_NOT_READY` con `invalidParams` (`fares` / `missing-fare-<CABINA>`) y el vuelo sigue cerrado. Al abrirse aparece de inmediato en la web y en las búsquedas de Booking. Idempotente.
+        Cada intento queda registrado (acción `OPEN_FLIGHT`, con el id del vuelo).
+      parameters:
+        - name: flightInstanceId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+      responses:
+        '200':
+          description: Vuelo abierto a la venta
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminOpenedFlight' }
+        '400': { $ref: '#/components/responses/Problem400' }
+        '401': { $ref: '#/components/responses/Problem401' }
+        '403': { $ref: '#/components/responses/Problem403' }
+        '404': { $ref: '#/components/responses/Problem404' }
+        '409': { $ref: '#/components/responses/Problem409' }
+        '503': { $ref: '#/components/responses/Problem503' }
+  /aircraft:
+    get:
+      operationId: listAdminAircraft
+      summary: Catálogo de aviones con los asientos de cada cabina de su mapa
+      responses:
+        '200':
+          description: Aviones
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminAircraftCatalog' }
+        '401': { $ref: '#/components/responses/Problem401' }
+        '403': { $ref: '#/components/responses/Problem403' }
+        '503': { $ref: '#/components/responses/Problem503' }
   /fares:
     get:
       operationId: listAdminFares
@@ -151,6 +225,61 @@ paths:
         '404': { $ref: '#/components/responses/Problem404' }
         '429': { $ref: '#/components/responses/Problem429' }
         '503': { $ref: '#/components/responses/Problem503' }
+  /bookings/check-in:
+    post:
+      operationId: adminCheckInBooking
+      summary: Check-in hecho por la aerolínea (solo con el PNR)
+      description: |
+        Ejecuta el MISMO check-in que el cliente: ventana de 48 h a 60 min antes de la salida, reserva confirmada, boletos emitidos; la aerolínea NO puede forzarlo fuera de la ventana.
+        El dueño de la reserva lo resuelve Operations con Reservation (nunca lo envía el panel) y `booking.checked_in` llega al socio como siempre; el administrador queda en el registro de accesos
+        (acción `CHECK_IN`, con el PNR) y no viaja en el evento. Requiere `Idempotency-Key` (una por intención). Límite por administrador y hora (`ADMIN_CHECKIN_LIMIT_PER_HOUR`, 60): `429`.
+        Un cuerpo inválido o un PNR inexistente responden igual (`404`), como en `/bookings/search`. Reglas del negocio: `409 BOOKING_NOT_CONFIRMED`, `409 CHECK_IN_NOT_AVAILABLE`, `409 FLIGHT_ALREADY_DEPARTED`, `422 CHECK_IN_FAILED`.
+      parameters:
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AdminBookingSearch' }
+      responses:
+        '200':
+          description: Check-in hecho (o repetido con la misma clave)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminCheckInResult' }
+        '400': { $ref: '#/components/responses/Problem400' }
+        '401': { $ref: '#/components/responses/Problem401' }
+        '403': { $ref: '#/components/responses/Problem403' }
+        '404': { $ref: '#/components/responses/Problem404' }
+        '409': { $ref: '#/components/responses/Problem409' }
+        '422': { $ref: '#/components/responses/Problem409' }
+        '429': { $ref: '#/components/responses/Problem429' }
+        '503': { $ref: '#/components/responses/Problem503' }
+  /bookings/boarding-passes:
+    post:
+      operationId: adminBoardingPasses
+      summary: Pases de abordar de una reserva (por PNR)
+      description: |
+        Devuelve, por pasajero y tramo, el asiento y el código QR. Los nombres salen de `/bookings/search`. Cada consulta queda registrada (acción `BOARDING_PASSES`) y comparte el límite horario de los check-ins.
+        Sin check-in hecho: `409 BOARDING_PASS_NOT_AVAILABLE`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AdminBookingSearch' }
+      responses:
+        '200':
+          description: Pases
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminBoardingPasses' }
+        '400': { $ref: '#/components/responses/Problem400' }
+        '401': { $ref: '#/components/responses/Problem401' }
+        '403': { $ref: '#/components/responses/Problem403' }
+        '404': { $ref: '#/components/responses/Problem404' }
+        '409': { $ref: '#/components/responses/Problem409' }
+        '429': { $ref: '#/components/responses/Problem429' }
+        '503': { $ref: '#/components/responses/Problem503' }
 components:
   securitySchemes:
     BearerAuth:
@@ -158,7 +287,19 @@ components:
       scheme: bearer
       bearerFormat: JWT
       description: JWT de Supabase con `app_role = admin` y el scope `flights:admin`.
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: UUID v4, una por INTENCIÓN del administrador (la misma al reintentar; otra si cambia lo que se pide). Misma clave con otro cuerpo ⇒ `409 IDEMPOTENCY_KEY_REUSED`.
+      schema: { type: string, format: uuid }
   responses:
+    Problem409:
+      description: Regla de negocio, conflicto o `Idempotency-Key` reutilizada (los códigos de dominio están en el enum de `code`)
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/ProblemDetails' }
     Problem400:
       description: Solicitud inválida
       content:
@@ -207,7 +348,7 @@ components:
         instance: { type: string }
         code:
           type: string
-          enum: [VALIDATION_FAILED, UNAUTHORIZED, FORBIDDEN, NOT_FOUND, RATE_LIMIT_EXCEEDED, INTERNAL_ERROR, PROVIDER_UNAVAILABLE]
+          enum: [VALIDATION_FAILED, UNAUTHORIZED, FORBIDDEN, NOT_FOUND, RATE_LIMIT_EXCEEDED, INTERNAL_ERROR, PROVIDER_UNAVAILABLE, IDEMPOTENCY_KEY_REUSED, FLIGHT_ALREADY_EXISTS, FLIGHT_NOT_READY, BOOKING_NOT_CONFIRMED, CHECK_IN_NOT_AVAILABLE, CHECK_IN_FAILED, BOARDING_PASS_NOT_AVAILABLE, FLIGHT_ALREADY_DEPARTED]
         correlation_id: { type: string }
         timestamp: { type: string, format: date-time }
         invalidParams:
@@ -453,3 +594,142 @@ components:
                         segmentId: { type: string }
                         status: { type: string }
                         seat: { type: string }
+    AdminCheckInResult:
+      type: object
+      additionalProperties: false
+      required: [bookingId, status, checkedInPassengers]
+      properties:
+        bookingId: { type: string, format: uuid }
+        status: { type: string, description: "COMPLETED o FAILED" }
+        checkedInPassengers:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [passengerId, status, segments]
+            properties:
+              passengerId: { type: string }
+              status: { type: string }
+              segments:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: false
+                  required: [segmentId, status]
+                  properties:
+                    segmentId: { type: string }
+                    status: { type: string }
+                    seat: { type: string }
+    AdminBoardingPasses:
+      type: object
+      additionalProperties: false
+      required: [bookingId, boardingPasses]
+      properties:
+        bookingId: { type: string, format: uuid }
+        boardingPasses:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [passengerId, segmentId, seat, barcode, barcodeType]
+            properties:
+              passengerId: { type: string }
+              segmentId: { type: string }
+              seat: { type: string }
+              barcode: { type: string, description: "Contenido del QR (sin documentos, correo ni teléfono)." }
+              barcodeType: { type: string, enum: [QR] }
+    AdminAircraftCatalog:
+      type: object
+      additionalProperties: false
+      required: [aircraft]
+      properties:
+        aircraft:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [code, cabins]
+            properties:
+              code: { type: string }
+              cabins:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: false
+                  required: [cabinClass, seats]
+                  properties:
+                    cabinClass: { $ref: '#/components/schemas/CabinClass' }
+                    seats: { type: integer, minimum: 1 }
+    AdminCreateFlightFare:
+      type: object
+      additionalProperties: false
+      required: [cabinClass, fareBrand, baseFare, taxes, isRefundable, isChangeable, carryOnIncluded, checkedBaggageIncluded, extraBaggagePrice]
+      properties:
+        cabinClass: { $ref: '#/components/schemas/CabinClass' }
+        fareBrand: { type: string, minLength: 1, maxLength: 32 }
+        baseFare: { type: string, pattern: '^\d{1,7}\.\d{2}$', description: "Tarifa base en USD" }
+        taxes: { type: string, pattern: '^\d{1,7}\.\d{2}$', description: "Tasas en USD; el total es base + tasas y lo calcula el servidor" }
+        currency: { type: string, enum: [USD] }
+        isRefundable: { type: boolean }
+        isChangeable: { type: boolean }
+        carryOnIncluded: { type: integer, minimum: 0, maximum: 9 }
+        checkedBaggageIncluded: { type: integer, minimum: 0, maximum: 9 }
+        extraBaggagePrice: { type: string, pattern: '^\d{1,7}\.\d{2}$', description: "Precio de la maleta extra en USD" }
+    AdminCreateFlight:
+      type: object
+      additionalProperties: false
+      required: [flightNumber, origin, destination, departureLocal, durationMinutes, aircraft, fares]
+      properties:
+        flightNumber: { type: string, pattern: '^[A-Z0-9]{2}[0-9]{1,4}$', description: "Prefijo de la aerolínea (FP) y 1 a 4 dígitos. Único por día local de salida." }
+        origin: { type: string, pattern: '^[A-Z]{3}$', description: "Aeropuerto de la tabla única de zonas" }
+        destination: { type: string, pattern: '^[A-Z]{3}$', description: "Distinto del origen" }
+        departureLocal: { type: string, pattern: '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$', description: "Hora LOCAL del aeropuerto de origen, sin desplazamiento." }
+        durationMinutes: { type: integer, minimum: 20, maximum: 1200 }
+        aircraft: { type: string, description: "Código del catálogo (`GET /aircraft`); las cabinas y capacidades salen de su mapa de asientos." }
+        fares:
+          type: array
+          minItems: 1
+          maxItems: 16
+          items: { $ref: '#/components/schemas/AdminCreateFlightFare' }
+        openForSale: { type: boolean, default: false, description: "Abrirlo a la venta al terminar (si no, queda CERRADO para revisarlo)." }
+    AdminCreatedFlight:
+      type: object
+      additionalProperties: false
+      required: [flightInstanceId, flightNumber, status, closed, aircraft, origin, destination, departureAt, arrivalAt, departureLocal, arrivalLocal, durationMinutes, cabins, fares]
+      properties:
+        flightInstanceId: { type: string, format: uuid }
+        flightNumber: { type: string }
+        status: { type: string, enum: [CLOSED, OPEN] }
+        closed: { type: boolean }
+        aircraft: { type: string }
+        origin: { type: string }
+        destination: { type: string }
+        departureAt: { type: string, description: "UTC" }
+        arrivalAt: { type: string, description: "UTC" }
+        departureLocal: { type: string, description: "Hora local del origen" }
+        arrivalLocal: { type: string, description: "Hora local del destino" }
+        durationMinutes: { type: integer }
+        cabins:
+          type: array
+          items: { $ref: '#/components/schemas/CabinCapacity' }
+        fares:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [cabinClass, fareBrand, currency, baseFare, taxes, total]
+            properties:
+              cabinClass: { $ref: '#/components/schemas/CabinClass' }
+              fareBrand: { type: string }
+              currency: { type: string }
+              baseFare: { type: string }
+              taxes: { type: string }
+              total: { type: string }
+    AdminOpenedFlight:
+      type: object
+      additionalProperties: false
+      required: [flightInstanceId, status, closed]
+      properties:
+        flightInstanceId: { type: string, format: uuid }
+        status: { type: string, enum: [OPEN] }
+        closed: { type: boolean, enum: [false] }

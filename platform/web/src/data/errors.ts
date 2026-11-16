@@ -74,6 +74,8 @@ const MESSAGES: Readonly<Record<string, string>> = {
   FLIGHT_STATUS_NOT_AVAILABLE: 'No encontramos ese vuelo en esa fecha. La fecha es la de salida, en hora del aeropuerto de origen.',
   INVALID_STATUS_TRANSITION: 'Ese cambio de estado no es válido desde el estado actual del vuelo. Actualiza la lista para ver su estado y elige un cambio permitido.',
   PROMOTION_DISCOUNT_OUT_OF_RANGE: 'El descuento debe estar entre 0 y 100.',
+  FLIGHT_ALREADY_EXISTS: 'Ya existe un vuelo con ese número en esa fecha.',
+  FLIGHT_NOT_READY: 'El vuelo tiene tarifas incompletas y sigue cerrado: falta una tarifa válida en alguna cabina. Complétala en Tarifas y vuelve a abrirlo.',
   UNKNOWN_GATEWAY_ERROR: 'No pudimos completar la operación.',
   GRAPHQL_VALIDATION_FAILED: 'No pudimos procesar la solicitud. Revisa los datos ingresados.',
   GRAPHQL_OPERATION_NOT_ALLOWED: 'Esta versión de la aplicación ya no es compatible. Recarga la página.',

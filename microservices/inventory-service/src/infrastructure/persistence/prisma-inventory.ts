@@ -138,8 +138,8 @@ class PrismaTx implements InventoryTx {
     }
   }
 
-  async setClosed(id: string): Promise<boolean> {
-    const n = await this.tx.$executeRaw`UPDATE ${T.flights} SET closed = true, updated_at = now() WHERE id = ${id}::uuid`;
+  async setClosed(id: string, closed = true): Promise<boolean> {
+    const n = await this.tx.$executeRaw`UPDATE ${T.flights} SET closed = ${closed}, updated_at = now() WHERE id = ${id}::uuid`;
     return n > 0;
   }
 

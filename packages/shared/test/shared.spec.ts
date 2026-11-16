@@ -19,7 +19,7 @@ describe('shared foundations', () => {
     const codes = contract.match(/ {8}code:\r?\n {10}type: string\r?\n {10}enum:\r?\n((?: {10}- [A-Z_]+\r?\n)+)/)?.[1]
       .match(/ {10}- ([A-Z_]+)/g)?.map(line => line.trim().slice(2));
     expect(codes).toHaveLength(24);
-    const internalCodes = ['NOT_FOUND', 'WEB_ACTIVE_LIMIT_EXCEEDED', 'WEB_PASSENGERS_LIMIT_EXCEEDED'];
+    const internalCodes = ['NOT_FOUND', 'WEB_ACTIVE_LIMIT_EXCEEDED', 'WEB_PASSENGERS_LIMIT_EXCEEDED', 'FLIGHT_ALREADY_EXISTS', 'FLIGHT_NOT_READY'];
     const expected = [...codes!, ...internalCodes].sort();
     expect([...ERROR_CODES].sort()).toEqual(expected);
     expect(Object.keys(GRPC_STATUS_BY_CODE).sort()).toEqual(expected);

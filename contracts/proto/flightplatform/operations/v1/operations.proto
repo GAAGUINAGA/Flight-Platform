@@ -11,7 +11,13 @@ service OperationsService {
   rpc CountCheckedIn(CountCheckedInRequest) returns (CountCheckedInResponse);
   // Aditivo F12c-4a (ADR-F12c4-01): estado del check-in de una reserva, de solo lectura, para el administrador (rol admin, sin dueño).
   rpc AdminGetCheckInStatus(AdminCheckInStatusRequest) returns (AdminCheckInStatusResponse);
+  // Aditivos F12c-4b: check-in y pases de abordar hechos por la aerolínea. Rol admin. Solo reciben el PNR: el dueño lo resuelve Operations
+  // con Reservation (nunca lo envía el panel) y se ejecutan los MISMOS casos de uso que el cliente (ventana, estado, boletos).
+  rpc AdminCheckIn(AdminPnrRequest) returns (flightplatform.common.v1.CheckInResponse);
+  rpc AdminListBoardingPasses(AdminPnrRequest) returns (BoardingPassListResponse);
 }
+
+message AdminPnrRequest { string pnr = 1; }
 
 message AdminCheckInStatusRequest { string booking_id = 1; }
 message AdminCheckInSegmentStatus { string segment_id = 1; string status = 2; optional string seat = 3; }

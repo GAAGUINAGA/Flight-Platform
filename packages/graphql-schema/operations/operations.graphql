@@ -103,6 +103,26 @@ query AdminBookingByPnr($pnr: String!) {
     checkIn { status passengers { passengerId status segments { segmentId status seat } } }
   }
 }
+query AdminBoardingPasses($pnr: String!) {
+  adminBoardingPasses(pnr: $pnr) { bookingId boardingPasses { passengerId segmentId seat barcode barcodeType } }
+}
+query AdminAircraftCatalog {
+  adminAircraftCatalog { code cabins { cabinClass seats } }
+}
+mutation AdminCheckIn($pnr: String!, $idempotencyKey: ID!) {
+  adminCheckIn(pnr: $pnr, idempotencyKey: $idempotencyKey) {
+    bookingId status checkedInPassengers { passengerId status segments { segmentId status seat } }
+  }
+}
+mutation CreateFlight($input: CreateFlightInput!, $idempotencyKey: ID!) {
+  createFlight(input: $input, idempotencyKey: $idempotencyKey) {
+    flightInstanceId flightNumber status closed aircraft origin destination departureAt arrivalAt departureLocal arrivalLocal durationMinutes
+    cabins { cabinClass capacity } fares { cabinClass fareBrand currency baseFare taxes total }
+  }
+}
+mutation OpenFlightForSale($flightInstanceId: ID!, $idempotencyKey: ID!) {
+  openFlightForSale(flightInstanceId: $flightInstanceId, idempotencyKey: $idempotencyKey) { flightInstanceId status closed }
+}
 query AdminWebBookings($first: Int, $after: String) {
   adminWebBookings(first: $first, after: $after) {
     items { bookingId channel createdAt owner passengers test }

@@ -11,6 +11,10 @@ import { BoardingPass, CheckInResponse, FlightStatus } from "../../common/v1/com
 
 export const protobufPackage = "flightplatform.operations.v1";
 
+export interface AdminPnrRequest {
+  pnr: string;
+}
+
 export interface AdminCheckInStatusRequest {
   bookingId: string;
 }
@@ -113,6 +117,15 @@ export interface OperationsServiceClient {
   /** Aditivo F12c-4a (ADR-F12c4-01): estado del check-in de una reserva, de solo lectura, para el administrador (rol admin, sin dueño). */
 
   adminGetCheckInStatus(request: AdminCheckInStatusRequest): Observable<AdminCheckInStatusResponse>;
+
+  /**
+   * Aditivos F12c-4b: check-in y pases de abordar hechos por la aerolínea. Rol admin. Solo reciben el PNR: el dueño lo resuelve Operations
+   * con Reservation (nunca lo envía el panel) y se ejecutan los MISMOS casos de uso que el cliente (ventana, estado, boletos).
+   */
+
+  adminCheckIn(request: AdminPnrRequest): Observable<CheckInResponse>;
+
+  adminListBoardingPasses(request: AdminPnrRequest): Observable<BoardingPassListResponse>;
 }
 
 export interface OperationsServiceController {
@@ -141,6 +154,17 @@ export interface OperationsServiceController {
   adminGetCheckInStatus(
     request: AdminCheckInStatusRequest,
   ): Promise<AdminCheckInStatusResponse> | Observable<AdminCheckInStatusResponse> | AdminCheckInStatusResponse;
+
+  /**
+   * Aditivos F12c-4b: check-in y pases de abordar hechos por la aerolínea. Rol admin. Solo reciben el PNR: el dueño lo resuelve Operations
+   * con Reservation (nunca lo envía el panel) y se ejecutan los MISMOS casos de uso que el cliente (ventana, estado, boletos).
+   */
+
+  adminCheckIn(request: AdminPnrRequest): Promise<CheckInResponse> | Observable<CheckInResponse> | CheckInResponse;
+
+  adminListBoardingPasses(
+    request: AdminPnrRequest,
+  ): Promise<BoardingPassListResponse> | Observable<BoardingPassListResponse> | BoardingPassListResponse;
 }
 
 export function OperationsServiceControllerMethods() {
@@ -153,6 +177,8 @@ export function OperationsServiceControllerMethods() {
       "recoverCheckIns",
       "countCheckedIn",
       "adminGetCheckInStatus",
+      "adminCheckIn",
+      "adminListBoardingPasses",
     ];
     for (const method of grpcMethods) {
       const descriptor: any = Reflect.getOwnPropertyDescriptor(constructor.prototype, method);

@@ -11,7 +11,7 @@ describe('GQL-CON: contrato del esquema (el SDL es la única fuente)', () => {
     expect(() => buildSchema(readSchemaSdl())).not.toThrow(); expect(() => buildServiceSchema()).not.toThrow();
   });
   it('GQL-CON-02 toda operación publicada valida contra el SDL y tiene nombre', () => {
-    const schema = buildServiceSchema(); const known = knownOperations(); expect(known.size).toBe(30);
+    const schema = buildServiceSchema(); const known = knownOperations(); expect(known.size).toBe(35);
     for (const [name, text] of known) { const errors = validate(schema, parse(text)); expect({ name, errors: errors.map((error) => error.message) }).toEqual({ name, errors: [] }); }
   });
   it('GQL-CON-03 cada consulta y mutación del SDL tiene su operación publicada (y ninguna operación apunta a algo inexistente)', () => {

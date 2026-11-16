@@ -58,6 +58,28 @@ export function localDayRange(date: string, zone: string): [Date, Date] {
   return [new Date(startOfLocalDay(date, zone)), new Date(startOfLocalDay(nextDate(date), zone))];
 }
 
+export type LocalToUtc = { ok: true; instant: Date } | { ok: false; reason: 'invalid' | 'nonexistent' | 'ambiguous' };
+
+/**
+ * Hora civil local (`YYYY-MM-DDTHH:mm`, sin desplazamiento) de una zona → instante UTC (F12c-4c, ADR-F12c4-01 P6).
+ * Se rechazan las horas que NO existen (salto de horario de verano: ningún desfase la reproduce) y las AMBIGUAS (retroceso del reloj: dos
+ * desfases la reproducen); nunca se elige una en silencio.
+ */
+export function localToUtc(local: string, zone: string): LocalToUtc {
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(local);
+  if (!match) return { ok: false, reason: 'invalid' };
+  const [y, mo, d, h, mi] = match.slice(1).map(Number);
+  const wall = Date.UTC(y, mo - 1, d, h, mi);
+  const check = new Date(wall);
+  if (check.getUTCFullYear() !== y || check.getUTCMonth() !== mo - 1 || check.getUTCDate() !== d || check.getUTCHours() !== h || check.getUTCMinutes() !== mi) return { ok: false, reason: 'invalid' };
+  // Los desfases posibles en torno a esa fecha (un día antes y un día después cubren cualquier cambio de horario).
+  const offsets = new Set([offsetAt(wall - 86_400_000, zone), offsetAt(wall + 86_400_000, zone)]);
+  const matches = [...new Set([...offsets].map((offset) => wall - offset).filter((candidate) => offsetAt(candidate, zone) === wall - candidate))];
+  if (matches.length === 0) return { ok: false, reason: 'nonexistent' };
+  if (matches.length > 1) return { ok: false, reason: 'ambiguous' };
+  return { ok: true, instant: new Date(matches[0]) };
+}
+
 /** Fecha local (YYYY-MM-DD) de un instante en la zona. */
 export function localDay(instant: Date | string, zone: string): string {
   return parts(new Date(instant).getTime(), zone).date;

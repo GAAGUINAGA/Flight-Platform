@@ -43,6 +43,10 @@ export const OPERATIONS: readonly Operation[] = [
   rpc('vuelos.guardar-instancia', 'inventory', 'upsertFlightInstance', { roles: ['admin'] }),
   rpc('vuelos.listar-instancias', 'inventory', 'listFlightInstances', { roleHint: 'admin' }),
   rpc('vuelos.cerrar-instancia', 'inventory', 'closeFlightInstance', { roles: ['admin'] }),
+  // F12c-4c: crear un vuelo CERRADO, abrirlo a la venta y el catálogo de aviones (la orquestación vive en el Gateway por ahora; ADR-F12c4-01, adenda 4b/4c).
+  rpc('vuelos.crear-instancia', 'inventory', 'createFlightInstance', { roles: ['admin'] }),
+  rpc('vuelos.abrir-instancia', 'inventory', 'openFlightInstance', { roles: ['admin'] }),
+  rpc('vuelos.catalogo-aviones', 'ancillaries', 'listAircraftLayouts', { roles: ['admin'] }),
   rpc('vuelos.guardar-tarifa', 'pricing', 'upsertFare', { roles: ['admin'] }),
   rpc('vuelos.listar-tarifas', 'pricing', 'listFares', { roles: ['admin'] }),
   rpc('vuelos.registrar-novedad-operativa', 'operations', 'recordOperationalUpdate', { roles: ['admin'] }),
@@ -70,6 +74,9 @@ export const OPERATIONS: readonly Operation[] = [
   rpc('postventa.check-in', 'operations', 'checkIn'),
   rpc('postventa.listar-pases', 'operations', 'listBoardingPasses'),
   rpc('postventa.admin-estado-check-in', 'operations', 'adminGetCheckInStatus', { roles: ['admin'] }),
+  // F12c-4b: check-in y pases hechos por la aerolínea (solo el PNR; el dueño lo resuelve Operations con Reservation).
+  rpc('postventa.check-in-aerolinea', 'operations', 'adminCheckIn', { roles: ['admin'] }),
+  rpc('postventa.listar-pases-aerolinea', 'operations', 'adminListBoardingPasses', { roles: ['admin'] }),
   // clientes
   rpc('clientes.listar-suscripciones', 'webhooks', 'listSubscriptions'),
   rpc('clientes.crear-suscripcion', 'webhooks', 'createSubscription'),

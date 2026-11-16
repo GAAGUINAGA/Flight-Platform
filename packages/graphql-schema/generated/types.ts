@@ -41,6 +41,8 @@ export interface ConfirmDateChangeInput { bookingId: string; changeOfferId: stri
 export interface SeatChangeInput { passengerId: string; segmentId: string; seatNumber: string }
 export interface MoneyInput { currency: string; total: string; baseFare?: string | null; taxes?: string | null }
 export interface UpsertFareInput { fareId?: string | null; flightInstanceId: string; cabinClass: CabinClass; fareBrand: string; price: MoneyInput; isRefundable: boolean; isChangeable: boolean; personalItemIncluded?: boolean | null; carryOnIncluded?: number | null; checkedBaggageIncluded?: number | null; extraCheckedBaggagePrice: MoneyInput }
+export interface CreateFlightFareInput { cabinClass: CabinClass; fareBrand: string; baseFare: string; taxes: string; isRefundable: boolean; isChangeable: boolean; carryOnIncluded: number; checkedBaggageIncluded: number; extraBaggagePrice: string }
+export interface CreateFlightInput { flightNumber: string; origin: string; destination: string; departureLocal: string; durationMinutes: number; aircraft: string; fares: Array<CreateFlightFareInput>; openForSale?: boolean | null }
 export interface FlightStatusUpdateInput { date: string; status: FlightStatusCode; estimatedDepartureAt?: string | null; estimatedArrivalAt?: string | null; departureGate?: string | null; reason?: string | null }
 export interface PromotionAgreementInput { allowsPromotions: boolean; maxDiscountPercent: number; destinations?: Array<string> | null; routes?: Array<string> | null; cabins?: Array<CabinClass> | null; validUntil?: string | null; conditions?: string | null }
 
@@ -88,6 +90,16 @@ export type PromotionAgreementQueryVariables = Record<string, never>;
 export type PromotionAgreementQuery = { promotionAgreement: PromotionFieldsFragment | null };
 export type AdminBookingByPnrQueryVariables = { pnr: string };
 export type AdminBookingByPnrQuery = { adminBookingByPnr: { bookingId: string; pnr: string; status: string; channel: string; partnerRef: string | null; createdAt: string; grandTotal: { currency: string; total: string }; segments: Array<{ segmentId: string; flightNumber: string; origin: string; destination: string; departureAt: string; arrivalAt: string; departureLocal: string; arrivalLocal: string; status: string | null; cabinClass: string | null }>; passengers: Array<{ passengerId: string; passengerType: string; firstName: string; lastName: string; seats: Array<{ segmentId: string; seatNumber: string; status: string | null }>; extraBaggage: Array<{ itineraryId: string; quantity: number }> }>; tickets: Array<{ passengerId: string; status: string; eTicketLast4: string | null; segments: Array<{ segmentId: string; status: string }> }>; checkIn: { status: string; passengers: Array<{ passengerId: string; status: string; segments: Array<{ segmentId: string; status: string; seat: string | null }> }> } } | null };
+export type AdminBoardingPassesQueryVariables = { pnr: string };
+export type AdminBoardingPassesQuery = { adminBoardingPasses: { bookingId: string; boardingPasses: Array<{ passengerId: string; segmentId: string; seat: string; barcode: string; barcodeType: string }> } | null };
+export type AdminAircraftCatalogQueryVariables = Record<string, never>;
+export type AdminAircraftCatalogQuery = { adminAircraftCatalog: Array<{ code: string; cabins: Array<{ cabinClass: CabinClass; seats: number }> }> };
+export type AdminCheckInMutationVariables = { pnr: string; idempotencyKey: string };
+export type AdminCheckInMutation = { adminCheckIn: { bookingId: string; status: string; checkedInPassengers: Array<{ passengerId: string; status: string; segments: Array<{ segmentId: string; status: string; seat: string | null }> }> } };
+export type CreateFlightMutationVariables = { input: CreateFlightInput; idempotencyKey: string };
+export type CreateFlightMutation = { createFlight: { flightInstanceId: string; flightNumber: string; status: string; closed: boolean; aircraft: string; origin: string; destination: string; departureAt: string; arrivalAt: string; departureLocal: string; arrivalLocal: string; durationMinutes: number; cabins: Array<{ cabinClass: CabinClass; capacity: number }>; fares: Array<{ cabinClass: CabinClass; fareBrand: string; currency: string; baseFare: string; taxes: string; total: string }> } };
+export type OpenFlightForSaleMutationVariables = { flightInstanceId: string; idempotencyKey: string };
+export type OpenFlightForSaleMutation = { openFlightForSale: { flightInstanceId: string; status: string; closed: boolean } };
 export type AdminWebBookingsQueryVariables = { first?: number | null; after?: string | null };
 export type AdminWebBookingsQuery = { adminWebBookings: { items: Array<{ bookingId: string; channel: string; createdAt: string; owner: string | null; passengers: number; test: boolean }>; pageInfo: { endCursor: string | null; hasNextPage: boolean } } };
 export type HoldOfferMutationVariables = { input: HoldOfferInput; idempotencyKey: string };

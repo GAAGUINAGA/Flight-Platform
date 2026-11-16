@@ -20,7 +20,13 @@ service AncillariesService {
   rpc HoldSeats(HoldSeatsRequest) returns (HeldSeatsResponse);
   rpc ReleaseHeldSeats(HeldSeatsRequest) returns (flightplatform.common.v1.Empty);
   rpc GetHeldSeats(HeldSeatsRequest) returns (HeldSeatsResponse);
+  // Aditivo F12c-4c (ADR-F12c4-01): catálogo de aviones con los asientos de cada cabina de su mapa. Solo rol admin; sin dueño.
+  rpc ListAircraftLayouts(flightplatform.common.v1.Empty) returns (AircraftLayoutsResponse);
 }
+
+message AircraftCabinSeats { string cabin_class = 1; int32 seats = 2; }
+message AircraftLayout { string code = 1; repeated AircraftCabinSeats cabins = 2; }
+message AircraftLayoutsResponse { repeated AircraftLayout aircraft = 1; }
 
 message GetSeatMapForOfferRequest { string offer_id = 1; optional string segment_id = 2; }
 // restore_hold (aditivo F12b2fix, solo ReleaseAll): devuelve al hold los asientos que la reserva había tomado de él.

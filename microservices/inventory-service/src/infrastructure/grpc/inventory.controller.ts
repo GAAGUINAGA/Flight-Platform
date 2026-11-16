@@ -68,6 +68,14 @@ export class InventoryController {
     return this.flight(await this.d.admin.upsert(ctxOf(metadata), data));
   }
 
+  async createFlightInstance(data: unknown, metadata: Metadata) {
+    return this.flight(await this.d.admin.create(ctxOf(metadata), data));
+  }
+
+  async openFlightInstance(data: unknown, metadata: Metadata) {
+    return this.flight(await this.d.admin.open(ctxOf(metadata), data));
+  }
+
   async closeFlightInstance(data: unknown, metadata: Metadata) {
     return this.flight(await this.d.admin.close(ctxOf(metadata), data));
   }
@@ -142,6 +150,8 @@ export class InventoryController {
 const RPC_METHODS: Record<string, keyof InventoryController> = {
   UpsertFlightInstance: 'upsertFlightInstance',
   CloseFlightInstance: 'closeFlightInstance',
+  CreateFlightInstance: 'createFlightInstance',
+  OpenFlightInstance: 'openFlightInstance',
   ListFlightInstances: 'listFlightInstances',
   GetFlightInstance: 'getFlightInstance',
   FindFlightInstance: 'findFlightInstance',

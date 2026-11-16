@@ -26,7 +26,11 @@ service ReservationService {
   // Aditivo F12c-4a (ADR-F12c4-01): búsqueda de solo lectura por PNR para el administrador (cualquier canal). Rol admin; no recibe dueño y
   // devuelve una vista SIN datos personales (sin documento, correo, teléfono ni referencias de pago).
   rpc AdminGetReservationByPnr(AdminGetReservationByPnrRequest) returns (AdminBookingView);
+  // Aditivo F12c-4b (ADR-F12c4-01, adenda 4b/4c): resuelve el bookingId y el dueño de un PNR. Solo para el servicio Operations (identidad de
+  // servicio con rol admin): el panel jamás lo recibe ni lo envía; el dueño sale de aquí al caso de uso del check-in.
+  rpc AdminResolveBookingOwner(AdminGetReservationByPnrRequest) returns (AdminBookingOwner);
 }
+message AdminBookingOwner { string booking_id = 1; string owner_id = 2; }
 message AdminGetReservationByPnrRequest { string pnr = 1; }
 message AdminBookingSegment {
   string segment_id = 1;

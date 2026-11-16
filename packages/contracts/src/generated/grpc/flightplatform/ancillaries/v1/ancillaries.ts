@@ -11,6 +11,20 @@ import { BaggageOption, Empty, ExtraBaggage, SeatMap } from "../../common/v1/com
 
 export const protobufPackage = "flightplatform.ancillaries.v1";
 
+export interface AircraftCabinSeats {
+  cabinClass: string;
+  seats: number;
+}
+
+export interface AircraftLayout {
+  code: string;
+  cabins: AircraftCabinSeats[];
+}
+
+export interface AircraftLayoutsResponse {
+  aircraft: AircraftLayout[];
+}
+
 export interface GetSeatMapForOfferRequest {
   offerId: string;
   segmentId?: string | undefined;
@@ -182,6 +196,10 @@ export interface AncillariesServiceClient {
   releaseHeldSeats(request: HeldSeatsRequest): Observable<Empty>;
 
   getHeldSeats(request: HeldSeatsRequest): Observable<HeldSeatsResponse>;
+
+  /** Aditivo F12c-4c (ADR-F12c4-01): catálogo de aviones con los asientos de cada cabina de su mapa. Solo rol admin; sin dueño. */
+
+  listAircraftLayouts(request: Empty): Observable<AircraftLayoutsResponse>;
 }
 
 export interface AncillariesServiceController {
@@ -236,6 +254,12 @@ export interface AncillariesServiceController {
   getHeldSeats(
     request: HeldSeatsRequest,
   ): Promise<HeldSeatsResponse> | Observable<HeldSeatsResponse> | HeldSeatsResponse;
+
+  /** Aditivo F12c-4c (ADR-F12c4-01): catálogo de aviones con los asientos de cada cabina de su mapa. Solo rol admin; sin dueño. */
+
+  listAircraftLayouts(
+    request: Empty,
+  ): Promise<AircraftLayoutsResponse> | Observable<AircraftLayoutsResponse> | AircraftLayoutsResponse;
 }
 
 export function AncillariesServiceControllerMethods() {
@@ -256,6 +280,7 @@ export function AncillariesServiceControllerMethods() {
       "holdSeats",
       "releaseHeldSeats",
       "getHeldSeats",
+      "listAircraftLayouts",
     ];
     for (const method of grpcMethods) {
       const descriptor: any = Reflect.getOwnPropertyDescriptor(constructor.prototype, method);

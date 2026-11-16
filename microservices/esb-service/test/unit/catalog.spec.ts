@@ -13,8 +13,8 @@ const protoMethods = (service: ServiceName): Set<string> => {
 };
 
 describe('ESB-CAT: catálogo de operaciones con nombre', () => {
-  it('ESB-CAT-01: hay 48 operaciones gRPC (44 + apartar y liberar asientos del hold, F12b2fix + buscar por PNR y estado de check-in del administrador, F12c-4a), 1 compuesta de asientos y 1 de salud', () => {
-    expect(OPERATIONS.filter((operation) => operation.kind === 'rpc')).toHaveLength(48);
+  it('ESB-CAT-01: hay 53 operaciones gRPC (44 + apartar y liberar asientos del hold, F12b2fix + buscar por PNR y estado de check-in del administrador, F12c-4a + check-in y pases de la aerolínea, F12c-4b + crear y abrir vuelo y catálogo de aviones, F12c-4c), 1 compuesta de asientos y 1 de salud', () => {
+    expect(OPERATIONS.filter((operation) => operation.kind === 'rpc')).toHaveLength(53);
     expect(OPERATIONS.filter((operation) => operation.kind === 'composite')).toHaveLength(1);
     expect(OPERATIONS.filter((operation) => operation.kind === 'health')).toHaveLength(1);
   });
@@ -56,6 +56,14 @@ describe('ESB-CAT: catálogo de operaciones con nombre', () => {
   it('ESB-CAT-07 (F12c-4a): buscar por PNR y el estado de check-in del administrador exigen el rol admin en el ESB', () => {
     expect(findOperation('reservas.buscar-por-pnr')).toMatchObject({ kind: 'rpc', service: 'reservation', method: 'adminGetReservationByPnr', roles: ['admin'] });
     expect(findOperation('postventa.admin-estado-check-in')).toMatchObject({ kind: 'rpc', service: 'operations', method: 'adminGetCheckInStatus', roles: ['admin'] });
+  });
+
+  it('ESB-CAT-08 (F12c-4b/4c): check-in y pases de la aerolínea, crear y abrir vuelo y el catálogo de aviones exigen el rol admin en el ESB', () => {
+    expect(findOperation('postventa.check-in-aerolinea')).toMatchObject({ kind: 'rpc', service: 'operations', method: 'adminCheckIn', roles: ['admin'] });
+    expect(findOperation('postventa.listar-pases-aerolinea')).toMatchObject({ kind: 'rpc', service: 'operations', method: 'adminListBoardingPasses', roles: ['admin'] });
+    expect(findOperation('vuelos.crear-instancia')).toMatchObject({ kind: 'rpc', service: 'inventory', method: 'createFlightInstance', roles: ['admin'] });
+    expect(findOperation('vuelos.abrir-instancia')).toMatchObject({ kind: 'rpc', service: 'inventory', method: 'openFlightInstance', roles: ['admin'] });
+    expect(findOperation('vuelos.catalogo-aviones')).toMatchObject({ kind: 'rpc', service: 'ancillaries', method: 'listAircraftLayouts', roles: ['admin'] });
   });
 
   it('ESB-CAT-05: findOperation devuelve la operación o undefined', () => {

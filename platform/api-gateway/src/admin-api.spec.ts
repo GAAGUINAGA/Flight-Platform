@@ -126,10 +126,11 @@ describe('B-2: API interna de administración /api/admin/v1', () => {
   it('ADM-API-10: ruta desconocida o método no permitido bajo el prefijo ⇒ 404/405 ProblemDetails; solo los operaciones del OpenAPI interno existen', async () => {
     await withApp(async (server) => {
       expect((await request(server).get('/api/admin/v1/flights/close').set('Authorization', ADMIN)).status).toBeGreaterThanOrEqual(400);
-      expect((await request(server).post('/api/admin/v1/flights').set('Authorization', ADMIN).send({})).status).toBeGreaterThanOrEqual(400);
+      expect((await request(server).post('/api/admin/v1/flights').set('Authorization', ADMIN).send({})).status).toBeGreaterThanOrEqual(400); // F12c-4c: existe, pero sin Idempotency-Key ni cuerpo válido no escribe nada
+      expect((await request(server).delete('/api/admin/v1/flights').set('Authorization', ADMIN)).status).toBeGreaterThanOrEqual(400);
       expect(calls).toHaveLength(0);
     });
-    expect(Object.keys(adminSpec.paths).sort()).toEqual(['/bookings/search', '/fares', '/flights', '/web-bookings']);
+    expect(Object.keys(adminSpec.paths).sort()).toEqual(['/aircraft', '/bookings/boarding-passes', '/bookings/check-in', '/bookings/search', '/fares', '/flights', '/flights/{flightInstanceId}/open', '/web-bookings']);
   });
   it('ADM-API-11: el OpenAPI interno está separado de los contratos con Booking y aclara que no es el v1 deprecado', () => {
     for (const path of [openApiSpecPath(), openApiV2SpecPath()]) { const text = readFileSync(path, 'utf8'); expect(text).not.toContain('web-bookings'); expect(text).not.toContain('/api/admin'); expect(text).not.toContain('listAdminFares'); }

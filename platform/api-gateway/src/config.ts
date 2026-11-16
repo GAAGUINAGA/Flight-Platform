@@ -43,6 +43,22 @@ export interface AdminLimitsConfig {
   pnrSearchLimitPerHour: number;
   /** Check-ins hechos por la aerolínea por administrador y hora (F12c-4b). */
   checkInLimitPerHour: number;
+  /** Reglas de creación de vuelos (F12c-4c, ADR-F12c4-01 P6). Siempre variables de entorno con estos valores por omisión. */
+  flights: AdminFlightRules;
+}
+
+export interface AdminFlightRules {
+  /** Prefijo de aerolínea del número de vuelo (`ADMIN_FLIGHT_PREFIX`, por omisión `FP`). */
+  airlinePrefix: string;
+  /** Anticipación mínima de la salida (`ADMIN_FLIGHT_MIN_LEAD_MINUTES`, 60). */
+  minLeadMinutes: number;
+  /** Anticipación máxima en días (`ADMIN_FLIGHT_MAX_DAYS_AHEAD`, 400). */
+  maxDaysAhead: number;
+  /** Duración mínima y máxima en minutos (`ADMIN_FLIGHT_MIN_MINUTES` 20, `ADMIN_FLIGHT_MAX_MINUTES` 1200). */
+  minDurationMinutes: number;
+  maxDurationMinutes: number;
+  /** Monedas admitidas en tarifas (`ADMIN_FARE_CURRENCIES`, `USD`). */
+  currencies: string[];
 }
 
 export interface WebSalesConfig {
@@ -160,8 +176,19 @@ export function loadConfig(env: Environment = process.env): GatewayConfig {
   };
   const admin: AdminLimitsConfig = {
     pnrSearchLimitPerHour: positive(env.ADMIN_PNR_SEARCH_LIMIT_PER_HOUR, 30, 'ADMIN_PNR_SEARCH_LIMIT_PER_HOUR'),
-    checkInLimitPerHour: positive(env.ADMIN_CHECKIN_LIMIT_PER_HOUR, 60, 'ADMIN_CHECKIN_LIMIT_PER_HOUR')
+    checkInLimitPerHour: positive(env.ADMIN_CHECKIN_LIMIT_PER_HOUR, 60, 'ADMIN_CHECKIN_LIMIT_PER_HOUR'),
+    flights: {
+      airlinePrefix: (env.ADMIN_FLIGHT_PREFIX?.trim() || 'FP').toUpperCase(),
+      minLeadMinutes: positive(env.ADMIN_FLIGHT_MIN_LEAD_MINUTES, 60, 'ADMIN_FLIGHT_MIN_LEAD_MINUTES'),
+      maxDaysAhead: positive(env.ADMIN_FLIGHT_MAX_DAYS_AHEAD, 400, 'ADMIN_FLIGHT_MAX_DAYS_AHEAD'),
+      minDurationMinutes: positive(env.ADMIN_FLIGHT_MIN_MINUTES, 20, 'ADMIN_FLIGHT_MIN_MINUTES'),
+      maxDurationMinutes: positive(env.ADMIN_FLIGHT_MAX_MINUTES, 1200, 'ADMIN_FLIGHT_MAX_MINUTES'),
+      currencies: (env.ADMIN_FARE_CURRENCIES?.trim() || 'USD').split(',').map((value) => value.trim().toUpperCase()).filter(Boolean)
+    }
   };
+  if (!/^[A-Z0-9]{2}$/.test(admin.flights.airlinePrefix)) throw new Error('ADMIN_FLIGHT_PREFIX must be two letters or digits');
+  if (admin.flights.minDurationMinutes >= admin.flights.maxDurationMinutes) throw new Error('ADMIN_FLIGHT_MIN_MINUTES must be lower than ADMIN_FLIGHT_MAX_MINUTES');
+  if (!admin.flights.currencies.length || admin.flights.currencies.some((value) => !/^[A-Z]{3}$/.test(value))) throw new Error('ADMIN_FARE_CURRENCIES must be a list of ISO 4217 codes');
   return {
     transport, esbUrl: esbUrl || 'http://localhost:3100', esbUrlConfigured: Boolean(esbUrl), web, admin,
     v2, port, internalApiKey: required(env.INTERNAL_API_KEY, 'INTERNAL_API_KEY'), jwtIssuers,

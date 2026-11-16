@@ -122,6 +122,16 @@ export const queryResolvers = {
     const response = await call(ctx, { method: 'POST', path: `${ADMIN_API}/bookings/search`, body: { pnr } }, { auth: true, accept: [200, 404] });
     return response.status === 404 ? null : asJson(response.body);
   },
+  /** F12c-4b: pases de abordar por PNR (el Gateway registra y limita cada consulta). 404 ⇒ `null`. El PNR viaja tal cual; lo decide el Gateway. */
+  async adminBoardingPasses(_: unknown, args: Args, ctx: RequestContext): Promise<Json | null> {
+    const pnr = v.check(v.pnrText, args.pnr, 'pnr');
+    const response = await call(ctx, { method: 'POST', path: `${ADMIN_API}/bookings/boarding-passes`, body: { pnr } }, { auth: true, accept: [200, 404] });
+    return response.status === 404 ? null : asJson(response.body);
+  },
+  /** F12c-4c: catálogo de aviones con los asientos de cada cabina. */
+  async adminAircraftCatalog(_: unknown, __: Args, ctx: RequestContext): Promise<Json[]> {
+    return asList(asJson((await call(ctx, { method: 'GET', path: `${ADMIN_API}/aircraft` }, { auth: true })).body).aircraft);
+  },
   async adminWebBookings(_: unknown, args: Args, ctx: RequestContext): Promise<Json> {
     // Cursor opaco de punta a punta: `after` viaja tal cual como `before` y `nextCursor` vuelve como `endCursor`, sin interpretarlo. Máximo de `limit` de la API interna: 100.
     const limit = pageSize(args.first, 20, 100); const before = withAfter(args.after);
@@ -198,6 +208,22 @@ export const mutationResolvers = {
   async upsertFare(_: unknown, args: Args, ctx: RequestContext): Promise<Json> {
     const input = v.check(v.upsertFareInput, args.input, 'input');
     const body = asJson((await call(ctx, { method: 'PUT', path: `${ADMIN_API}/fares`, body: fareBody(input as Json) }, { auth: true })).body); return asJson(body.fare ?? body);
+  },
+  /** F12c-4b: check-in de la aerolínea. Solo el PNR (jamás un dueño): el Gateway y Operations resuelven y aplican las mismas reglas del cliente. */
+  async adminCheckIn(_: unknown, args: Args, ctx: RequestContext): Promise<Json> {
+    const pnr = v.check(v.pnrText, args.pnr, 'pnr'); const idempotency = key(args.idempotencyKey);
+    return asJson((await call(ctx, { method: 'POST', path: `${ADMIN_API}/bookings/check-in`, body: { pnr } }, { auth: true, idempotencyKey: idempotency })).body);
+  },
+  /** F12c-4c: crear un vuelo con su tarifa. Lista blanca de campos; el Gateway valida y registra todo (aquí no se rechaza nada por el valor). */
+  async createFlight(_: unknown, args: Args, ctx: RequestContext): Promise<Json> {
+    const idempotency = key(args.idempotencyKey); const input = asJson(args.input);
+    const fares = asList(input.fares).map((fare) => v.compact({ cabinClass: fare.cabinClass, fareBrand: fare.fareBrand, baseFare: fare.baseFare, taxes: fare.taxes, isRefundable: fare.isRefundable, isChangeable: fare.isChangeable, carryOnIncluded: fare.carryOnIncluded, checkedBaggageIncluded: fare.checkedBaggageIncluded, extraBaggagePrice: fare.extraBaggagePrice }));
+    const body = v.compact({ flightNumber: input.flightNumber, origin: input.origin, destination: input.destination, departureLocal: input.departureLocal, durationMinutes: input.durationMinutes, aircraft: input.aircraft, fares, openForSale: input.openForSale });
+    return asJson((await call(ctx, { method: 'POST', path: `${ADMIN_API}/flights`, body }, { auth: true, idempotencyKey: idempotency })).body);
+  },
+  async openFlightForSale(_: unknown, args: Args, ctx: RequestContext): Promise<Json> {
+    const idempotency = key(args.idempotencyKey); const id = v.check(v.uuid, args.flightInstanceId, 'flightInstanceId');
+    return asJson((await call(ctx, { method: 'POST', path: `${ADMIN_API}/flights/${id}/open` }, { auth: true, idempotencyKey: idempotency })).body);
   },
   async setPromotionAgreement(_: unknown, args: Args, ctx: RequestContext): Promise<Json> {
     const input = v.check(v.promotionInput, args.input, 'input'); const idempotency = key(args.idempotencyKey);

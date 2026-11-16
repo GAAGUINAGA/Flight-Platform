@@ -16,6 +16,10 @@ service InventoryService {
   rpc CloseFlightInstance(GetFlightInstanceRequest) returns (FlightInstanceResponse);
   rpc ExpireHolds(flightplatform.common.v1.Empty) returns (ExpireHoldsResponse);
   rpc ListCabinOccupancy(ListFlightInstancesRequest) returns (ListCabinOccupancyResponse);
+  // Aditivos F12c-4c (ADR-F12c4-01, adenda 4b/4c): creación ESTRICTA de un vuelo CERRADO (mismos campos que el upsert; el id lo da el llamador,
+  // mismos datos con el mismo id devuelve el existente, otro vuelo del mismo número y día local de salida es FLIGHT_ALREADY_EXISTS) y apertura a la venta.
+  rpc CreateFlightInstance(UpsertFlightInstanceRequest) returns (FlightInstanceResponse);
+  rpc OpenFlightInstance(GetFlightInstanceRequest) returns (FlightInstanceResponse);
 }
 
 message CabinOccupancy { flightplatform.common.v1.CabinClass cabin_class = 1; uint32 sellable = 2; uint32 held = 3; uint32 sold = 4; }

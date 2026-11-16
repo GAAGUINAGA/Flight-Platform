@@ -3,6 +3,7 @@ import { status } from '@grpc/grpc-js';
 import { firstValueFrom, Observable } from 'rxjs';
 import { CheckInReservationGateway, CheckInSeatGateway, CheckInSnapshot, CheckInTicketingGateway, Coupon } from '../../application/check-in-ports';
 import { DependencyUnavailable } from '../../application/ports';
+import { BookingOwnerResolver } from '../../application/admin-airline-check-in';
 
 async function translate<T>(operation: Promise<T>): Promise<T> {
   try { return await operation; }
@@ -24,6 +25,16 @@ export class GrpcCheckInReservation implements CheckInReservationGateway {
   constructor(private readonly client: ReservationClient, private readonly options: GrpcClientOptions) {}
   getSnapshot(ownerId: string, bookingId: string): Promise<CheckInSnapshot> {
     return translate(firstValueFrom(withGrpcCallContext(this.client, { ...this.options, ownerId }).getReservationSnapshot({ ownerId, bookingId })));
+  }
+}
+interface ReservationOwnerClient { adminResolveBookingOwner(input: { pnr: string }): Observable<{ bookingId: string; ownerId: string }> }
+/** F12c-4b: resuelve el dueño de un PNR con la identidad de servicio de Operations (rol admin); Reservation lo exige y no devuelve nada más. */
+export class GrpcBookingOwnerResolver implements BookingOwnerResolver {
+  constructor(private readonly client: ReservationOwnerClient, private readonly options: GrpcClientOptions) {}
+  async resolve(pnr: string): Promise<{ bookingId: string; ownerId: string }> {
+    const result = await translate(firstValueFrom(withGrpcCallContext(this.client, this.options).adminResolveBookingOwner({ pnr })));
+    if (!result?.bookingId || !result.ownerId) throw new DomainError('NOT_FOUND');
+    return { bookingId: result.bookingId, ownerId: result.ownerId };
   }
 }
 export class GrpcCheckInTicketing implements CheckInTicketingGateway {

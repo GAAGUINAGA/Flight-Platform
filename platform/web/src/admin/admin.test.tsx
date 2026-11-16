@@ -333,7 +333,8 @@ describe('buscar reserva por PNR (F12c-4a)', () => {
     expect(result.getByText(/10:00 \(hora local de UIO\)/)).toBeInTheDocument(); expect(result.getByText(/11:00 \(hora local de GPS\)/)).toBeInTheDocument();
     expect(result.getAllByText('Ana Pérez').length).toBeGreaterThan(0); expect(result.getByText('FP210: 12A')).toBeInTheDocument(); expect(result.getByText('•••• 7890')).toBeInTheDocument(); expect(result.getAllByText('Con check-in').length).toBeGreaterThan(0);
     const text = screen.getByTestId('booking-result').textContent ?? ''; expect(text).not.toMatch(/@|\+593|pasaporte|documento \d|pay_/i);
-    expect(within(screen.getByTestId('booking-result')).queryByRole('button')).not.toBeInTheDocument();
+    // La búsqueda no cambia nada: los únicos botones son los del check-in de la aerolínea (F12c-4b), que exige su propia confirmación.
+    expect(within(screen.getByTestId('booking-result')).getAllByRole('button').map((button) => button.textContent)).toEqual(['Hacer check-in', 'Ver pases de abordar']);
   });
 
   it('ADM-C61 un localizador mal escrito TAMBIÉN se envía (para que quede registrado) y se muestra como «no encontrada»; el de la web no muestra referencia de socio', async () => {

@@ -22,6 +22,11 @@ import {
 
 export const protobufPackage = "flightplatform.reservation.v1";
 
+export interface AdminBookingOwner {
+  bookingId: string;
+  ownerId: string;
+}
+
 export interface AdminGetReservationByPnrRequest {
   pnr: string;
 }
@@ -290,6 +295,13 @@ export interface ReservationServiceClient {
    */
 
   adminGetReservationByPnr(request: AdminGetReservationByPnrRequest): Observable<AdminBookingView>;
+
+  /**
+   * Aditivo F12c-4b (ADR-F12c4-01, adenda 4b/4c): resuelve el bookingId y el dueño de un PNR. Solo para el servicio Operations (identidad de
+   * servicio con rol admin): el panel jamás lo recibe ni lo envía; el dueño sale de aquí al caso de uso del check-in.
+   */
+
+  adminResolveBookingOwner(request: AdminGetReservationByPnrRequest): Observable<AdminBookingOwner>;
 }
 
 export interface ReservationServiceController {
@@ -370,6 +382,15 @@ export interface ReservationServiceController {
   adminGetReservationByPnr(
     request: AdminGetReservationByPnrRequest,
   ): Promise<AdminBookingView> | Observable<AdminBookingView> | AdminBookingView;
+
+  /**
+   * Aditivo F12c-4b (ADR-F12c4-01, adenda 4b/4c): resuelve el bookingId y el dueño de un PNR. Solo para el servicio Operations (identidad de
+   * servicio con rol admin): el panel jamás lo recibe ni lo envía; el dueño sale de aquí al caso de uso del check-in.
+   */
+
+  adminResolveBookingOwner(
+    request: AdminGetReservationByPnrRequest,
+  ): Promise<AdminBookingOwner> | Observable<AdminBookingOwner> | AdminBookingOwner;
 }
 
 export function ReservationServiceControllerMethods() {
@@ -392,6 +413,7 @@ export function ReservationServiceControllerMethods() {
       "quoteCancellation",
       "getStoredCancellationQuote",
       "adminGetReservationByPnr",
+      "adminResolveBookingOwner",
     ];
     for (const method of grpcMethods) {
       const descriptor: any = Reflect.getOwnPropertyDescriptor(constructor.prototype, method);

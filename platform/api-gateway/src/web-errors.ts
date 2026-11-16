@@ -5,7 +5,7 @@ import { isV2Path, v2ProblemFromError } from './v2/problem';
 
 export class GatewayProblemError extends Error {
   /** `problemType` (solo v2): sufijo del `ProblemDetails.type` para distinguir casos que comparten `code` (p. ej. los rechazos del canal WEB). */
-  constructor(public readonly statusCode: number, public readonly code: string, public readonly safeDetail?: string, public readonly problemType?: string) { super(code); }
+  constructor(public readonly statusCode: number, public readonly code: string, public readonly safeDetail?: string, public readonly problemType?: string, public readonly invalidParams?: Array<{ name: string; reason: string }>) { super(code); }
 }
 
 export function asProblem(error: unknown, operation?: string): ProblemDetails {

@@ -46,7 +46,8 @@ export interface HoldSummary { activeHolds: number; nextExpiryAt?: Date }
 export interface InventoryTx {
   getFlights(ids: string[]): Promise<FlightInstance[]>;
   saveFlight(flight: FlightInstance): Promise<void>;
-  setClosed(id: string): Promise<boolean>;
+  /** Cierra (por omisión) o abre (`closed = false`) el vuelo. */
+  setClosed(id: string, closed?: boolean): Promise<boolean>;
   /** UPDATE condicional: solo si sellable - held - sold >= seats y el vuelo no est? cerrado. */
   tryReserve(flightInstanceId: string, cabin: CabinClass, seats: number): Promise<boolean>;
   adjust(change: Exclude<CapacityChange, 'hold'>, flightInstanceId: string, cabin: CabinClass, seats: number): Promise<void>;

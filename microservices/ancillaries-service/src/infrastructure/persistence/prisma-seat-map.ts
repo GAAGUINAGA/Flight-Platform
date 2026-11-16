@@ -6,6 +6,10 @@ export class PrismaSeatMapStore implements SeatLayoutStore, SeatAvailabilityStor
   async listByAircraft(aircraft: string) {
     return this.prisma.seatLayout.findMany({ where: { aircraft }, orderBy: [{ cabinClass: 'asc' }, { rowNumber: 'asc' }, { seatNumber: 'asc' }], select: { cabinClass: true, seatNumber: true, rowNumber: true, characteristics: true } });
   }
+  async countSeatsByAircraftAndCabin() {
+    const rows = await this.prisma.seatLayout.groupBy({ by: ['aircraft', 'cabinClass'], _count: { _all: true } });
+    return rows.map((row) => ({ aircraft: row.aircraft, cabinClass: row.cabinClass, seats: row._count._all }));
+  }
   async activeSeatNumbers(flightInstanceId: string): Promise<string[]> {
     return [...(await this.seatStatuses(flightInstanceId, new Date())).keys()];
   }

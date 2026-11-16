@@ -184,6 +184,27 @@ type AdminBooking {
   bookingId: ID! pnr: String! status: String! channel: String! partnerRef: String createdAt: String! grandTotal: AdminBookingTotal!
   segments: [AdminBookingSegment!]! passengers: [AdminBookingPassenger!]! tickets: [AdminBookingTicket!]! checkIn: AdminCheckInState!
 }
+# F12c-4b: check-in hecho por la aerolínea (solo con el PNR) y pases de abordar. El dueño lo resuelve el servidor; el panel no lo envía.
+type AdminCheckInResult { bookingId: ID! status: String! checkedInPassengers: [AdminCheckInPassenger!]! }
+type AdminBoardingPass { passengerId: ID! segmentId: ID! seat: String! barcode: String! barcodeType: String! }
+type AdminBoardingPasses { bookingId: ID! boardingPasses: [AdminBoardingPass!]! }
+# F12c-4c: crear vuelos con su tarifa. La salida es la hora LOCAL del origen (AAAA-MM-DDTHH:mm); las cabinas y capacidades salen del avión.
+type AdminAircraftCabin { cabinClass: CabinClass! seats: Int! }
+type AdminAircraft { code: String! cabins: [AdminAircraftCabin!]! }
+input CreateFlightFareInput {
+  cabinClass: CabinClass! fareBrand: String! baseFare: String! taxes: String! isRefundable: Boolean! isChangeable: Boolean!
+  carryOnIncluded: Int! checkedBaggageIncluded: Int! extraBaggagePrice: String!
+}
+input CreateFlightInput {
+  flightNumber: String! origin: String! destination: String! departureLocal: String! durationMinutes: Int! aircraft: String!
+  fares: [CreateFlightFareInput!]! openForSale: Boolean
+}
+type CreatedFlightFare { cabinClass: CabinClass! fareBrand: String! currency: String! baseFare: String! taxes: String! total: String! }
+type CreatedFlight {
+  flightInstanceId: ID! flightNumber: String! status: String! closed: Boolean! aircraft: String! origin: String! destination: String!
+  departureAt: String! arrivalAt: String! departureLocal: String! arrivalLocal: String! durationMinutes: Int! cabins: [AdminCabin!]! fares: [CreatedFlightFare!]!
+}
+type OpenedFlight { flightInstanceId: ID! status: String! closed: Boolean! }
 input FlightStatusUpdateInput { date: Date! status: FlightStatusCode! estimatedDepartureAt: DateTime estimatedArrivalAt: DateTime departureGate: String reason: String }
 type FlightStatusUpdate { previousStatus: FlightStatusCode flight: FlightStatus! affectedBookings: Int! eventId: String }
 type PromotionAgreement {
@@ -220,6 +241,8 @@ type Query {
   promotionAgreement: PromotionAgreement @admin                                                    # GW: GET v2 /promociones/contrato (404 → null)
   adminBookingByPnr(pnr: String!): AdminBooking @admin                                             # GW: ADMIN-API POST /bookings/search (404 → null; un PNR inexistente, ajeno o inválido responden igual; cada búsqueda queda registrada)
   adminWebBookings(first: Int = 20, after: String): WebTestBookingConnection! @admin              # GW: ADMIN-API GET /web-bookings (cursor opaco: after ⇒ before; hacia reservas más antiguas)
+  adminBoardingPasses(pnr: String!): AdminBoardingPasses @admin                                    # GW: ADMIN-API POST /bookings/boarding-passes (404 → null; cada consulta queda registrada y limitada)
+  adminAircraftCatalog: [AdminAircraft!]! @admin                                                   # GW: ADMIN-API GET /aircraft
 }
 
 # ───────── Mutaciones (idempotencyKey: UUID generado por el cliente por intención) ─────────
@@ -237,4 +260,7 @@ type Mutation {
   updateFlightStatus(flightNumber: String!, input: FlightStatusUpdateInput!, idempotencyKey: ID): FlightStatusUpdate! @admin  # GW: PATCH v2 /flights/{n}/status
   upsertFare(input: UpsertFareInput!): AdminFare! @admin                                       # GW: ADMIN-API PUT /admin/fares (B-2)
   setPromotionAgreement(input: PromotionAgreementInput!, idempotencyKey: ID!): PromotionAgreement! @admin  # GW: PUT v2 /promociones/contrato
+  adminCheckIn(pnr: String!, idempotencyKey: ID!): AdminCheckInResult! @admin                  # GW: ADMIN-API POST /bookings/check-in (mismas reglas que el cliente; sin forzar la ventana)
+  createFlight(input: CreateFlightInput!, idempotencyKey: ID!): CreatedFlight! @admin          # GW: ADMIN-API POST /flights (nace CERRADO; se abre si openForSale y las tarifas quedaron guardadas)
+  openFlightForSale(flightInstanceId: ID!, idempotencyKey: ID!): OpenedFlight! @admin          # GW: ADMIN-API POST /flights/{id}/open
 }

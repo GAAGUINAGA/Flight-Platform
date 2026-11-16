@@ -31,7 +31,7 @@ import { PostSaleController } from './post-sale.controller';
 import { OperationsController } from './operations.controller';
 import { WebhooksController } from './webhooks.controller';
 import { AdminController } from './admin.controller';
-import { AdminApiController, isAdminSearch, mountAdminApiHttp } from './admin-api';
+import { AdminApiController, isAdminPointRoute, mountAdminApiHttp } from './admin-api';
 import { InMemoryAdminAccessLog, PrismaAdminAccessLog, type AdminAccessLog } from './admin-access-log';
 import { AnyScopeGuard } from './v2/v2-security';
 import { DevAuthService, InMemoryDevAuthClientStore, type DevAuthClientStore } from './v2/dev-auth';
@@ -92,6 +92,8 @@ export async function createGatewayApp(config: GatewayConfig) {
     { provide: V2HealthService, useFactory: () => new V2HealthService(config) },
     { provide: 'V2_STATE', useFactory: (client: PrismaClient): V2StateStore => config.v2!.stateStore === 'memory' ? new InMemoryV2StateStore() : new PrismaV2StateStore(client), inject: [PrismaClient] },
     { provide: 'ADMIN_ACCESS_LOG', useFactory: (client: PrismaClient): AdminAccessLog => config.v2!.stateStore === 'memory' ? new InMemoryAdminAccessLog() : new PrismaAdminAccessLog(client), inject: [PrismaClient] },
+    // Idempotencia de las acciones del administrador (F12c-4b/4c): se aplica dentro del punto único, no como interceptor, para que todo intento quede registrado.
+    { provide: 'ADMIN_IDEMPOTENCY', useFactory: (store: PrismaIdempotencyStore) => (process.env.NODE_ENV === 'test' ? new InMemoryGatewayIdempotencyStore(config.idempotencyTtlHours) : store), inject: [PrismaIdempotencyStore] },
     { provide: 'V2_PROMOTIONS', useFactory: (client: PrismaClient): PromotionStore => config.v2!.stateStore === 'memory' ? new InMemoryPromotionStore() : new PrismaPromotionStore(client), inject: [PrismaClient] },
     { provide: V2IdempotencyInterceptor, useFactory: (reflector: Reflector, store: PrismaIdempotencyStore) => new V2IdempotencyInterceptor(reflector, process.env.NODE_ENV === 'test' ? new InMemoryGatewayIdempotencyStore(config.idempotencyTtlHours) : store), inject: [Reflector, PrismaIdempotencyStore] }, { provide: APP_INTERCEPTOR, useExisting: V2IdempotencyInterceptor },
     { provide: JwtAuthGuard, useFactory: (reflector: Reflector, devAuth: DevAuthService) => new JwtAuthGuard(reflector, config, devAuth), inject: [Reflector, DevAuthService] },
@@ -119,7 +121,7 @@ export async function createGatewayApp(config: GatewayConfig) {
   express.use('/api/v2/vuelos/booking-events', expressFactory.json({ limit: '100kb', type: ['application/json', 'application/cloudevents+json'], verify: (req, _res, buf) => { (req as Request).rawBody = Buffer.from(buf); } }));
   // La búsqueda por PNR NO pasa por el lector global: su cuerpo lo lee `mountAdminApiHttp` después de la autenticación y del rol (ADR-F12c4-01, adenda audit-39).
   const globalJson = expressFactory.json({ limit: '100kb' });
-  express.use((req: Request, res: Response, next: NextFunction) => (isAdminSearch(req) ? next() : globalJson(req, res, next)));
+  express.use((req: Request, res: Response, next: NextFunction) => (isAdminPointRoute(req) ? next() : globalJson(req, res, next)));
   mountV2Http(express, config, app.get(DevAuthService));
   mountAdminApiHttp(express, config, app.get(DevAuthService));
   const problemAjv = new Ajv({ strict: false }); addFormats(problemAjv);
