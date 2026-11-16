@@ -94,6 +94,15 @@ query FlightOperations($date: Date!, $origin: String, $destination: String, $sta
   }
 }
 query PromotionAgreement { promotionAgreement { ...PromotionFields } }
+query AdminBookingByPnr($pnr: String!) {
+  adminBookingByPnr(pnr: $pnr) {
+    bookingId pnr status channel partnerRef createdAt grandTotal { currency total }
+    segments { segmentId flightNumber origin destination departureAt arrivalAt departureLocal arrivalLocal status cabinClass }
+    passengers { passengerId passengerType firstName lastName seats { segmentId seatNumber status } extraBaggage { itineraryId quantity } }
+    tickets { passengerId status eTicketLast4 segments { segmentId status } }
+    checkIn { status passengers { passengerId status segments { segmentId status seat } } }
+  }
+}
 query AdminWebBookings($first: Int, $after: String) {
   adminWebBookings(first: $first, after: $after) {
     items { bookingId channel createdAt owner passengers test }

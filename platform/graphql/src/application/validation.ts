@@ -57,6 +57,8 @@ export const promotionInput = z.object({
 });
 export const cursorText = z.string().regex(/^[A-Za-z0-9._~-]{1,200}$/);
 export const idText = opaqueId;
+/** PNR escrito por el administrador: viaja TAL CUAL. La forma (recorte, mayúsculas, formato, largo) la decide solo el Gateway, que REGISTRA todo intento, también el mal formado (responde igual que uno inexistente). Aquí no se rechaza ni se altera nada. */
+export const pnrText = z.string();
 export const iataCode = iata;
 export const dateText = date;
 export const reasonText = z.string().trim().max(255);

@@ -34,6 +34,15 @@ export interface GatewayConfig {
   v2?: V2Config;
   /** Canal de venta WEB (pago simulado de prueba, ADR-F12c-02). Sin `WEB_PAYMENT_MODE=simulated` no se vende. */
   web: WebSalesConfig;
+  /** Límites por administrador del panel ampliado (F12c-4, ADR-F12c4-01). Ausente = valores por omisión. */
+  admin?: AdminLimitsConfig;
+}
+
+export interface AdminLimitsConfig {
+  /** Búsquedas por PNR por administrador y hora (cuentan todos los intentos, salvo los ya rechazados por el propio límite). */
+  pnrSearchLimitPerHour: number;
+  /** Check-ins hechos por la aerolínea por administrador y hora (F12c-4b). */
+  checkInLimitPerHour: number;
 }
 
 export interface WebSalesConfig {
@@ -149,8 +158,12 @@ export function loadConfig(env: Environment = process.env): GatewayConfig {
     maxPassengersPerDay: positive(env.WEB_MAX_PASSENGERS_PER_DAY, 10, 'WEB_MAX_PASSENGERS_PER_DAY'),
     requireVerifiedEmail: env.WEB_REQUIRE_VERIFIED_EMAIL !== 'false'
   };
+  const admin: AdminLimitsConfig = {
+    pnrSearchLimitPerHour: positive(env.ADMIN_PNR_SEARCH_LIMIT_PER_HOUR, 30, 'ADMIN_PNR_SEARCH_LIMIT_PER_HOUR'),
+    checkInLimitPerHour: positive(env.ADMIN_CHECKIN_LIMIT_PER_HOUR, 60, 'ADMIN_CHECKIN_LIMIT_PER_HOUR')
+  };
   return {
-    transport, esbUrl: esbUrl || 'http://localhost:3100', esbUrlConfigured: Boolean(esbUrl), web,
+    transport, esbUrl: esbUrl || 'http://localhost:3100', esbUrlConfigured: Boolean(esbUrl), web, admin,
     v2, port, internalApiKey: required(env.INTERNAL_API_KEY, 'INTERNAL_API_KEY'), jwtIssuers,
     corsOrigins: (env.CORS_ORIGINS ?? '').split(',').map((x: string) => x.trim()).filter(Boolean),
     publicLimit: Number(env.RATE_LIMIT_PUBLIC_PER_MIN ?? 60), authLimit: Number(env.RATE_LIMIT_AUTH_PER_MIN ?? 120),

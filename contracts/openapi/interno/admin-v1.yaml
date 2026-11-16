@@ -17,6 +17,13 @@ info:
       (`type: string`, sin `format`, `maxLength: 200`). Motivo: la lista se ordena por fecha de creación **y** `bookingId` (desempate) y un cursor que solo fuera una fecha repetía o saltaba reservas
       con la misma fecha de creación en el borde de la página. El cliente no debe interpretarlo ni formatearlo, solo devolver el `nextCursor` recibido. Un `before` mal formado o alterado responde `400 VALIDATION_FAILED`.
       Cambio incompatible solo para quien tratara el cursor como fecha: se declara aquí por no haberse declarado en la entrega original.
+    - 2026-11-15 (F12c-4a; ADR-F12c4-01): se **agrega** `POST /bookings/search` (búsqueda de solo lectura de una reserva por PNR, de cualquier canal, sin datos personales; cada intento queda registrado) y
+      los esquemas `AdminBookingSearch` y `AdminBookingView`. Solo agregados: nada existente cambia.
+    - 2026-11-15 (F12c-4a, audit-39 H3; adenda al ADR-F12c4-01): `POST /bookings/search` deja de declarar `400` por «solicitud inválida» y declara el comportamiento real: un cuerpo inválido
+      (ausente, ilegible, que no es objeto, sin `pnr`, de otro tipo, vacío, largo o con campos de más) responde `404 NOT_FOUND`, indistinguible de un PNR inexistente o ajeno, y se registra.
+      El único `400` posible es el de la comprobación de transporte (sin HTTPS). Se define «intento» en la descripción de la ruta. Esta ruta no valida el cuerpo contra este documento (lo valida el punto único de la búsqueda).
+    - 2026-11-15 (F12c-4a, audit-40 H1; decisión del humano, PLAN §4.4 regla 4; adenda al ADR-F12c4-01): solo documentación, sin cambio de comportamiento. El orden dentro del punto único es leer el cuerpo → **límite** → validar → buscar
+      (antes se decía validar → límite). Con el límite alcanzado, cualquier intento, también uno con cuerpo inválido, recibe `429` con `Retry-After` y se registra `RATE_LIMITED`; el `404` por cuerpo inválido solo aplica si no se alcanzó el límite.
 servers:
   - url: /api/admin/v1
     description: Gateway (misma URL base que el resto de la plataforma)
@@ -108,6 +115,42 @@ paths:
         '400': { $ref: '#/components/responses/Problem400' }
         '401': { $ref: '#/components/responses/Problem401' }
         '403': { $ref: '#/components/responses/Problem403' }
+  /bookings/search:
+    post:
+      operationId: searchAdminBookingByPnr
+      summary: Buscar una reserva por PNR (solo lectura, cualquier canal)
+      description: |
+        Devuelve la reserva SIN documentos de identidad, correos, teléfonos, referencias de pago ni el identificador del socio (solo un hash opaco).
+        Cada búsqueda queda registrada (quién, qué PNR, cuándo y el resultado: encontrada o no), sin guardar los datos de la reserva.
+        Un PNR inexistente, ajeno o mal formado, o un cuerpo inválido, responde igual: `404 NOT_FOUND`, salvo que el administrador haya alcanzado su límite, en cuyo caso responde `429 RATE_LIMIT_EXCEEDED`. Límite por administrador y hora (`ADMIN_PNR_SEARCH_LIMIT_PER_HOUR`, 30 por omisión).
+        Es POST (con cuerpo) para que el PNR no viaje en la URL ni en los registros de proxy.
+
+        **Intento.** Un intento es un pedido de un administrador autenticado que pasó las comprobaciones de transporte (HTTPS). Orden obligatorio: transporte → autenticación → rol →
+        punto único (leer el cuerpo → LÍMITE → validar → buscar). Todo lo que ocurre dentro del punto único se registra en `gateway.admin_access_log`, una fila por intento, antes de responder.
+        Lo que se rechaza ANTES del punto único (sin HTTPS, sin sesión, sesión inválida o usuario que no es administrador) NO va a ese registro: no hay un administrador al que atribuirlo y aceptarlo
+        permitiría que cualquiera llene una tabla de solo inserción; queda en los registros normales del gateway con su `correlationId`. El cuerpo se lee solo después de la autenticación y del rol.
+        **Precedencia del límite:** cuando el administrador alcanzó su límite, cualquier intento (incluido uno con el cuerpo inválido) recibe `429` con `Retry-After` y queda registrado como `RATE_LIMITED`; el `429` tiene
+        precedencia sobre el `404` de un cuerpo inválido. Razón: quien agotó su cupo queda bloqueado para todo, sin que el gateway procese lo que envía.
+
+        Respuestas: `200` encontrada; `404` no encontrada, ajena o cuerpo inválido (indistinguibles), salvo que se haya alcanzado el límite, en cuyo caso `429`; `401` sin sesión o inválida; `403` no es administrador;
+        `429` límite superado (con `Retry-After`, tiene precedencia sobre el `404` por cuerpo inválido); `503` dependencia o registro no disponible. `400` solo lo produce la comprobación de transporte (sin HTTPS, `X-Forwarded-Proto: http`), nunca el cuerpo.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AdminBookingSearch' }
+      responses:
+        '200':
+          description: Reserva encontrada
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminBookingView' }
+        '400': { $ref: '#/components/responses/ProblemTransport400' }
+        '401': { $ref: '#/components/responses/Problem401' }
+        '403': { $ref: '#/components/responses/Problem403' }
+        '404': { $ref: '#/components/responses/Problem404' }
+        '429': { $ref: '#/components/responses/Problem429' }
+        '503': { $ref: '#/components/responses/Problem503' }
 components:
   securitySchemes:
     BearerAuth:
@@ -121,6 +164,11 @@ components:
       content:
         application/problem+json:
           schema: { $ref: '#/components/schemas/ProblemDetails' }
+    ProblemTransport400:
+      description: Solo la comprobación de transporte (sin HTTPS, `X-Forwarded-Proto` http); nunca por el cuerpo
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/ProblemDetails' }
     Problem401:
       description: No autenticado
       content:
@@ -128,6 +176,21 @@ components:
           schema: { $ref: '#/components/schemas/ProblemDetails' }
     Problem403:
       description: Rol o scope insuficiente
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/ProblemDetails' }
+    Problem404:
+      description: No encontrada (mismo cuerpo para un PNR inexistente, ajeno, mal formado o un cuerpo inválido; si se alcanzó el límite, la respuesta es 429)
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/ProblemDetails' }
+    Problem429:
+      description: Límite de búsquedas por administrador superado (con la cabecera `Retry-After` de 60 segundos); tiene precedencia sobre el 404 de un cuerpo inválido
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/ProblemDetails' }
+    Problem503:
+      description: Dependencia o registro de auditoría no disponible (con `Retry-After`)
       content:
         application/problem+json:
           schema: { $ref: '#/components/schemas/ProblemDetails' }
@@ -274,3 +337,119 @@ components:
           type: array
           items: { $ref: '#/components/schemas/WebTestBooking' }
         nextCursor: { type: string, nullable: true, minLength: 1, maxLength: 200, description: Cursor opaco devuelto para `before`; no interpretar. null en la última página. }
+    AdminBookingSearch:
+      type: object
+      additionalProperties: false
+      required: [pnr]
+      properties:
+        pnr: { type: string, description: "Localizador de 6 caracteres (se normaliza a mayúsculas). Cualquier otro texto (también vacío o muy largo) responde 404, igual que uno inexistente, y queda registrado como INVALID_FORMAT sin guardar el texto." }
+    AdminBookingView:
+      type: object
+      additionalProperties: false
+      required: [bookingId, pnr, status, channel, createdAt, grandTotal, segments, passengers, tickets, checkIn]
+      description: Lista blanca. NO incluye documentos, correos, teléfonos, referencias de pago, dueño ni identificador de socio.
+      properties:
+        bookingId: { type: string, format: uuid }
+        pnr: { type: string }
+        status: { type: string }
+        channel: { type: string, enum: [WEB, PARTNER] }
+        partnerRef: { type: string, description: "Solo canal PARTNER: hash opaco del socio (12 hex), nunca su identificador." }
+        createdAt: { type: string }
+        grandTotal:
+          type: object
+          additionalProperties: false
+          required: [currency, total]
+          properties:
+            currency: { type: string }
+            total: { type: string }
+        segments:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [segmentId, flightNumber, origin, destination, departureAt, arrivalAt, departureLocal, arrivalLocal]
+            properties:
+              segmentId: { type: string }
+              flightNumber: { type: string }
+              origin: { type: string }
+              destination: { type: string }
+              departureAt: { type: string, description: UTC }
+              arrivalAt: { type: string, description: UTC }
+              departureLocal: { type: string, description: "Hora local del aeropuerto de salida (AAAA-MM-DDTHH:mm)" }
+              arrivalLocal: { type: string, description: "Hora local del aeropuerto de llegada (AAAA-MM-DDTHH:mm)" }
+              status: { type: string }
+              cabinClass: { type: string }
+        passengers:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [passengerId, passengerType, firstName, lastName, seats, extraBaggage]
+            properties:
+              passengerId: { type: string }
+              passengerType: { type: string }
+              firstName: { type: string }
+              lastName: { type: string }
+              seats:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: false
+                  required: [segmentId, seatNumber]
+                  properties:
+                    segmentId: { type: string }
+                    seatNumber: { type: string }
+                    status: { type: string }
+              extraBaggage:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: false
+                  required: [itineraryId, quantity]
+                  properties:
+                    itineraryId: { type: string }
+                    quantity: { type: integer }
+        tickets:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [passengerId, status, segments]
+            properties:
+              passengerId: { type: string }
+              status: { type: string }
+              eTicketLast4: { type: string, description: Últimos 4 dígitos del boleto. }
+              segments:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: false
+                  required: [segmentId, status]
+                  properties:
+                    segmentId: { type: string }
+                    status: { type: string }
+        checkIn:
+          type: object
+          additionalProperties: false
+          required: [status, passengers]
+          properties:
+            status: { type: string, description: "NOT_STARTED, IN_PROGRESS, COMPLETED o FAILED" }
+            passengers:
+              type: array
+              items:
+                type: object
+                additionalProperties: false
+                required: [passengerId, status, segments]
+                properties:
+                  passengerId: { type: string }
+                  status: { type: string }
+                  segments:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: false
+                      required: [segmentId, status]
+                      properties:
+                        segmentId: { type: string }
+                        status: { type: string }
+                        seat: { type: string }

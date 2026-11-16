@@ -129,7 +129,7 @@ describe('B-2: API interna de administración /api/admin/v1', () => {
       expect((await request(server).post('/api/admin/v1/flights').set('Authorization', ADMIN).send({})).status).toBeGreaterThanOrEqual(400);
       expect(calls).toHaveLength(0);
     });
-    expect(Object.keys(adminSpec.paths).sort()).toEqual(['/fares', '/flights', '/web-bookings']);
+    expect(Object.keys(adminSpec.paths).sort()).toEqual(['/bookings/search', '/fares', '/flights', '/web-bookings']);
   });
   it('ADM-API-11: el OpenAPI interno está separado de los contratos con Booking y aclara que no es el v1 deprecado', () => {
     for (const path of [openApiSpecPath(), openApiV2SpecPath()]) { const text = readFileSync(path, 'utf8'); expect(text).not.toContain('web-bookings'); expect(text).not.toContain('/api/admin'); expect(text).not.toContain('listAdminFares'); }

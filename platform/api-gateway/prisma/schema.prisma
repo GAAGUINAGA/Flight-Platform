@@ -99,6 +99,23 @@ model PromotionAgreement {
   @@schema("gateway")
 }
 
+/// Registro de acciones del administrador (F12c-4, ADR-F12c4-01): solo inserción y lectura. Sin datos de la reserva.
+model AdminAccessLog {
+  id            String   @id @default(uuid()) @db.Uuid
+  at            DateTime @default(now()) @db.Timestamptz(6)
+  actorSub      String   @map("actor_sub")
+  action        String
+  subject       String?
+  result        String
+  errorCode     String?  @map("error_code")
+  correlationId String?  @map("correlation_id")
+
+  @@index([actorSub, at])
+  @@index([at])
+  @@map("admin_access_log")
+  @@schema("gateway")
+}
+
 model SchedulerLock {
   task        String   @id
   lockedUntil DateTime @map("locked_until")

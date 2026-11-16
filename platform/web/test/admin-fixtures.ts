@@ -1,4 +1,4 @@
-import type { AdminFaresQuery, AdminFlightsQuery, AdminWebBookingsQuery, FlightOperationsQuery, PlatformHealthQuery, PromotionAgreementQuery, UpdateFlightStatusMutation } from '@flight-platform/graphql-schema/generated/types';
+import type { AdminBookingByPnrQuery, AdminFaresQuery, AdminFlightsQuery, AdminWebBookingsQuery, FlightOperationsQuery, PlatformHealthQuery, PromotionAgreementQuery, UpdateFlightStatusMutation } from '@flight-platform/graphql-schema/generated/types';
 import { customer, fakeSession, type FakeSession } from './utils';
 
 export const adminUser = { ...customer, id: 'a-1', email: 'admin@example.test', name: 'Admin Prueba', role: 'admin' as const };
@@ -39,4 +39,14 @@ export const webBookings = (items: Row[] = [webRow(2), webRow(1)], next: string 
 export const statusUpdate = (patch: Partial<UpdateFlightStatusMutation['updateFlightStatus']> = {}): UpdateFlightStatusMutation => ({ updateFlightStatus: {
   previousStatus: 'SCHEDULED', affectedBookings: 3, eventId: 'evt-123',
   flight: { flightNumber: 'FP103', date: '2026-12-10', marketingCarrier: 'FP', operatingCarrier: 'FP', aircraft: 'A320', status: 'DELAYED', delayMinutes: 35, updatedAt: '2026-12-10T10:00:00Z', departure: { iataCode: 'UIO', terminal: null, gate: null, scheduledAt: '2026-12-10T13:35:00Z', estimatedAt: '2026-12-10T14:10:00Z', actualAt: null }, arrival: { iataCode: 'GYE', terminal: null, gate: null, scheduledAt: '2026-12-10T14:30:00Z', estimatedAt: null, actualAt: null } }, ...patch
+} });
+
+/** F12c-4a: reserva encontrada por PNR (ya sin datos personales; los nombres sí). */
+export const bookingByPnr = (patch: Partial<NonNullable<AdminBookingByPnrQuery['adminBookingByPnr']>> = {}): AdminBookingByPnrQuery => ({ adminBookingByPnr: {
+  bookingId: '00000000-0000-4000-8000-0000000000c1', pnr: 'J4R8GZ', status: 'CONFIRMED', channel: 'PARTNER', partnerRef: 'a1b2c3d4e5f6', createdAt: '2026-11-14T15:00:00.000Z', grandTotal: { currency: 'USD', total: '210.00' },
+  segments: [{ segmentId: 'seg-1', flightNumber: 'FP210', origin: 'UIO', destination: 'GPS', departureAt: '2026-11-15T15:00:00.000Z', arrivalAt: '2026-11-15T17:00:00.000Z', departureLocal: '2026-11-15T10:00', arrivalLocal: '2026-11-15T11:00', status: 'SCHEDULED', cabinClass: 'ECONOMY' }],
+  passengers: [{ passengerId: 'p-1', passengerType: 'ADULT', firstName: 'Ana', lastName: 'Pérez', seats: [{ segmentId: 'seg-1', seatNumber: '12A', status: 'TICKETED' }], extraBaggage: [{ itineraryId: 'it-1', quantity: 2 }] }],
+  tickets: [{ passengerId: 'p-1', status: 'ISSUED', eTicketLast4: '7890', segments: [{ segmentId: 'seg-1', status: 'ISSUED' }] }],
+  checkIn: { status: 'COMPLETED', passengers: [{ passengerId: 'p-1', status: 'CHECKED_IN', segments: [{ segmentId: 'seg-1', status: 'CHECKED_IN', seat: '12A' }] }] },
+  ...patch
 } });

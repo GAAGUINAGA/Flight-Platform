@@ -16,7 +16,7 @@ const post = (operation: string, role?: string) => {
 };
 
 /** Una operación representativa por tipo protegido (admin de inventario, tarifas, operaciones; system de tareas y de reservas). */
-const ADMIN = ['vuelos.guardar-instancia', 'vuelos.cerrar-instancia', 'vuelos.guardar-tarifa', 'vuelos.listar-tarifas', 'vuelos.registrar-novedad-operativa', 'vuelos.contar-check-ins'];
+const ADMIN = ['vuelos.guardar-instancia', 'vuelos.cerrar-instancia', 'vuelos.guardar-tarifa', 'vuelos.listar-tarifas', 'vuelos.registrar-novedad-operativa', 'vuelos.contar-check-ins', 'reservas.buscar-por-pnr', 'postventa.admin-estado-check-in'];
 const SYSTEM = ['reservas.listar-por-vuelo', 'sistema.expirar-holds', 'sistema.reanudar-pendientes', 'sistema.despachar-webhooks', 'sistema.recuperar-check-ins'];
 
 describe('ESB-ROLE: verificación de rol en operaciones administrativas y de sistema (ADR-F12b-09)', () => {

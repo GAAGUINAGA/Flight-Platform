@@ -22,6 +22,74 @@ import {
 
 export const protobufPackage = "flightplatform.reservation.v1";
 
+export interface AdminGetReservationByPnrRequest {
+  pnr: string;
+}
+
+export interface AdminBookingSegment {
+  segmentId: string;
+  flightNumber: string;
+  origin: string;
+  destination: string;
+  /** UTC (ISO 8601) */
+  departureAt: string;
+  /** UTC (ISO 8601) */
+  arrivalAt: string;
+  /** hora local del aeropuerto de salida, YYYY-MM-DDTHH:mm */
+  departureLocal: string;
+  /** hora local del aeropuerto de llegada, YYYY-MM-DDTHH:mm */
+  arrivalLocal: string;
+  status?: string | undefined;
+  cabinClass?: string | undefined;
+}
+
+export interface AdminBookingSeat {
+  segmentId: string;
+  seatNumber: string;
+  status?: string | undefined;
+}
+
+export interface AdminBookingBaggage {
+  itineraryId: string;
+  quantity: number;
+}
+
+export interface AdminBookingPassenger {
+  passengerId: string;
+  passengerType: string;
+  firstName: string;
+  lastName: string;
+  seats: AdminBookingSeat[];
+  extraBaggage: AdminBookingBaggage[];
+}
+
+export interface AdminBookingTicketSegment {
+  segmentId: string;
+  status: string;
+}
+
+export interface AdminBookingTicket {
+  passengerId: string;
+  status: string;
+  eTicketLast4?: string | undefined;
+  segments: AdminBookingTicketSegment[];
+}
+
+export interface AdminBookingView {
+  bookingId: string;
+  pnr: string;
+  status: string;
+  /** WEB | PARTNER */
+  channel: string;
+  /** hash opaco del socio (12 hex); nunca el clientId */
+  partnerRef?: string | undefined;
+  createdAt: string;
+  grandTotal: MoneyAmount | undefined;
+  segments: AdminBookingSegment[];
+  passengers: AdminBookingPassenger[];
+  tickets: AdminBookingTicket[];
+}
+
 export interface QuoteCancellationRequest {
   bookingId: string;
   ownerId: string;
@@ -215,6 +283,13 @@ export interface ReservationServiceClient {
   /** Aditivo F12a: lee una cotización ya emitida (también vencida o usada) para informar el reembolso de POST cancel. */
 
   getStoredCancellationQuote(request: StoredQuoteRequest): Observable<CancellationQuote>;
+
+  /**
+   * Aditivo F12c-4a (ADR-F12c4-01): búsqueda de solo lectura por PNR para el administrador (cualquier canal). Rol admin; no recibe dueño y
+   * devuelve una vista SIN datos personales (sin documento, correo, teléfono ni referencias de pago).
+   */
+
+  adminGetReservationByPnr(request: AdminGetReservationByPnrRequest): Observable<AdminBookingView>;
 }
 
 export interface ReservationServiceController {
@@ -286,6 +361,15 @@ export interface ReservationServiceController {
   getStoredCancellationQuote(
     request: StoredQuoteRequest,
   ): Promise<CancellationQuote> | Observable<CancellationQuote> | CancellationQuote;
+
+  /**
+   * Aditivo F12c-4a (ADR-F12c4-01): búsqueda de solo lectura por PNR para el administrador (cualquier canal). Rol admin; no recibe dueño y
+   * devuelve una vista SIN datos personales (sin documento, correo, teléfono ni referencias de pago).
+   */
+
+  adminGetReservationByPnr(
+    request: AdminGetReservationByPnrRequest,
+  ): Promise<AdminBookingView> | Observable<AdminBookingView> | AdminBookingView;
 }
 
 export function ReservationServiceControllerMethods() {
@@ -307,6 +391,7 @@ export function ReservationServiceControllerMethods() {
       "resumeReservation",
       "quoteCancellation",
       "getStoredCancellationQuote",
+      "adminGetReservationByPnr",
     ];
     for (const method of grpcMethods) {
       const descriptor: any = Reflect.getOwnPropertyDescriptor(constructor.prototype, method);

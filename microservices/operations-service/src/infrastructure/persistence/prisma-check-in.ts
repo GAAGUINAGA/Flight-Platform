@@ -11,6 +11,12 @@ export class PrismaCheckInStore implements CheckInStore, CheckInCounts {
     return row ? { status: row.status, result: row.result as unknown as CheckInResult | null, eventPublished: row.eventPublished } : null;
   }
 
+  /** Por reserva, sin dueño (`bookingId` es único): solo para la lectura del administrador (F12c-4a). */
+  async findByBooking(bookingId: string): Promise<{ status: string; result: CheckInResult | null } | null> {
+    const row = await this.prisma.checkIn.findUnique({ where: { bookingId }, select: { status: true, result: true } });
+    return row ? { status: row.status, result: row.result as unknown as CheckInResult | null } : null;
+  }
+
   async begin(ownerId: string, bookingId: string): Promise<boolean> {
     try { await this.prisma.checkIn.create({ data: { ownerId, bookingId, status: 'IN_PROGRESS' } }); return true; }
     catch (error) { if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') return false; throw error; }

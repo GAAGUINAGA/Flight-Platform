@@ -23,6 +23,51 @@ service ReservationService {
   rpc QuoteCancellation(QuoteCancellationRequest) returns (flightplatform.common.v1.CancellationQuote);
   // Aditivo F12a: lee una cotización ya emitida (también vencida o usada) para informar el reembolso de POST cancel.
   rpc GetStoredCancellationQuote(StoredQuoteRequest) returns (flightplatform.common.v1.CancellationQuote);
+  // Aditivo F12c-4a (ADR-F12c4-01): búsqueda de solo lectura por PNR para el administrador (cualquier canal). Rol admin; no recibe dueño y
+  // devuelve una vista SIN datos personales (sin documento, correo, teléfono ni referencias de pago).
+  rpc AdminGetReservationByPnr(AdminGetReservationByPnrRequest) returns (AdminBookingView);
+}
+message AdminGetReservationByPnrRequest { string pnr = 1; }
+message AdminBookingSegment {
+  string segment_id = 1;
+  string flight_number = 2;
+  string origin = 3;
+  string destination = 4;
+  string departure_at = 5;        // UTC (ISO 8601)
+  string arrival_at = 6;          // UTC (ISO 8601)
+  string departure_local = 7;     // hora local del aeropuerto de salida, YYYY-MM-DDTHH:mm
+  string arrival_local = 8;       // hora local del aeropuerto de llegada, YYYY-MM-DDTHH:mm
+  optional string status = 9;
+  optional string cabin_class = 10;
+}
+message AdminBookingSeat { string segment_id = 1; string seat_number = 2; optional string status = 3; }
+message AdminBookingBaggage { string itinerary_id = 1; uint32 quantity = 2; }
+message AdminBookingPassenger {
+  string passenger_id = 1;
+  string passenger_type = 2;
+  string first_name = 3;
+  string last_name = 4;
+  repeated AdminBookingSeat seats = 5;
+  repeated AdminBookingBaggage extra_baggage = 6;
+}
+message AdminBookingTicketSegment { string segment_id = 1; string status = 2; }
+message AdminBookingTicket {
+  string passenger_id = 1;
+  string status = 2;
+  optional string e_ticket_last4 = 3;
+  repeated AdminBookingTicketSegment segments = 4;
+}
+message AdminBookingView {
+  string booking_id = 1;
+  string pnr = 2;
+  string status = 3;
+  string channel = 4;             // WEB | PARTNER
+  optional string partner_ref = 5; // hash opaco del socio (12 hex); nunca el clientId
+  string created_at = 6;
+  flightplatform.common.v1.MoneyAmount grand_total = 7;
+  repeated AdminBookingSegment segments = 8;
+  repeated AdminBookingPassenger passengers = 9;
+  repeated AdminBookingTicket tickets = 10;
 }
 message QuoteCancellationRequest { string booking_id = 1; string owner_id = 2; optional bool waive_penalty = 3; }
 message StoredQuoteRequest { string booking_id = 1; string owner_id = 2; string quote_id = 3; }

@@ -1,7 +1,8 @@
 import { NavLink, Outlet, Route, Routes } from 'react-router-dom';
-import { Gauge, Plane, Tag, Ticket, Users } from 'lucide-react';
+import { Gauge, Plane, Search, Tag, Ticket, Users } from 'lucide-react';
 import { pageClass } from '../components/layout/AppLayout';
 import { NotFoundPage } from '../pages/SystemPages';
+import { BookingLookupPage } from './BookingLookupPage';
 import { DashboardPage } from './DashboardPage';
 import { FaresPage } from './FaresPage';
 import { FlightsPage } from './FlightsPage';
@@ -14,6 +15,7 @@ const MENU = [
   { to: '/admin/vuelos', label: 'Vuelos', end: false, icon: Plane },
   { to: '/admin/tarifas', label: 'Tarifas', end: false, icon: Tag },
   { to: '/admin/promociones', label: 'Promociones', end: false, icon: Ticket },
+  { to: '/admin/reservas', label: 'Buscar reserva', end: false, icon: Search },
   { to: '/admin/reservas-web', label: 'Reservas web', end: false, icon: Users }
 ] as const;
 
@@ -44,6 +46,7 @@ export default function AdminRoutes() {
         <Route path="vuelos" element={<FlightsPage />} />
         <Route path="tarifas" element={<FaresPage />} />
         <Route path="promociones" element={<PromotionsPage />} />
+        <Route path="reservas" element={<BookingLookupPage />} />
         <Route path="reservas-web" element={<WebBookingsPage />} />
         <Route path="*" element={<NotFoundPage />} />
       </Route>

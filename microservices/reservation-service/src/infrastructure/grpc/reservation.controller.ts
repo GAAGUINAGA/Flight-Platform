@@ -14,6 +14,7 @@ export interface ReservationHandlers {
   cancelReservation?(input: unknown): Promise<unknown>;
   failReservation?(input: unknown): Promise<unknown>; resumeReservation?(input: unknown): Promise<unknown>;
   quoteCancellation?(input: unknown): Promise<unknown>; getStoredCancellationQuote?(input: unknown): Promise<unknown>;
+  adminGetReservationByPnr?(input: unknown): Promise<unknown>;
 }
 export const RESERVATION_DEPS = Symbol('RESERVATION_DEPS');
 const passengerSchema = z.object({ passengerId: rpcString(128), passengerType: z.enum(['ADULT', 'YOUTH', 'CHILD', 'INFANT']), associatedAdultId: z.string().guid().optional(), firstName: z.string().trim().min(1).max(50), lastName: z.string().trim().min(1).max(50), documentType: z.enum(['PASSPORT', 'NATIONAL_ID']), documentNumber: z.string().regex(/^[A-Za-z0-9]{5,20}$/), nationality: z.string().trim().min(2).max(3), documentExpiryDate: z.string().date().optional(), birthDate: z.string().date(), gender: z.enum(['M', 'F', 'X']), contact: z.object({ email: z.string().email(), phone: z.string().regex(/^\+[1-9]\d{1,14}$/) }).strict(), assignedSeats: z.array(z.object({ segmentId: z.string().guid(), seatNumber: rpcString(4) }).strict()), extraBaggage: z.array(z.object({ itineraryId: z.string().guid(), quantity: z.number().int().min(1).max(3) }).strict()) }).strict();
@@ -30,7 +31,8 @@ const confirmChangeSchema = z.object({ bookingId: z.string().guid(), changeOffer
 const cancelSchema = z.object({ bookingId: z.string().guid(), quoteId: rpcString(128), reason: z.string().trim().max(255).optional(), reasonCode: z.enum(['CUSTOMER_REQUEST', 'SAGA_COMPENSATION', 'FLIGHT_CANCELLED', 'OTHER']).optional(), idempotencyKey: z.string().guid() }).strict();
 const quoteSchema = z.object({ bookingId: z.string().guid(), waivePenalty: z.boolean().optional() }).strict();
 const storedQuoteSchema = z.object({ bookingId: z.string().guid(), quoteId: rpcString(128) }).strict();
-const validationLogger = new Logger('ReservationValidation');
+const adminPnrSchema = z.object({ pnr: z.string().regex(/^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6}$/) }).strict();
+const validationLogger =new Logger('ReservationValidation');
 const requested = (data: unknown): unknown => { if (typeof data !== 'object' || data === null || Array.isArray(data)) return data; const { ownerId, ...body } = data as Record<string, unknown>; void ownerId; return body; };
 const validate = (data: unknown, schema: z.ZodObject, rpc: string): Record<string, unknown> => {
   const parsed = schema.strict().safeParse(data);
@@ -86,8 +88,10 @@ export class ReservationController {
   failReservation(data: unknown, metadata: Metadata) { return this.deps.failReservation ? this.deps.failReservation(withOwner(data, metadata, failSchema, 'FailReservation')).then(grpcResponse) : unavailable(); }
   quoteCancellation(data: unknown, metadata: Metadata) { return this.deps.quoteCancellation ? this.deps.quoteCancellation(withOwner(data, metadata, quoteSchema, 'QuoteCancellation')) : unavailable(); }
   getStoredCancellationQuote(data: unknown, metadata: Metadata) { return this.deps.getStoredCancellationQuote ? this.deps.getStoredCancellationQuote(withOwner(data, metadata, storedQuoteSchema, 'GetStoredCancellationQuote')) : unavailable(); }
+  /** F12c-4a: solo rol admin; el esquema estricto no admite dueño ni ningún otro campo, y el PNR sigue el alfabeto real de `createPnr`. */
+  adminGetReservationByPnr(data: unknown, metadata: Metadata) { requireRole(requestContextFromMetadata(metadata) as RequestContext, 'admin'); return this.deps.adminGetReservationByPnr ? this.deps.adminGetReservationByPnr(validate(data, adminPnrSchema, 'AdminGetReservationByPnr')) : unavailable(); }
   resumeReservation(data: unknown, metadata: Metadata) { return this.deps.resumeReservation ? this.deps.resumeReservation(withOwner(data, metadata, getSchema, 'ResumeReservation')).then(grpcResponse) : unavailable(); }
 }
-const methods: Record<string, keyof ReservationController> = { CreateReservation: 'createReservation', GetReservation: 'getReservation', ListReservations: 'listReservations', GetReservationSnapshot: 'getReservationSnapshot', ListReservationsByFlightInstance: 'listReservationsByFlightInstance', GetBaggageOptions: 'getBaggageOptions', AddBaggage: 'addBaggage', SearchDateChange: 'searchDateChange', ConfirmDateChange: 'confirmDateChange', GetCancellationQuote: 'getCancellationQuote', CancelReservation: 'cancelReservation', ResumePending: 'resumePending', FailReservation: 'failReservation', ResumeReservation: 'resumeReservation', QuoteCancellation: 'quoteCancellation', GetStoredCancellationQuote: 'getStoredCancellationQuote' };
+const methods: Record<string, keyof ReservationController> = { CreateReservation: 'createReservation', GetReservation: 'getReservation', ListReservations: 'listReservations', GetReservationSnapshot: 'getReservationSnapshot', ListReservationsByFlightInstance: 'listReservationsByFlightInstance', GetBaggageOptions: 'getBaggageOptions', AddBaggage: 'addBaggage', SearchDateChange: 'searchDateChange', ConfirmDateChange: 'confirmDateChange', GetCancellationQuote: 'getCancellationQuote', CancelReservation: 'cancelReservation', ResumePending: 'resumePending', FailReservation: 'failReservation', ResumeReservation: 'resumeReservation', QuoteCancellation: 'quoteCancellation', GetStoredCancellationQuote: 'getStoredCancellationQuote', AdminGetReservationByPnr: 'adminGetReservationByPnr' };
 for (const [rpc, key] of Object.entries(methods)) GrpcMethod('ReservationService', rpc)(ReservationController.prototype, key, Object.getOwnPropertyDescriptor(ReservationController.prototype, key)!);
 Inject(RESERVATION_DEPS)(ReservationController, undefined as unknown as string, 0);

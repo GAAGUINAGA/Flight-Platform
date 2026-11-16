@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AppError } from '../data/errors';
 import { renderApp, type ClientCall, type Handler } from '../../test/utils';
-import { adminFlight, adminFlights, adminSession, agreement, FI_1, fare, fares, health, opFlight, operations, statusUpdate, webBookings, webRow } from '../../test/admin-fixtures';
+import { adminFlight, adminFlights, adminSession, agreement, bookingByPnr, FI_1, fare, fares, health, opFlight, operations, statusUpdate, webBookings, webRow } from '../../test/admin-fixtures';
 import { useAutoRefresh } from './hooks';
 
 const deferred = <T,>() => { let resolve!: (value: T) => void; let reject!: (reason: unknown) => void; const promise = new Promise<T>((res, rej) => { resolve = res; reject = rej; }); return { promise, resolve, reject }; };
@@ -319,5 +319,43 @@ describe('reservas web', () => {
     expect(calls(view, 'AdminWebBookings').map((call) => (call.variables as { after: string | null }).after)).toEqual([null, 'Y3Vyc29yLW9wYWNv']); expect(screen.queryByRole('button', { name: 'Cargar más reservas' })).not.toBeInTheDocument(); view.unmount();
     const empty = mount('/admin/reservas-web', { AdminWebBookings: () => webBookings([]) }); expect(await screen.findByText('Aún no hay reservas del canal web')).toBeInTheDocument(); empty.unmount();
     mount('/admin/reservas-web', { AdminWebBookings: () => { throw problem('FORBIDDEN', 'FORBIDDEN', 403); } }); expect(await screen.findByText('No tienes permiso para esta acción.')).toBeInTheDocument();
+  });
+});
+
+describe('buscar reserva por PNR (F12c-4a)', () => {
+  it('ADM-C60 el menú ofrece «Buscar reserva»; busca por PNR, muestra nombres, vuelos en hora local, asientos, equipaje, boletos (últimos 4) y check-in, y es de solo lectura', async () => {
+    const view = mount('/admin/reservas', { AdminBookingByPnr: () => bookingByPnr() });
+    const user = userEvent.setup(); expect(within(screen.getByRole('navigation', { name: 'Administración' })).getByRole('link', { name: 'Buscar reserva' })).toBeInTheDocument();
+    await user.type(screen.getByLabelText('Localizador (PNR)'), 'j4r8gz'); await user.click(screen.getByRole('button', { name: 'Buscar' }));
+    const result = within(await screen.findByTestId('booking-result'));
+    expect(calls(view, 'AdminBookingByPnr')).toHaveLength(1); expect(calls(view, 'AdminBookingByPnr')[0].variables).toEqual({ pnr: 'J4R8GZ' });
+    expect(result.getByText('Confirmada')).toBeInTheDocument(); expect(result.getByText(/Socio/)).toBeInTheDocument(); expect(result.getByText('a1b2c3d4e5f6')).toBeInTheDocument(); expect(result.getByText('210.00 USD')).toBeInTheDocument();
+    expect(result.getByText(/10:00 \(hora local de UIO\)/)).toBeInTheDocument(); expect(result.getByText(/11:00 \(hora local de GPS\)/)).toBeInTheDocument();
+    expect(result.getAllByText('Ana Pérez').length).toBeGreaterThan(0); expect(result.getByText('FP210: 12A')).toBeInTheDocument(); expect(result.getByText('•••• 7890')).toBeInTheDocument(); expect(result.getAllByText('Con check-in').length).toBeGreaterThan(0);
+    const text = screen.getByTestId('booking-result').textContent ?? ''; expect(text).not.toMatch(/@|\+593|pasaporte|documento \d|pay_/i);
+    expect(within(screen.getByTestId('booking-result')).queryByRole('button')).not.toBeInTheDocument();
+  });
+
+  it('ADM-C61 un localizador mal escrito TAMBIÉN se envía (para que quede registrado) y se muestra como «no encontrada»; el de la web no muestra referencia de socio', async () => {
+    let wrong = true; const view = mount('/admin/reservas', { AdminBookingByPnr: () => (wrong ? { adminBookingByPnr: null } : bookingByPnr({ channel: 'WEB', partnerRef: null })) });
+    const user = userEvent.setup(); const input = screen.getByLabelText('Localizador (PNR)');
+    for (const bad of ['AB', 'j4r8g0']) { await user.clear(input); await user.type(input, bad); await user.click(screen.getByRole('button', { name: 'Buscar' })); expect(await screen.findByTestId('booking-missing')).toBeInTheDocument(); }
+    expect(calls(view, 'AdminBookingByPnr').map((call) => (call.variables as { pnr: string }).pnr)).toEqual(['AB', 'J4R8G0']);
+    wrong = false; await user.clear(input); await user.type(input, 'J4R8GZ'); await user.click(screen.getByRole('button', { name: 'Buscar' }));
+    const result = within(await screen.findByTestId('booking-result')); expect(result.getByText('Web')).toBeInTheDocument(); expect(result.queryByText(/referencia del socio/)).not.toBeInTheDocument();
+  });
+
+  it('ADM-C62 una reserva inexistente se muestra como «no encontrada»; el doble clic busca una sola vez', async () => {
+    const pending = deferred<unknown>(); const view = mount('/admin/reservas', { AdminBookingByPnr: () => pending.promise });
+    const user = userEvent.setup(); await user.type(screen.getByLabelText('Localizador (PNR)'), 'ZZZZZZ'); await user.dblClick(screen.getByRole('button', { name: 'Buscar' }));
+    expect(calls(view, 'AdminBookingByPnr')).toHaveLength(1);
+    await act(async () => { pending.resolve({ adminBookingByPnr: null }); await Promise.resolve(); });
+    expect(await screen.findByTestId('booking-missing')).toHaveTextContent('Reserva no encontrada'); expect(screen.queryByTestId('booking-result')).not.toBeInTheDocument();
+  });
+
+  it('ADM-C63 el límite de búsquedas y un servidor caído se explican en español', async () => {
+    mount('/admin/reservas', { AdminBookingByPnr: () => { throw problem('RATE_LIMIT_EXCEEDED', 'RATE_LIMITED', 429); } });
+    const user = userEvent.setup(); await user.type(screen.getByLabelText('Localizador (PNR)'), 'J4R8GZ'); await user.click(screen.getByRole('button', { name: 'Buscar' }));
+    expect(await screen.findByText('Hiciste demasiadas solicitudes. Espera un momento e inténtalo de nuevo.')).toBeInTheDocument(); expect(screen.queryByTestId('booking-result')).not.toBeInTheDocument();
   });
 });

@@ -53,6 +53,7 @@ export const OPERATIONS: readonly Operation[] = [
   rpc('reservas.listar', 'reservation', 'listReservations'),
   rpc('reservas.reanudar', 'reservation', 'resumeReservation'),
   rpc('reservas.fallar', 'reservation', 'failReservation'),
+  rpc('reservas.buscar-por-pnr', 'reservation', 'adminGetReservationByPnr', { roles: ['admin'] }),
   rpc('reservas.listar-por-vuelo', 'reservation', 'listReservationsByFlightInstance', { roles: ['system'] }),
   rpc('reservas.listar-boletos', 'ticketing', 'listTickets'),
   rpc('reservas.obtener-boleto', 'ticketing', 'getTicket'),
@@ -68,6 +69,7 @@ export const OPERATIONS: readonly Operation[] = [
   rpc('postventa.cambiar-asientos', 'ancillaries', 'changeSeats'),
   rpc('postventa.check-in', 'operations', 'checkIn'),
   rpc('postventa.listar-pases', 'operations', 'listBoardingPasses'),
+  rpc('postventa.admin-estado-check-in', 'operations', 'adminGetCheckInStatus', { roles: ['admin'] }),
   // clientes
   rpc('clientes.listar-suscripciones', 'webhooks', 'listSubscriptions'),
   rpc('clientes.crear-suscripcion', 'webhooks', 'createSubscription'),

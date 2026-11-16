@@ -2,7 +2,7 @@ import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppError } from '../src/data/errors';
-import { adminFlights, adminSession, agreement, customerSession, FI_1, fare, fares, health, operations, statusUpdate, webBookings } from './admin-fixtures';
+import { adminFlights, adminSession, agreement, bookingByPnr, customerSession, FI_1, fare, fares, health, operations, statusUpdate, webBookings } from './admin-fixtures';
 import { expectAccessible, renderApp, type Handler } from './utils';
 
 /** Accesibilidad automática (axe) de TODAS las pantallas nuevas del panel de administrador (F12c-3), en sus estados principales. */
@@ -42,6 +42,10 @@ const SCREENS: Screen[] = [
   { name: 'Reservas web · con más páginas', route: '/admin/reservas-web', handlers: { AdminWebBookings: () => webBookings(undefined, 'cursor') }, ready: () => screen.findByRole('button', { name: 'Cargar más reservas' }) },
   { name: 'Reservas web · vacío', route: '/admin/reservas-web', handlers: { AdminWebBookings: () => webBookings([]) }, ready: () => screen.findByText('Aún no hay reservas del canal web') },
   { name: 'Reservas web · error', route: '/admin/reservas-web', handlers: { AdminWebBookings: failing('PROVIDER_UNAVAILABLE', 'UNAVAILABLE') }, ready: () => screen.findByRole('alert') },
+  { name: 'Buscar reserva · formulario', route: '/admin/reservas', ready: () => screen.findByLabelText('Localizador (PNR)') },
+  { name: 'Buscar reserva · encontrada', route: '/admin/reservas', handlers: { AdminBookingByPnr: () => bookingByPnr() }, ready: () => screen.findByLabelText('Localizador (PNR)'), act: async (user) => { await user.type(screen.getByLabelText('Localizador (PNR)'), 'J4R8GZ'); await user.click(screen.getByRole('button', { name: 'Buscar' })); await screen.findByTestId('booking-result'); } },
+  { name: 'Buscar reserva · no encontrada', route: '/admin/reservas', handlers: { AdminBookingByPnr: () => ({ adminBookingByPnr: null }) }, ready: () => screen.findByLabelText('Localizador (PNR)'), act: async (user) => { await user.type(screen.getByLabelText('Localizador (PNR)'), 'ZZZZZZ'); await user.click(screen.getByRole('button', { name: 'Buscar' })); await screen.findByTestId('booking-missing'); } },
+  { name: 'Buscar reserva · límite superado', route: '/admin/reservas', handlers: { AdminBookingByPnr: failing('RATE_LIMIT_EXCEEDED', 'RATE_LIMITED') }, ready: () => screen.findByLabelText('Localizador (PNR)'), act: async (user) => { await user.type(screen.getByLabelText('Localizador (PNR)'), 'J4R8GZ'); await user.click(screen.getByRole('button', { name: 'Buscar' })); await screen.findByText('Hiciste demasiadas solicitudes. Espera un momento e inténtalo de nuevo.'); } },
   { name: 'Panel · ruta inexistente', route: '/admin/nada', ready: () => screen.findByRole('heading', { name: 'No encontramos esa página' }) },
   { name: 'Panel · cliente sin permiso', route: '/admin', session: customerSession, ready: () => screen.findByRole('heading', { name: 'No tienes permiso para esta sección' }) }
 ];

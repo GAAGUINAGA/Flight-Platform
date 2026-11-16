@@ -11,6 +11,29 @@ import { BoardingPass, CheckInResponse, FlightStatus } from "../../common/v1/com
 
 export const protobufPackage = "flightplatform.operations.v1";
 
+export interface AdminCheckInStatusRequest {
+  bookingId: string;
+}
+
+export interface AdminCheckInSegmentStatus {
+  segmentId: string;
+  status: string;
+  seat?: string | undefined;
+}
+
+export interface AdminCheckInPassengerStatus {
+  passengerId: string;
+  status: string;
+  segments: AdminCheckInSegmentStatus[];
+}
+
+/** status: NOT_STARTED (sin check-in), IN_PROGRESS, COMPLETED o FAILED. */
+export interface AdminCheckInStatusResponse {
+  bookingId: string;
+  status: string;
+  passengers: AdminCheckInPassengerStatus[];
+}
+
 export interface CountCheckedInRequest {
   flightInstanceIds: string[];
 }
@@ -86,6 +109,10 @@ export interface OperationsServiceClient {
   recoverCheckIns(request: RecoverCheckInsRequest): Observable<RecoverCheckInsResponse>;
 
   countCheckedIn(request: CountCheckedInRequest): Observable<CountCheckedInResponse>;
+
+  /** Aditivo F12c-4a (ADR-F12c4-01): estado del check-in de una reserva, de solo lectura, para el administrador (rol admin, sin dueño). */
+
+  adminGetCheckInStatus(request: AdminCheckInStatusRequest): Observable<AdminCheckInStatusResponse>;
 }
 
 export interface OperationsServiceController {
@@ -108,6 +135,12 @@ export interface OperationsServiceController {
   countCheckedIn(
     request: CountCheckedInRequest,
   ): Promise<CountCheckedInResponse> | Observable<CountCheckedInResponse> | CountCheckedInResponse;
+
+  /** Aditivo F12c-4a (ADR-F12c4-01): estado del check-in de una reserva, de solo lectura, para el administrador (rol admin, sin dueño). */
+
+  adminGetCheckInStatus(
+    request: AdminCheckInStatusRequest,
+  ): Promise<AdminCheckInStatusResponse> | Observable<AdminCheckInStatusResponse> | AdminCheckInStatusResponse;
 }
 
 export function OperationsServiceControllerMethods() {
@@ -119,6 +152,7 @@ export function OperationsServiceControllerMethods() {
       "listBoardingPasses",
       "recoverCheckIns",
       "countCheckedIn",
+      "adminGetCheckInStatus",
     ];
     for (const method of grpcMethods) {
       const descriptor: any = Reflect.getOwnPropertyDescriptor(constructor.prototype, method);

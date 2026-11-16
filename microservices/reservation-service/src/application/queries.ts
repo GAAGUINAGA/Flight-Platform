@@ -1,4 +1,5 @@
 import { DomainError, flightLocalDay } from '@flight-platform/shared';
+import { adminBookingView } from './admin-view';
 import { AncillariesPort, TicketingPort } from './ports';
 import { ReservationStore, StoredReservation } from './reservation-store';
 const emptyAncillaryIfNotFound = async (operation: Promise<unknown[]>): Promise<unknown[]> => {
@@ -12,5 +13,12 @@ export class ReservationQueries {
   constructor(private readonly store: ReservationStore, private readonly ancillaries?: AncillariesPort, private readonly ticketing?: TicketingPort) {}
   async get(input: { bookingId: string; ownerId: string }) { const value = await this.store.findById(input.ownerId, input.bookingId); if (!value) throw new DomainError('NOT_FOUND'); const [assignments, baggage, tickets] = await Promise.all([emptyAncillaryIfNotFound(this.ancillaries?.getAssignments(input) ?? Promise.resolve([])), emptyAncillaryIfNotFound(this.ancillaries?.getBaggageOptions(input) ?? Promise.resolve([])), this.ticketing?.listTickets(input) ?? []]); const passengers = value.passengers.map((passenger) => { const item = passenger as Record<string, unknown>; const passengerId = item.passengerId; const gender = item.gender === 'MALE' ? 'M' : item.gender === 'FEMALE' ? 'F' : item.gender === 'OTHER' ? 'X' : item.gender; const extraBaggage = baggage.map((entry) => entry as { passengerId?: string; itineraryId?: string; alreadyPurchased?: number; quantity?: number }).filter((entry) => entry.passengerId === passengerId && (entry.alreadyPurchased ?? entry.quantity ?? 0) > 0).map((entry) => ({ itineraryId: entry.itineraryId, quantity: entry.alreadyPurchased ?? entry.quantity })); return { ...item, gender, assignedSeats: assignments.filter((seat) => (seat as { passengerId?: string }).passengerId === passengerId), extraBaggage }; }); return { bookingId: value.id, pnr: value.pnr, status: value.status === 'CANCEL_PENDING' ? 'CANCELLATION_PENDING' : value.status, grandTotal: value.grandTotal, createdAt: value.changes[0]?.changedAt ?? new Date(0).toISOString(), itineraries: value.itineraries, passengers, tickets, changes: value.changes }; }
   async list(input: { ownerId: string; pnr?: string; status?: string; createdFrom?: string; createdTo?: string; limit?: number; cursor?: string }) { const result = await this.store.list({ ...input, limit: Math.min(input.limit ?? 20, 50) }); return { items: result.items.map(summary), nextCursor: result.nextCursor }; }
+  /** Búsqueda por PNR del administrador (F12c-4a): cualquier canal y dueño; el dueño se resuelve aquí, nunca viene de fuera. Un PNR inexistente es NOT_FOUND. */
+  async adminByPnr(input: { pnr: string }) {
+    const stored = await this.store.findByPnr(input.pnr);
+    if (!stored) throw new DomainError('NOT_FOUND');
+    const detail = await this.get({ bookingId: stored.id, ownerId: stored.ownerId });
+    return adminBookingView(stored, detail as unknown as Record<string, unknown>);
+  }
   async byFlightInstance(input: { flightInstanceId: string; limit?: number; cursor?: string }) { const result = await this.store.listByFlightInstance({ ...input, limit: Math.min(input.limit || 20, 50) }); return { items: result.items.map((value) => ({ ...summary(value), ownerId: value.ownerId })), nextCursor: result.nextCursor }; }
 }

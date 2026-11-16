@@ -13,8 +13,8 @@ const protoMethods = (service: ServiceName): Set<string> => {
 };
 
 describe('ESB-CAT: catálogo de operaciones con nombre', () => {
-  it('ESB-CAT-01: hay 46 operaciones gRPC (44 + apartar y liberar asientos del hold, F12b2fix), 1 compuesta de asientos y 1 de salud', () => {
-    expect(OPERATIONS.filter((operation) => operation.kind === 'rpc')).toHaveLength(46);
+  it('ESB-CAT-01: hay 48 operaciones gRPC (44 + apartar y liberar asientos del hold, F12b2fix + buscar por PNR y estado de check-in del administrador, F12c-4a), 1 compuesta de asientos y 1 de salud', () => {
+    expect(OPERATIONS.filter((operation) => operation.kind === 'rpc')).toHaveLength(48);
     expect(OPERATIONS.filter((operation) => operation.kind === 'composite')).toHaveLength(1);
     expect(OPERATIONS.filter((operation) => operation.kind === 'health')).toHaveLength(1);
   });
@@ -51,6 +51,11 @@ describe('ESB-CAT: catálogo de operaciones con nombre', () => {
   it('ESB-CAT-04: solo las cuatro operaciones orquestadas tienen plazo largo', () => {
     const orchestrated = OPERATIONS.filter((operation) => operation.kind === 'rpc' && operation.orchestrated).map((operation) => operation.name).sort();
     expect(orchestrated).toEqual(['postventa.agregar-equipaje', 'postventa.cancelar', 'postventa.confirmar-cambio-fecha', 'reservas.crear']);
+  });
+
+  it('ESB-CAT-07 (F12c-4a): buscar por PNR y el estado de check-in del administrador exigen el rol admin en el ESB', () => {
+    expect(findOperation('reservas.buscar-por-pnr')).toMatchObject({ kind: 'rpc', service: 'reservation', method: 'adminGetReservationByPnr', roles: ['admin'] });
+    expect(findOperation('postventa.admin-estado-check-in')).toMatchObject({ kind: 'rpc', service: 'operations', method: 'adminGetCheckInStatus', roles: ['admin'] });
   });
 
   it('ESB-CAT-05: findOperation devuelve la operación o undefined', () => {

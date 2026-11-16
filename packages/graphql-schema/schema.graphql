@@ -169,6 +169,21 @@ type PlatformHealth { status: HealthStatus! nodeId: String! version: String! upt
 # Reservas del canal web marcadas como de prueba: solo lo que entrega la API interna (`owner` es un hash opaco; sin datos personales)
 type WebTestBooking { bookingId: ID! channel: String! createdAt: DateTime! owner: String passengers: Int! test: Boolean! }
 type WebTestBookingConnection { items: [WebTestBooking!]! pageInfo: PageInfo! }
+# F12c-4a: reserva encontrada por PNR para el administrador (solo lectura, cualquier canal). Lista blanca: SIN documento, correo, teléfono, referencia de pago, dueño ni id del socio.
+type AdminBookingTotal { currency: String! total: String! }
+type AdminBookingSegment { segmentId: ID! flightNumber: String! origin: String! destination: String! departureAt: String! arrivalAt: String! departureLocal: String! arrivalLocal: String! status: String cabinClass: String }
+type AdminBookingSeat { segmentId: ID! seatNumber: String! status: String }
+type AdminBookingBaggage { itineraryId: ID! quantity: Int! }
+type AdminBookingPassenger { passengerId: ID! passengerType: String! firstName: String! lastName: String! seats: [AdminBookingSeat!]! extraBaggage: [AdminBookingBaggage!]! }
+type AdminBookingTicketSegment { segmentId: ID! status: String! }
+type AdminBookingTicket { passengerId: ID! status: String! eTicketLast4: String segments: [AdminBookingTicketSegment!]! }
+type AdminCheckInSegment { segmentId: ID! status: String! seat: String }
+type AdminCheckInPassenger { passengerId: ID! status: String! segments: [AdminCheckInSegment!]! }
+type AdminCheckInState { status: String! passengers: [AdminCheckInPassenger!]! }
+type AdminBooking {
+  bookingId: ID! pnr: String! status: String! channel: String! partnerRef: String createdAt: String! grandTotal: AdminBookingTotal!
+  segments: [AdminBookingSegment!]! passengers: [AdminBookingPassenger!]! tickets: [AdminBookingTicket!]! checkIn: AdminCheckInState!
+}
 input FlightStatusUpdateInput { date: Date! status: FlightStatusCode! estimatedDepartureAt: DateTime estimatedArrivalAt: DateTime departureGate: String reason: String }
 type FlightStatusUpdate { previousStatus: FlightStatusCode flight: FlightStatus! affectedBookings: Int! eventId: String }
 type PromotionAgreement {
@@ -203,7 +218,8 @@ type Query {
   flightOperations(date: Date!, origin: String, destination: String, status: FlightStatusCode, first: Int = 50, after: String): FlightOperationConnection! @admin  # GW: GET v2 /operaciones/vuelos
   platformHealth: PlatformHealth!                                                                  # GW: GET v2 /health (pública)
   promotionAgreement: PromotionAgreement @admin                                                    # GW: GET v2 /promociones/contrato (404 → null)
-  adminWebBookings(first: Int = 20, after: String): WebTestBookingConnection! @admin               # GW: ADMIN-API GET /web-bookings (cursor opaco: after ⇒ before; hacia reservas más antiguas)
+  adminBookingByPnr(pnr: String!): AdminBooking @admin                                             # GW: ADMIN-API POST /bookings/search (404 → null; un PNR inexistente, ajeno o inválido responden igual; cada búsqueda queda registrada)
+  adminWebBookings(first: Int = 20, after: String): WebTestBookingConnection! @admin              # GW: ADMIN-API GET /web-bookings (cursor opaco: after ⇒ before; hacia reservas más antiguas)
 }
 
 # ───────── Mutaciones (idempotencyKey: UUID generado por el cliente por intención) ─────────

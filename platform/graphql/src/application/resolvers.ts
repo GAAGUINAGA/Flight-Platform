@@ -116,6 +116,12 @@ export const queryResolvers = {
     const body = asJson((await call(ctx, { method: 'GET', path: `${V2}/operaciones/vuelos`, query }, { auth: true })).body);
     return { ...connection(body, asList(body.items)), totalFlights: body.totalFlights ?? asList(body.items).length };
   },
+  /** F12c-4a: búsqueda por PNR. 404 (inexistente, ajeno o inválido, indistinguibles) ⇒ `null`. El SDL solo declara la lista blanca; lo demás que llegara no sale. */
+  async adminBookingByPnr(_: unknown, args: Args, ctx: RequestContext): Promise<Json | null> {
+    const pnr = v.check(v.pnrText, args.pnr, 'pnr');
+    const response = await call(ctx, { method: 'POST', path: `${ADMIN_API}/bookings/search`, body: { pnr } }, { auth: true, accept: [200, 404] });
+    return response.status === 404 ? null : asJson(response.body);
+  },
   async adminWebBookings(_: unknown, args: Args, ctx: RequestContext): Promise<Json> {
     // Cursor opaco de punta a punta: `after` viaja tal cual como `before` y `nextCursor` vuelve como `endCursor`, sin interpretarlo. Máximo de `limit` de la API interna: 100.
     const limit = pageSize(args.first, 20, 100); const before = withAfter(args.after);
