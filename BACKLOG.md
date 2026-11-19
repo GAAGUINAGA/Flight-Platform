@@ -228,3 +228,5 @@
 
 - Lección (F12c-4, 16-11-2026): una rama construida ENCIMA de otra que entra a main con --squash no se fusiona con otro --squash (genera conflictos con los mismos cambios por dos caminos): se toma su árbol aprobado (git checkout <rama> -- .) y se comprueba que la diferencia con la rama quede vacía.
 - Lección (F12c-4, 16-11-2026): ninguna prueba compraba en BUSINESS con asiento; el e2e, la suite real y las pruebas de humo posteriores al despliegue deben cubrir cada cabina vendible.
+
+- Investigar los 503 inmediatos (4 a 24 ms) del ESB en Cloud Run, sobre todo en tareas programadas (sistema.expirar-holds, sistema.recuperar-check-ins, sistema.reanudar-pendientes) y en clientes.listar-eventos, presentes al menos desde el 15-11-2026 (audit-44): confirmar que son rechazos del escalado a cero, y decidir entre instancias mínimas en el ESB y los servicios más usados, reintentos con espera en las tareas programadas, o ambos (F12d).
