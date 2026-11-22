@@ -1,12 +1,24 @@
 import { describe, expect, it } from 'vitest';
 import { passengerDraft } from '../../test/passenger-fixtures';
-import { ageOn, emptyPassenger, isInternational, lastTravelDate, validatePassengers, type PassengerDraft, type TripSegment } from './passenger-rules';
+import { ageOn, emptyPassenger, isInternational, lastTravelDate, maxExtraBaggage, validatePassengers, type PassengerDraft, type TripSegment } from './passenger-rules';
 
 const NOW = new Date('2026-12-01T15:00:00Z');
 const UIO_GPS: TripSegment[] = [{ departureAt: '2026-12-10T13:35:00Z', departureIata: 'UIO', arrivalIata: 'GPS' }];
 const UIO_MAD: TripSegment[] = [{ departureAt: '2026-12-10T22:00:00Z', departureIata: 'UIO', arrivalIata: 'MAD' }];
 const adult = (index = 0, patch: Partial<PassengerDraft> = {}): PassengerDraft => ({ ...passengerDraft(emptyPassenger(`PAX-${index + 1}`, 'ADULT'), index), ...patch });
 const errorsOf = (passengers: PassengerDraft[], segments = UIO_GPS) => validatePassengers(passengers, { segments, now: NOW });
+
+describe('maletas adicionales: máximo de la tarifa (total del servidor − incluidas)', () => {
+  it('PAX-BAG-01 el máximo adicional sale de las maletas incluidas: 0 incluidas ⇒ 3; 1 ⇒ 2; 2 ⇒ 1; 3 o más ⇒ 0; sin dato ⇒ 3', () => {
+    expect([0, 1, 2, 3, 5].map(maxExtraBaggage)).toEqual([3, 2, 1, 0, 0]); expect(maxExtraBaggage(undefined)).toBe(3); expect(maxExtraBaggage(null)).toBe(3);
+  });
+  it('PAX-BAG-02 con el máximo del tramo, una cantidad mayor se rechaza con un mensaje claro del campo; dentro del máximo pasa', () => {
+    const withBags = (quantity: number) => validatePassengers([adult(0, { extraBaggage: { 'it-1': quantity } })], { segments: UIO_GPS, now: NOW, maxExtraBaggage: { 'it-1': 1 } });
+    expect(withBags(1)).toEqual({});
+    expect(withBags(3)['0.extraBaggage.it-1']).toBe('Con la tarifa elegida puedes agregar hasta 1 maleta adicional.');
+    expect(validatePassengers([adult(0, { extraBaggage: { 'it-1': 1 } })], { segments: UIO_GPS, now: NOW, maxExtraBaggage: { 'it-1': 0 } })['0.extraBaggage.it-1']).toBe('Con la tarifa elegida no se pueden agregar maletas adicionales.');
+  });
+});
 
 describe('validación de pasajeros antes de llamar al servidor (§3.6, ADR-F12-05, PLAN Q-010)', () => {
   it('PAX-01 un adulto con datos completos en un vuelo nacional no tiene errores', () => {

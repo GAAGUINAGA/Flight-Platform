@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { formatMoney } from '@flight-platform/format';
 import { ReleaseHoldOperation } from '@flight-platform/graphql-schema/generated/operations';
@@ -12,8 +12,8 @@ import ui from '../components/ui/ui.module.css';
 import { newCorrelationId } from '../data/identity';
 import { COUNTRIES } from './countries';
 import { HoldGate, HoldTimer, useHoldClock } from './HoldTimer';
-import { fieldKey, MAX_EXTRA_BAGGAGE, needsSeat, typeLabel, validatePassengers, type PassengerDraft } from './passenger-rules';
-import { baggageTotal, optionFor } from './pricing';
+import { fieldKey, needsSeat, typeLabel, validatePassengers, type PassengerDraft } from './passenger-rules';
+import { baggageTotal, extraBaggageLimits, optionFor } from './pricing';
 import { money, RequireSession, Stepper, SummaryLine } from './Shared';
 import s from './purchase.module.css';
 
@@ -32,7 +32,21 @@ function PassengersScreen() {
   const summary = useRef<HTMLDivElement>(null);
 
   const segments = useMemo(() => (offer ? offer.itineraries.flatMap((itinerary) => itinerary.segments.map((segment) => ({ departureAt: segment.departure.at, departureIata: segment.departure.iataCode, arrivalIata: segment.arrival.iataCode }))) : []), [offer]);
-  const errors = useMemo(() => validatePassengers(drafts, { segments }), [drafts, segments]);
+  // Máximo de maletas adicionales por tramo con la tarifa elegida (se recalcula al cambiar de tarifa; ver `maxExtraBaggage`).
+  const limits = useMemo(() => (offer ? extraBaggageLimits(offer, state.selections) : {}), [offer, state.selections]);
+  const errors = useMemo(() => validatePassengers(drafts, { segments, maxExtraBaggage: limits }), [drafts, segments, limits]);
+  const [adjusted, setAdjusted] = useState(false);
+  // Si se cambió de tarifa y una cantidad ya elegida excede el nuevo máximo, se ajusta al máximo y se avisa.
+  useEffect(() => {
+    let changed = false;
+    const next = drafts.map((draft) => {
+      const extraBaggage = { ...draft.extraBaggage }; let touched = false;
+      for (const [itineraryId, quantity] of Object.entries(extraBaggage)) { const max = limits[itineraryId]; if (max !== undefined && quantity > max) { extraBaggage[itineraryId] = max; touched = true; } }
+      if (touched) changed = true;
+      return touched ? { ...draft, extraBaggage } : draft;
+    });
+    if (changed) { store.setDrafts(next); setAdjusted(true); }
+  }, [drafts, limits, store]);
 
   if (!offer || !state.hold) {
     return (
@@ -80,6 +94,7 @@ function PassengersScreen() {
       <div className={s.twoCol}>
         <form className={s.stack} noValidate onSubmit={(event) => { event.preventDefault(); next(); }} aria-label="Datos de los pasajeros">
           <div ref={summary} tabIndex={-1}>
+            {adjusted ? <Notice kind="warning" title="Ajustamos tus maletas adicionales."><p>Con la tarifa elegida el máximo de maletas adicionales es menor al que habías indicado; lo dejamos en el máximo permitido. Revisa el total antes de pagar.</p></Notice> : null}
             {submitted && Object.keys(errors).length > 0 ? <Notice kind="error" title="Revisa los datos marcados."><p>Hay {Object.keys(errors).length} {Object.keys(errors).length === 1 ? 'campo' : 'campos'} por corregir antes de continuar.</p></Notice> : null}
           </div>
           {drafts.map((draft, index) => (
@@ -129,9 +144,10 @@ function PassengersScreen() {
                   {offer.itineraries.map((itinerary) => {
                     const option = optionFor(itinerary, state.selections[itinerary.itineraryId]); const unit = option?.extraCheckedBaggagePrice;
                     const id = `bag-${index}-${itinerary.itineraryId}`;
+                    const max = limits[itinerary.itineraryId] ?? 0; const included = option?.baggageAllowance.checkedBaggageIncluded ?? 0;
                     return (
-                      <SelectField key={itinerary.itineraryId} label={`${itinerary.segments.map((segment) => segment.flightNumber).join(', ')} · maletas adicionales${unit ? ` (${formatMoney(unit)} c/u)` : ''}`} id={id} value={String(draft.extraBaggage[itinerary.itineraryId] ?? 0)} onChange={(event) => setBaggage(index, itinerary.itineraryId, Number(event.target.value))} error={shown(index, `extraBaggage.${itinerary.itineraryId}`)}>
-                        {Array.from({ length: MAX_EXTRA_BAGGAGE + 1 }, (_, quantity) => <option key={quantity} value={quantity}>{quantity}</option>)}
+                      <SelectField key={itinerary.itineraryId} label={`${itinerary.segments.map((segment) => segment.flightNumber).join(', ')} · maletas adicionales${unit ? ` (${formatMoney(unit)} c/u)` : ''}`} id={id} value={String(Math.min(draft.extraBaggage[itinerary.itineraryId] ?? 0, max))} disabled={max === 0} hint={included > 0 ? `Tu tarifa incluye ${included} ${included === 1 ? 'maleta facturada' : 'maletas facturadas'}; ${max === 0 ? 'no admite más' : `puedes agregar hasta ${max}`}.` : undefined} onChange={(event) => setBaggage(index, itinerary.itineraryId, Number(event.target.value))} error={shown(index, `extraBaggage.${itinerary.itineraryId}`)}>
+                        {Array.from({ length: max + 1 }, (_, quantity) => <option key={quantity} value={quantity}>{quantity}</option>)}
                       </SelectField>
                     );
                   })}

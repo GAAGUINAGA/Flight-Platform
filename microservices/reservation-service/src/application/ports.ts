@@ -12,6 +12,8 @@ export interface InventoryPort {
   consumeHold(input: { holdId: string; ownerId: string; reservationId: string }): Promise<void>;
   createHold?(input: { ownerId: string; segments: Array<{ flightInstanceId: string; cabinClass: string; seats: number }>; expiresAt: string; idempotencyKey: string }): Promise<{ holdId: string }>;
   releaseReservedInventory(input: { bookingId: string; ownerId: string }): Promise<void>;
+  /** Libera un hold creado por esta operación cuando ésta no llega a persistirse. */
+  releaseHold?(input: { holdId: string; ownerId: string }): Promise<void>;
 }
 export interface PricingPort {
   getHold(input: { holdId: string; ownerId: string }): Promise<HoldDetails>;

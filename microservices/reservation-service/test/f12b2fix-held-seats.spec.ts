@@ -28,7 +28,7 @@ describe('HELD-RSV: asientos del hold al crear la reserva', () => {
   });
 
   const setup = (seats = held, adults = 2) => {
-    const pricing = new FakePricingPort(); pricing.holds.set('hold', { holdId: 'hold', ownerId: 'owner', status: 'HELD', expiresAt: '2099-01-01T00:00:00.000Z', lockedPrice: { currency: 'USD', total: '100.00' }, passengersBreakdown: { adults, youths: 0, children: 0, infants: 0 }, itineraries: [{ itineraryId: '00000000-0000-4000-8000-000000000301', pricingOptions: [{ baggageAllowance: { checkedBaggageIncluded: 0 } }] }] });
+    const pricing = new FakePricingPort(); pricing.holds.set('hold', { holdId: 'hold', ownerId: 'owner', status: 'HELD', expiresAt: '2099-01-01T00:00:00.000Z', lockedPrice: { currency: 'USD', total: '100.00' }, passengersBreakdown: { adults, youths: 0, children: 0, infants: 0 }, itineraries: [{ itineraryId: '00000000-0000-4000-8000-000000000301', segments: [{ segmentId: SEG }], pricingOptions: [{ cabinClass: 'ECONOMY', baggageAllowance: { checkedBaggageIncluded: 0 } }] }] });
     const ancillaries = new FakeAncillariesPort(); const reserved: unknown[] = []; const releases: unknown[] = [];
     ancillaries.getHeldSeats = async () => seats; ancillaries.reserveSeats = async (input: unknown) => { reserved.push(input); };
     const base = ancillaries.releaseAll.bind(ancillaries); ancillaries.releaseAll = async (input) => { releases.push(input); return base(input); };

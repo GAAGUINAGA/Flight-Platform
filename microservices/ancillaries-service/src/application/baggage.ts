@@ -6,6 +6,7 @@ const uuid = z.string().guid();
 const owner = z.string().trim().min(1).max(128);
 const quantity = z.number().int().min(1).max(3);
 const booking = z.object({ bookingId: uuid, ownerId: owner }).strict();
+const releaseAllRequest = booking.extend({ restoreHold: z.boolean().optional() }).strict();
 const purchase = booking.extend({ passengerId: uuid, itineraryId: uuid, quantity, operationId: uuid.optional() }).strict();
 const reserve = booking.extend({ baggage: z.array(z.object({ itineraryId: uuid, quantity, passengerId: uuid.optional() }).strict()).min(1).max(9) }).strict();
 const allowanceItem = z.object({ passengerId: uuid, itineraryId: uuid, checkedBaggageIncluded: z.number().int().min(0).max(2147483647) }).strict();
@@ -46,5 +47,6 @@ export class Baggage {
     const totalBaggage = await this.store.purchase({ ...item, status: 'CONFIRMED' }, this.maxAllowed, operationId);
     return { passengerId: request.passengerId, itineraryId: request.itineraryId, totalBaggage };
   }
-  async releaseAll(input: unknown): Promise<void> { const request = validate(booking, input); await this.ownership.assertOwner(request.bookingId, request.ownerId); await this.store.release(request.bookingId, request.ownerId); }
+  /** `restoreHold` es de la liberación de asientos (el controlador manda el mismo pedido a ambos pasos); aquí se admite y se ignora. */
+  async releaseAll(input: unknown): Promise<void> { const request = validate(releaseAllRequest, input); await this.ownership.assertOwner(request.bookingId, request.ownerId); await this.store.release(request.bookingId, request.ownerId); }
 }

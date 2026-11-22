@@ -3,7 +3,11 @@ import { Clock, decimalToMinor, DomainError, minorToDecimal } from '@flight-plat
 import { assertPostSaleEligible, PostSaleItinerary } from '../domain/post-sale-eligibility';
 import { AncillariesPort, EventPublisher, InventoryPort, PaymentVerifier, PricingPort, TicketingPort } from './ports';
 import { ReservationStore, StoredReservation } from './reservation-store';
-import { eventExtra } from './allocation';
+import { cabinBySegment, eventExtra } from './allocation';
+import { compensate } from './compensation';
+
+/** Cabina comprada por segmento para el cambio de fecha: entre las opciones del itinerario, las que permiten cambios. Compartida con ResumePending. */
+export const changeableCabinBySegment = (itineraries: unknown[]): ((segmentId: string) => string) => cabinBySegment(itineraries, (option) => option.fareRules?.isChangeable === true);
 
 type Segment = { flightInstanceId?: string; segmentId: string; departure: { at: string; iataCode?: string }; arrival?: { iataCode?: string }; [key: string]: unknown };
 type Itinerary = { itineraryId: string; segments: Segment[]; pricingOptions: Array<{ cabinClass?: string; fareRules?: { isChangeable?: boolean }; [key: string]: unknown }> } & PostSaleItinerary;
@@ -39,27 +43,50 @@ export class ConfirmDateChange {
     if (offer.changeOfferId !== input.changeOfferId || !Number.isFinite(Date.parse(offer.expiresAt)) || Date.parse(offer.expiresAt) <= this.clock.now().getTime()) throw new DomainError('CHANGE_OFFER_EXPIRED');
     const amountMinor = decimalToMinor(offer.priceDifference.totalToPay);
     if (amountMinor < 0) throw new DomainError('VALIDATION_FAILED');
-    if (amountMinor > 0) {
-      if (!input.payment?.paymentReference) throw new DomainError('PAYMENT_REFERENCE_INVALID');
-      await this.reservations.claimPaymentReference(input.payment.paymentReference, booking.id);
-      const result = await this.payment.verify({ paymentReference: input.payment.paymentReference, currency: booking.grandTotal.currency, total: minorToDecimal(amountMinor), ...(input.paymentChannel ? { channel: input.paymentChannel } : {}) });
-      if (result !== 'AUTHORIZED') throw new DomainError('PAYMENT_NOT_AUTHORIZED');
-    }
-    await this.pricing.markChangeOfferUsed({ changeOfferId: input.changeOfferId, ownerId: input.ownerId });
+    // REGLA 1 (ADR-fixCompra-01): TODAS las validaciones que pueden rechazar el pedido van antes del primer efecto (reclamar o verificar el pago,
+    // marcar la oferta, crear el hold, tocar la reserva o los asientos).
+    const paymentReference = input.payment?.paymentReference;
+    if (amountMinor > 0 && !paymentReference) throw new DomainError('PAYMENT_REFERENCE_INVALID');
+    if (offer.segments.length === 0) throw new DomainError('OFFER_NO_LONGER_AVAILABLE');
     const changedItineraries = this.replaceSegments(oldItineraries, offer.segments);
+    // La cabina de cada segmento (del hold y de cada asiento) es la comprada en SU itinerario, no la del primero (cabinOfSegment, REGLA 2).
+    const cabinOf = changeableCabinBySegment(changedItineraries);
+    const holdSegments = offer.segments.map((segment) => ({ flightInstanceId: segment.flightInstanceId ?? segment.segmentId, cabinClass: cabinOf(segment.segmentId) }));
+    const travelers = (booking.passengers as Array<{ passengerId: string; passengerType: string }>).filter((passenger) => passenger.passengerType !== 'INFANT');
+    // Cada asiento debe pertenecer a un tramo de la reserva (cabinOf lo rechaza si no) y a un pasajero que ocupa asiento.
+    const assignments = (input.assignedSeats as Array<{ segmentId: string; seatNumber: string }>).map((seat, index) => ({ ...seat, passengerId: travelers[index]?.passengerId, passengerType: travelers[index]?.passengerType, cabinClass: cabinOf(seat.segmentId) }));
+    if (assignments.some((assignment) => !assignment.passengerId)) throw new DomainError('VALIDATION_FAILED');
     const previousHoldId = booking.holdId;
-    const first = oldItineraries[0];
-    const cabinClass = first?.pricingOptions.find((option) => option.fareRules?.isChangeable)?.cabinClass;
-    if (!cabinClass || offer.segments.length === 0) throw new DomainError('OFFER_NO_LONGER_AVAILABLE');
-    const seats = (booking.passengers as Array<{ passengerType?: string }>).filter((passenger) => passenger.passengerType !== 'INFANT').length;
-    const hold = await this.inventory.createHold({ ownerId: input.ownerId, segments: offer.segments.map((segment) => ({ flightInstanceId: segment.flightInstanceId ?? segment.segmentId, cabinClass, seats })), expiresAt: new Date(this.clock.now().getTime() + this.holdTtlMinutes * 60_000).toISOString(), idempotencyKey: input.idempotencyKey });
-    booking.status = 'CHANGE_PENDING';
-    booking.holdId = hold.holdId;
-    booking.itineraries = changedItineraries;
-    booking.grandTotal = { ...booking.grandTotal, total: minorToDecimal(decimalToMinor(booking.grandTotal.total) + amountMinor) };
-    booking.pendingOperation = { kind: 'DATE_CHANGE', previousHoldId, changeOfferId: input.changeOfferId, assignedSeats: input.assignedSeats, step: 'CREATED' };
-    booking.changes.push({ changedAt: this.clock.now().toISOString(), description: 'CHANGE_PENDING' });
-    await this.reservations.update(booking);
+    const seats = travelers.length;
+    // Efectos. Hasta que la reserva queda persistida como CHANGE_PENDING, cualquier fallo deshace lo ya hecho y devuelve el error ORIGINAL.
+    const before = { status: booking.status, holdId: booking.holdId, itineraries: booking.itineraries, grandTotal: booking.grandTotal, pendingOperation: booking.pendingOperation, changes: [...booking.changes] };
+    let claimed = false; let authorized = false; let newHoldId: string | undefined;
+    let hold: { holdId: string };
+    try {
+      if (amountMinor > 0) {
+        await this.reservations.claimPaymentReference(paymentReference!, booking.id); claimed = true;
+        const result = await this.payment.verify({ paymentReference: paymentReference!, currency: booking.grandTotal.currency, total: minorToDecimal(amountMinor), ...(input.paymentChannel ? { channel: input.paymentChannel } : {}) });
+        if (result !== 'AUTHORIZED') throw new DomainError('PAYMENT_NOT_AUTHORIZED');
+        authorized = true;
+      }
+      await this.pricing.markChangeOfferUsed({ changeOfferId: input.changeOfferId, ownerId: input.ownerId });
+      hold = await this.inventory.createHold({ ownerId: input.ownerId, segments: holdSegments.map((segment) => ({ ...segment, seats })), expiresAt: new Date(this.clock.now().getTime() + this.holdTtlMinutes * 60_000).toISOString(), idempotencyKey: input.idempotencyKey });
+      newHoldId = hold.holdId;
+      booking.status = 'CHANGE_PENDING';
+      booking.holdId = hold.holdId;
+      booking.itineraries = changedItineraries;
+      booking.grandTotal = { ...booking.grandTotal, total: minorToDecimal(decimalToMinor(booking.grandTotal.total) + amountMinor) };
+      booking.pendingOperation = { kind: 'DATE_CHANGE', previousHoldId, changeOfferId: input.changeOfferId, assignedSeats: input.assignedSeats, step: 'CREATED' };
+      booking.changes.push({ changedAt: this.clock.now().toISOString(), description: 'CHANGE_PENDING' });
+      await this.reservations.update(booking);
+    } catch (error) {
+      Object.assign(booking, before);
+      if (authorized) await compensate('ConfirmDateChange', 'payment.void', () => this.payment.void({ paymentReference: paymentReference! }));
+      if (claimed) await compensate('ConfirmDateChange', 'reservations.releasePaymentReference', () => this.reservations.releasePaymentReference(paymentReference!, booking.id));
+      if (newHoldId) await compensate('ConfirmDateChange', 'inventory.releaseHold', async () => { await this.inventory.releaseHold?.({ holdId: newHoldId!, ownerId: input.ownerId }); });
+      throw error;
+    }
+    // Desde aquí la reserva es CHANGE_PENDING y el cambio es reanudable (ResumePending): el inventario anterior ya se libera paso a paso y no se deshace.
     try {
       // Release by reservationId must happen before attaching the new hold to that
       // reservation; otherwise the broad release also frees the newly consumed hold.
@@ -69,12 +96,7 @@ export class ConfirmDateChange {
       booking.pendingOperation.step = 'HOLD_CONSUMED'; await this.reservations.update(booking);
       await this.ancillaries.releaseAll({ bookingId: booking.id, ownerId: input.ownerId });
       booking.pendingOperation.step = 'ANCILLARIES_RELEASED'; await this.reservations.update(booking);
-      if (input.assignedSeats.length) {
-        const travelers = (booking.passengers as Array<{ passengerId: string; passengerType: string }>).filter((passenger) => passenger.passengerType !== 'INFANT');
-        const assignments = (input.assignedSeats as Array<{ segmentId: string; seatNumber: string }>).map((seat, index) => ({ ...seat, passengerId: travelers[index]?.passengerId, passengerType: travelers[index]?.passengerType, cabinClass }));
-        if (assignments.some((assignment) => !assignment.passengerId)) throw new DomainError('VALIDATION_FAILED');
-        await this.ancillaries.reserveSeats({ bookingId: booking.id, ownerId: input.ownerId, assignments });
-      }
+      if (assignments.length) await this.ancillaries.reserveSeats({ bookingId: booking.id, ownerId: input.ownerId, assignments });
       booking.pendingOperation.step = 'SEATS_RESERVED'; await this.reservations.update(booking);
       const tickets = await this.ticketing.reissueTickets({ bookingId: booking.id, ownerId: input.ownerId, newItineraries: changedItineraries });
       const issuedCount = tickets.filter((ticket) => (ticket as { status?: string }).status === 'ISSUED').length;

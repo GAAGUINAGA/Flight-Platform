@@ -40,7 +40,7 @@ export class LoggingInterceptor implements NestInterceptor {
       tap({
         next: () => this.log.info({ rpc, correlationId: ctx?.correlationId, ms: Date.now() - started }, 'rpc ok'),
         error: (e: unknown) =>
-          this.log.warn({ rpc, correlationId: ctx?.correlationId, ms: Date.now() - started, error: safeGrpcError(e).details }, 'rpc error')
+          this.log.warn({ rpc, correlationId: ctx?.correlationId, ms: Date.now() - started, error: e instanceof InventoryError ? e.code : safeGrpcError(e).details }, 'rpc error')
       })
     );
   }

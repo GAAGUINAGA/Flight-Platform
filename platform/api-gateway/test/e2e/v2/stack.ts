@@ -92,7 +92,7 @@ export interface Scenario {
 export interface Stack {
   gateway: INestApplication; server: ReturnType<INestApplication['getHttpServer']>; payments: PaymentSimulator; devAuth: DevAuthService; clients: DevAuthClientStore;
   db: { inventory: InventoryPrisma; pricing: PricingPrisma; ancillaries: AncillariesPrisma; reservation: ReservationPrisma; ticketing: TicketingPrisma; webhooks: WebhooksPrisma; operations: OperationsPrisma };
-  scheduler: GatewayScheduler; newClient(scopes?: string[]): Promise<TestClient>; scenario(options?: { sellable?: number; domestic?: boolean; hoursAhead?: number; origin?: string; destination?: string; changeable?: boolean }): Promise<Scenario>; dispatchWebhooks(): Promise<number>; subscribe(ownerId: string, events: string[], secret?: string, apiVersion?: '1' | '2'): Promise<{ id: string; secret: string }>; close(): Promise<void>;
+  scheduler: GatewayScheduler; newClient(scopes?: string[]): Promise<TestClient>; scenario(options?: { sellable?: number; domestic?: boolean; hoursAhead?: number; origin?: string; destination?: string; changeable?: boolean; cabin?: 'ECONOMY' | 'PREMIUM_ECONOMY' | 'BUSINESS' | 'FIRST' }): Promise<Scenario>; dispatchWebhooks(): Promise<number>; subscribe(ownerId: string, events: string[], secret?: string, apiVersion?: '1' | '2'): Promise<{ id: string; secret: string }>; close(): Promise<void>;
 }
 
 export async function startStack(env: Record<string, string | undefined> = {}): Promise<Stack> {
@@ -138,14 +138,16 @@ export async function startStack(env: Record<string, string | undefined> = {}): 
     const origin = options.origin ?? (options.domestic ? 'ZQD' : code()); let destination = options.destination ?? (options.domestic ? 'ZQE' : code()); if (destination === origin) destination = 'QQQ';
     // El número es FP + 4 dígitos (patrón del contrato); se descartan los que otro escenario o una corrida anterior dejó en Inventory u Operations.
     let flightNumber = ''; for (let attempt = 0; attempt < 50; attempt += 1) { flightNumber = `FP${randomInt(1000, 10000)}`; if (await inventory.flightInstance.count({ where: { flightNumber } }) === 0 && await operations.operationalFlight.count({ where: { flightNumber } }) === 0) break; }
+    const cabin = options.cabin ?? 'ECONOMY';
     const aircraft = `T${randomUUID().replace(/-/g, '').slice(0, 20)}`;
     // Sin hoursAhead la salida es a las 14:00 UTC (schedule.ts): así los vuelos que las pruebas agregan unas horas antes o después siguen en el mismo día UTC a cualquier hora del reloj.
     const departure = scenarioDeparture(new Date(), options.hoursAhead); const date = utcDay(departure); const seats = ['1A', '1B', '1C'];
     const offerIds: string[] = []; const clientIds = [client.clientId];
-    await inventory.flightInstance.create({ data: { id: flightId, flightNumber, departureIata: origin, arrivalIata: destination, departureAt: departure, arrivalAt: new Date(departure.getTime() + 3_600_000), aircraft, cabins: { create: { cabinClass: 'ECONOMY', sellable: options.sellable ?? 5 } } } });
+    await inventory.flightInstance.create({ data: { id: flightId, flightNumber, departureIata: origin, arrivalIata: destination, departureAt: departure, arrivalAt: new Date(departure.getTime() + 3_600_000), aircraft, cabins: { create: { cabinClass: cabin, sellable: options.sellable ?? 5 } } } });
     await operations.operationalFlight.create({ data: { flightInstanceId: flightId, flightNumber, date, marketingCarrier: 'FP', operatingCarrier: 'FP', departureIata: origin, arrivalIata: destination, scheduledDepartureAt: departure, scheduledArrivalAt: new Date(departure.getTime() + 3_600_000), aircraft, status: 'SCHEDULED' } });
-    await pricing.fare.create({ data: { flightInstanceId: flightId, cabinClass: 'ECONOMY', brand: 'CLASSIC', baseFareMinor: 10000, taxesMinor: 2000, rules: { changeable: options.changeable ?? true, refundable: true }, baggage: { checkedBags: 0 }, extraBagMinor: 5000 } });
-    for (const [index, seatNumber] of seats.entries()) await ancillaries.seatLayout.create({ data: { aircraft, cabinClass: 'ECONOMY', seatNumber, rowNumber: index + 1, characteristics: ['WINDOW'] } });
+    // Las demás cabinas imitan la tarifa FLEX de Business del seed (2 maletas incluidas); ECONOMY queda exactamente como antes.
+    await pricing.fare.create({ data: { flightInstanceId: flightId, cabinClass: cabin, brand: cabin === 'ECONOMY' ? 'CLASSIC' : 'FLEX', baseFareMinor: cabin === 'ECONOMY' ? 10000 : 30000, taxesMinor: 2000, rules: { changeable: options.changeable ?? true, refundable: true }, baggage: { checkedBags: cabin === 'ECONOMY' ? 0 : 2 }, extraBagMinor: 5000 } });
+    for (const [index, seatNumber] of seats.entries()) await ancillaries.seatLayout.create({ data: { aircraft, cabinClass: cabin, seatNumber, rowNumber: index + 1, characteristics: ['WINDOW'] } });
     return {
       clientId: client.clientId, client, async extraClient() { const extra = await registerClient(clients, ALL); clientIds.push(extra.clientId); return extra; }, origin, destination, flightNumber, flightId, aircraft, departure, date, seats,
       async search(passengers = { adults: 1 }) {

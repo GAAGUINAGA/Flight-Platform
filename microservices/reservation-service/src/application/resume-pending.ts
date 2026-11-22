@@ -1,5 +1,6 @@
 import { DomainError } from '@flight-platform/shared';
-import { allocationOf, deterministicEventId, eventExtra, isV2Reservation, refundIdFor, seatsOf, ticketSummary, translateDependencyError } from './allocation';
+import { changeableCabinBySegment } from './confirm-date-change';
+import { allocationOf,deterministicEventId, eventExtra, isV2Reservation, refundIdFor, seatsOf, ticketSummary, translateDependencyError } from './allocation';
 import { AncillariesPort, EventPublisher, InventoryPort, PaymentVerifier, PricingPort, TicketingPort } from './ports';
 import { ReservationStore, StoredReservation } from './reservation-store';
 
@@ -68,8 +69,9 @@ export class ResumePending {
   /** Mismos pasos que la creación inmediata cuando el pago ya estaba aprobado. Devuelve false si falló (la reserva queda FAILED). */
   private async allocate(reservation: StoredReservation): Promise<boolean> {
     if (!this.ancillaries || !this.inventory) return true;
-    const { assignments, baggage } = allocationOf(reservation.passengers);
     try {
+      // La cabina de cada asiento se resuelve dentro del try: si no es determinable la reserva falla y se anula el pago (nunca queda a medias).
+      const { assignments, baggage } = allocationOf(reservation.passengers, reservation.itineraries);
       const held = await this.ancillaries.getHeldSeats?.({ holdId: reservation.holdId, ownerId: reservation.ownerId }) ?? [];
       if (assignments.length || held.length) await this.ancillaries.reserveSeats({ bookingId: reservation.id, ownerId: reservation.ownerId, assignments, ...(held.length ? { holdId: reservation.holdId } : {}) });
       if (baggage.length) await this.ancillaries.reserveBaggage({ bookingId: reservation.id, ownerId: reservation.ownerId, baggage });
@@ -91,7 +93,7 @@ export class ResumePending {
       if (operation.step === 'CREATED') { await this.inventory.releaseReservedInventory({ bookingId: booking.id, ownerId: booking.ownerId }); operation.step = 'OLD_INVENTORY_RELEASED'; await this.store.update(booking); }
       if (operation.step === 'OLD_INVENTORY_RELEASED') { await this.inventory.consumeHold({ holdId: booking.holdId, ownerId: booking.ownerId, reservationId: booking.id }); operation.step = 'HOLD_CONSUMED'; await this.store.update(booking); }
       if (operation.step === 'HOLD_CONSUMED') { await this.ancillaries.releaseAll({ bookingId: booking.id, ownerId: booking.ownerId }); operation.step = 'ANCILLARIES_RELEASED'; await this.store.update(booking); }
-      if (operation.step === 'ANCILLARIES_RELEASED') { const travelers = booking.passengers as Array<{ passengerId: string; passengerType: string }>; const itinerary = booking.itineraries[0] as { pricingOptions?: Array<{ cabinClass?: string }> }; const seats = operation.assignedSeats as Array<{ segmentId: string; seatNumber: string }>; if (seats.length) await this.ancillaries.reserveSeats({ bookingId: booking.id, ownerId: booking.ownerId, assignments: seats.map((seat, index) => ({ ...seat, passengerId: travelers.filter((p) => p.passengerType !== 'INFANT')[index]?.passengerId, passengerType: travelers.filter((p) => p.passengerType !== 'INFANT')[index]?.passengerType, cabinClass: itinerary.pricingOptions?.[0]?.cabinClass })) }); operation.step = 'SEATS_RESERVED'; await this.store.update(booking); }
+      if (operation.step === 'ANCILLARIES_RELEASED') { const travelers = booking.passengers as Array<{ passengerId: string; passengerType: string }>; const cabinOf = changeableCabinBySegment(booking.itineraries); const seats = operation.assignedSeats as Array<{ segmentId: string; seatNumber: string }>; if (seats.length) await this.ancillaries.reserveSeats({ bookingId: booking.id, ownerId: booking.ownerId, assignments: seats.map((seat, index) => ({ ...seat, passengerId: travelers.filter((p) => p.passengerType !== 'INFANT')[index]?.passengerId, passengerType: travelers.filter((p) => p.passengerType !== 'INFANT')[index]?.passengerType, cabinClass: cabinOf(seat.segmentId) })) }); operation.step = 'SEATS_RESERVED'; await this.store.update(booking); }
       if (operation.step === 'SEATS_RESERVED') { const tickets = await this.ticketing.reissueTickets({ bookingId: booking.id, ownerId: booking.ownerId, newItineraries: booking.itineraries }); const issuedCount = tickets.filter((ticket) => (ticket as { status?: string }).status === 'ISSUED').length; if (issuedCount < (booking.passengers as unknown[]).length) return false; operation.step = 'TICKETS_REISSUED'; await this.store.update(booking); }
       booking.status = 'CONFIRMED'; booking.pendingOperation = undefined; booking.changes.push({ changedAt: new Date().toISOString(), description: 'CONFIRMED' }); await this.store.update(booking); await this.events.publish({ ownerId: booking.ownerId, eventType: 'booking.changed', bookingId: booking.id, pnr: booking.pnr, status: booking.status }); return true;
     } catch { booking.attempts += 1; await this.store.update(booking); return false; }

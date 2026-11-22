@@ -23,6 +23,7 @@ export class GrpcInventoryGateway implements InventoryPort {
   async consumeHold(input: { holdId: string; ownerId: string; reservationId: string }): Promise<void> { await readDependency('inventory', 'consumeHold', () => call(this.client(input.ownerId, 'system'), 'consumeHold', input)); }
   async createHold(input: { ownerId: string; segments: Array<{ flightInstanceId: string; cabinClass: string; seats: number }>; expiresAt: string; idempotencyKey: string }): Promise<{ holdId: string }> { return readDependency('inventory', 'createHold', () => call(this.client(input.ownerId, 'system'), 'createHold', input)); }
   async releaseReservedInventory(input: { bookingId: string; ownerId: string }): Promise<void> { await readDependency('inventory', 'releaseReservedInventory', () => call(this.client(input.ownerId, 'system'), 'releaseReservedInventory', input)); }
+  async releaseHold(input: { holdId: string; ownerId: string }): Promise<void> { await readDependency('inventory', 'releaseHold', () => call(this.client(input.ownerId, 'system'), 'releaseHold', input)); }
 }
 export class GrpcPricingGateway implements PricingPort {
   constructor(private readonly client: GrpcServiceForOwner) {}

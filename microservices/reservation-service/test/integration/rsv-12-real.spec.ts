@@ -190,13 +190,14 @@ describeReal('RSV-12: integración local con Inventory, Pricing, Ancillaries, Ti
     return { holdId: response.holdId, segmentId: snapshot.segmentId, seatNumber: await availableSeat(snapshot.segmentId, offer.itinerarySelections[0].cabinClass), pricingPort };
   };
   const services = (pricingPort: PricingPort, payment: PaymentVerifier = new FakePaymentVerifier(), ticketingPort = new GrpcTicketingGateway(factory(`127.0.0.1:${ports.ticketing}`, 'flightplatform.ticketing.v1', 'flightplatform/ticketing/v1/ticketing.proto', 'TicketingService'))) => { const ancillary = new GrpcAncillariesGateway(factory(`127.0.0.1:${ports.ancillaries}`, 'flightplatform.ancillaries.v1', 'flightplatform/ancillaries/v1/ancillaries.proto', 'AncillariesService')); const inventoryPort = new GrpcInventoryGateway(factory(`127.0.0.1:${ports.inventory}`, 'flightplatform.inventory.v1', 'flightplatform/inventory/v1/inventory.proto', 'InventoryService')); const events = new GrpcEventPublisher(factory(`127.0.0.1:${ports.webhooks}`, 'flightplatform.webhooks.v1', 'flightplatform/webhooks/v1/webhooks.proto', 'WebhooksService')); const useCase = new CreateReservation(store, pricingPort, payment, ancillary, inventoryPort, ticketingPort, events); return { useCase, resume: new ResumePending(store, payment, events, ancillary, inventoryPort, ticketingPort) }; };
-  const openComposedReservationRpc = async (pricingPortNumber = ports.pricing) => {
-    const ancillary = new GrpcAncillariesGateway(factory(`127.0.0.1:${ports.ancillaries}`, 'flightplatform.ancillaries.v1', 'flightplatform/ancillaries/v1/ancillaries.proto', 'AncillariesService'));
-    const inventoryPort = new GrpcInventoryGateway(factory(`127.0.0.1:${ports.inventory}`, 'flightplatform.inventory.v1', 'flightplatform/inventory/v1/inventory.proto', 'InventoryService'));
-    const pricingPort = new GrpcPricingGateway(factory(`127.0.0.1:${pricingPortNumber}`, 'flightplatform.pricing.v1', 'flightplatform/pricing/v1/pricing.proto', 'PricingService'));
-    const ticketingPort = new GrpcTicketingGateway(factory(`127.0.0.1:${ports.ticketing}`, 'flightplatform.ticketing.v1', 'flightplatform/ticketing/v1/ticketing.proto', 'TicketingService'));
+  type Wrap = <T extends object>(name: string, port: T) => T;
+  const openComposedReservationRpc = async (pricingPortNumber = ports.pricing, wrap: Wrap = (_name, port) => port) => {
+    const ancillary = wrap('ancillaries', new GrpcAncillariesGateway(factory(`127.0.0.1:${ports.ancillaries}`, 'flightplatform.ancillaries.v1', 'flightplatform/ancillaries/v1/ancillaries.proto', 'AncillariesService')));
+    const inventoryPort = wrap('inventory', new GrpcInventoryGateway(factory(`127.0.0.1:${ports.inventory}`, 'flightplatform.inventory.v1', 'flightplatform/inventory/v1/inventory.proto', 'InventoryService')));
+    const pricingPort = wrap('pricing', new GrpcPricingGateway(factory(`127.0.0.1:${pricingPortNumber}`, 'flightplatform.pricing.v1', 'flightplatform/pricing/v1/pricing.proto', 'PricingService')));
+    const ticketingPort = wrap('ticketing', new GrpcTicketingGateway(factory(`127.0.0.1:${ports.ticketing}`, 'flightplatform.ticketing.v1', 'flightplatform/ticketing/v1/ticketing.proto', 'TicketingService')));
     const events = new GrpcEventPublisher(factory(`127.0.0.1:${ports.webhooks}`, 'flightplatform.webhooks.v1', 'flightplatform/webhooks/v1/webhooks.proto', 'WebhooksService'));
-    const payment = new FakePaymentVerifier();
+    const payment = wrap('payment', new FakePaymentVerifier());
     const deps = composeReservation({ store, pricing: pricingPort, payment, ancillaries: ancillary, inventory: inventoryPort, ticketing: ticketingPort, events, operations: new PrismaBaggageOperations(reservation), quotes: new PrismaCancellationQuotes(reservation), clock: new SystemClock(), cutoffHours: 4, holdTtlMinutes: 20, validateResponse: createResponseValidator() });
     const app = await createReservationServer({ url: '127.0.0.1:29660', internalApiKey: key, deps });
     await app.listen();
@@ -560,4 +561,172 @@ describeReal('RSV-12: integración local con Inventory, Pricing, Ancillaries, Ti
       expect(listed.items).toEqual(expect.arrayContaining([expect.objectContaining({ bookingId: created.bookingId, pnr: created.pnr })]));
     } finally { client?.close(); await smokeReservationApp?.close(); await smokePricingApp.close(); }
   });
+
+  // --- PST-BUS: compra en BUSINESS/FLEX (y control en ECONOMY) por el RPC compuesto, como la haría Booking: sin asientos en la reserva, con o sin asiento apartado en el hold. ---
+  type Segment = { segmentId?: string; flightInstanceId?: string };
+  type OfferWithSegments = { offerId?: string; itineraries?: Array<{ itineraryId?: string; segments?: Segment[]; pricingOptions?: Array<{ cabinClass?: string; fareBrand?: string }> }> };
+  const errorSummary = (error: unknown): string => {
+    const value = (typeof error === 'object' && error !== null ? error : {}) as { code?: unknown; details?: unknown };
+    return `code=${typeof value.code === 'number' || typeof value.code === 'string' ? String(value.code) : '?'} details=${typeof value.details === 'string' ? value.details : '?'}`;
+  };
+  /** Registra, sin datos personales, cada llamada a una dependencia y si terminó bien o con qué código; sirve para ubicar el paso de createReservation que falla. */
+  const tracer = () => {
+    const trail: string[] = [];
+    const wrap: Wrap = (name, port) => new Proxy(port, {
+      get: (target, prop) => {
+        const value = Reflect.get(target, prop, target) as unknown;
+        if (typeof value !== 'function' || typeof prop !== 'string') return value;
+        return async (...args: unknown[]) => {
+          try { const result = await (value as (...input: unknown[]) => unknown).apply(target, args); trail.push(`${name}.${prop}:ok`); return result; }
+          catch (error) { trail.push(`${name}.${prop}:ERROR ${errorSummary(error)}`); throw error; }
+        };
+      }
+    });
+    return { trail, wrap };
+  };
+  const offerWithCapacity = async (cabinClass: string, fareBrand: string) => {
+    for (let offset = 2; offset <= 21; offset += 1) {
+      const date = new Date(Date.now() + offset * 86_400_000).toISOString().slice(0, 10);
+      const result = await firstValueFrom(pricingClient.searchOffers({ legs: [{ origin: 'UIO', destination: 'GYE', departureDate: date }], passengers: { adults: 1, youths: 0, children: 0, infants: 0 } })) as { offers?: OfferWithSegments[] };
+      for (const offer of result.offers ?? []) {
+        const itineraries = offer.itineraries ?? [];
+        const chosen = itineraries.map((itinerary) => ({ itinerary, option: itinerary.pricingOptions?.find((value) => value.cabinClass === cabinClass && value.fareBrand === fareBrand) }));
+        if (!offer.offerId || !itineraries.length || chosen.some((item) => !item.option || !item.itinerary.itineraryId)) continue;
+        let free = true;
+        for (const { itinerary } of chosen) for (const segment of itinerary.segments ?? []) {
+          const row = await inventory.cabinInventory.findUnique({ where: { flightInstanceId_cabinClass: { flightInstanceId: segment.flightInstanceId ?? segment.segmentId ?? '', cabinClass } } });
+          if (!row || row.sellable - row.held - row.sold < 1) free = false;
+        }
+        if (free) return { offerId: offer.offerId, itinerarySelections: chosen.map((item) => ({ itineraryId: item.itinerary.itineraryId!, cabinClass, fareBrand })) };
+      }
+    }
+    return undefined;
+  };
+  /** `sabotage`: manda a Ancillaries la cabina equivocada (ECONOMY) para un asiento BUSINESS, de modo que reserveSeats falle de verdad y se ejercite la compensación. */
+  const purchaseDiagnostic = async (label: string, cabinClass: string, fareBrand: string, withHeldSeat: boolean, sabotage = false) => {
+    const selected = await offerWithCapacity(cabinClass, fareBrand);
+    if (!selected) { process.stderr.write(`${label}: SIN CUPO en ${cabinClass}/${fareBrand} en los próximos 21 días; no se pudo ejercitar la compra (no es un fallo).\n`); return; }
+    const held = await firstValueFrom(pricingClient.holdOffer({ ownerId, offerId: selected.offerId, itinerarySelections: selected.itinerarySelections, passengersBreakdown: { adults: 1, youths: 0, children: 0, infants: 0 }, idempotencyKey: randomUUID() }));
+    const traced = tracer(); const trail = traced.trail;
+    const wrap: Wrap = (name, port) => {
+      const wrapped = traced.wrap(name, port);
+      if (!sabotage || name !== 'ancillaries') return wrapped;
+      return new Proxy(wrapped, { get: (target, prop) => prop === 'reserveSeats'
+        ? (input: { assignments: Array<Record<string, unknown>> }) => (target as unknown as { reserveSeats(value: unknown): Promise<void> }).reserveSeats({ ...input, assignments: input.assignments.map((item) => ({ ...item, cabinClass: 'ECONOMY' })) })
+        : Reflect.get(target, prop, target) as unknown });
+    };
+    const rpc = await openComposedReservationRpc(ports.pricing, wrap);
+    try {
+      if (withHeldSeat) {
+        const lock = await pricing.priceLock.findUnique({ where: { holdId: held.holdId } });
+        const segmentId = itinerarySnapshot(lock?.fareSnapshot).segmentId;
+        let seatNumber: string;
+        try { seatNumber = await availableSeat(segmentId, cabinClass); } catch (error) { process.stderr.write(`${label}: SIN ASIENTO ${cabinClass} libre en el segmento (${(error as Error).message}); no se pudo ejercitar la compra (no es un fallo).\n`); return; }
+        const ancillaryClient = factory(`127.0.0.1:${ports.ancillaries}`, 'flightplatform.ancillaries.v1', 'flightplatform/ancillaries/v1/ancillaries.proto', 'AncillariesService')(ownerId, 'system') as unknown as { holdSeats(input: unknown): import('rxjs').Observable<unknown> };
+        await firstValueFrom(ancillaryClient.holdSeats({ holdId: held.holdId, ownerId, expiresAt: held.expiresAt, seats: [{ segmentId, seatNumber }] }));
+        trail.push(`(prueba) ancillaries.holdSeats:ok cabina=${cabinClass}`);
+      }
+      const pax = { ...passenger(randomUUID(), '1A'), assignedSeats: [] };
+      let created: { bookingId: string; status?: string };
+      try { created = await rpc.call('createReservation', { holdId: held.holdId, passengers: [pax], payment: { paymentReference: `pay_ok_${randomUUID()}` }, idempotencyKey: randomUUID() }) as { bookingId: string; status?: string }; }
+      catch (error) {
+        if (sabotage) {
+          // La causa original llega intacta aunque la compensación corra, y la compensación deja todo liberado.
+          expect(errorSummary(error)).toBe('code=9 details=SEAT_CABIN_MISMATCH');
+          expect(trail).toEqual(expect.arrayContaining(['ancillaries.reserveSeats:ERROR code=9 details=SEAT_CABIN_MISMATCH', 'ancillaries.releaseAll:ok', 'payment.void:ok']));
+          const rows = await reservation.reservation.findMany({ where: { ownerId, holdId: held.holdId } });
+          expect(rows.map((row) => row.status)).toEqual(['FAILED']);
+          reservations.push(rows[0].id); allowanceReservations.push(rows[0].id);
+          await expect(ancillaries.seatAssignment.count({ where: { bookingId: rows[0].id, status: { not: 'RELEASED' } } })).resolves.toBe(0);
+          await expect(ancillaries.seatAssignment.count({ where: { holdId: held.holdId, status: 'HELD' } })).resolves.toBe(1);
+          await expect(inventory.hold.findUnique({ where: { id: held.holdId } })).resolves.toMatchObject({ status: 'HELD' });
+          return;
+        }
+        const report = `${label} FALLÓ en createReservation (${cabinClass}/${fareBrand}, asiento apartado: ${withHeldSeat}): ${errorSummary(error)}\n  pasos: ${trail.join(' -> ')}\n  último paso: ${trail[trail.length - 1] ?? '(ninguno)'}; si no es un ERROR de dependencia, el rechazo salió del propio createReservation tras ese paso`;
+        process.stderr.write(`${report}\n`); throw new Error(report);
+      }
+      reservations.push(created.bookingId); allowanceReservations.push(created.bookingId);
+      if (sabotage) throw new Error(`${label}: la compra debía fallar con la cabina equivocada y terminó bien`);
+      expect(created).toMatchObject({ status: 'CONFIRMED' });
+      await expect(ticketing.ticket.count({ where: { bookingId: created.bookingId, status: 'ISSUED' } })).resolves.toBe(1);
+      if (withHeldSeat) await expect(ancillaries.seatAssignment.findFirst({ where: { bookingId: created.bookingId, status: { not: 'RELEASED' } } })).resolves.toMatchObject({ cabinClass });
+    } finally {
+      rpc.client.close(); await rpc.app.close();
+      const ancillary = new GrpcAncillariesGateway(factory(`127.0.0.1:${ports.ancillaries}`, 'flightplatform.ancillaries.v1', 'flightplatform/ancillaries/v1/ancillaries.proto', 'AncillariesService'));
+      const inventoryRpc = factory(`127.0.0.1:${ports.inventory}`, 'flightplatform.inventory.v1', 'flightplatform/inventory/v1/inventory.proto', 'InventoryService')(ownerId, 'system') as { releaseHold(input: unknown): import('rxjs').Observable<unknown> };
+      await Promise.allSettled([ancillary.releaseHeldSeats({ holdId: held.holdId, ownerId }), firstValueFrom(inventoryRpc.releaseHold({ holdId: held.holdId, ownerId }))]);
+    }
+  };
+  it('PST-BUS-00 / control: compra en ECONOMY/CLASSIC con asiento apartado en el hold', async () => { await purchaseDiagnostic('PST-BUS-00', 'ECONOMY', 'CLASSIC', true); }, 150_000);
+  it('PST-BUS-01 / I: compra en BUSINESS/FLEX con asiento apartado en el hold (como Booking)', async () => { await purchaseDiagnostic('PST-BUS-01', 'BUSINESS', 'FLEX', true); }, 150_000);
+  it('PST-BUS-02 / I: compra en BUSINESS/FLEX sin asiento (separa la causa de los asientos)', async () => { await purchaseDiagnostic('PST-BUS-02', 'BUSINESS', 'FLEX', false); }, 150_000);
+  it('PST-BUS-03 / I: si reserveSeats falla (cabina equivocada simulada) la compensación libera todo y se devuelve el error ORIGINAL', async () => { await purchaseDiagnostic('PST-BUS-03', 'BUSINESS', 'FLEX', true, true); }, 150_000);
+  it('PST-BUS-04 / I: ReleaseHold es idempotente en un hold liberado y responde con un error de negocio (nunca INTERNAL_ERROR) en uno consumido', async () => {
+    const inventoryRpc = factory(`127.0.0.1:${ports.inventory}`, 'flightplatform.inventory.v1', 'flightplatform/inventory/v1/inventory.proto', 'InventoryService')(ownerId, 'system') as { releaseHold(input: unknown): import('rxjs').Observable<unknown> };
+    const release = (holdId: string) => firstValueFrom(inventoryRpc.releaseHold({ holdId, ownerId }));
+    const released = await hold(false, 'CLASSIC');
+    await expect(release(released.holdId)).resolves.toBeDefined();
+    await expect(release(released.holdId)).resolves.toBeDefined();
+    await expect(inventory.hold.findUnique({ where: { id: released.holdId } })).resolves.toMatchObject({ status: 'RELEASED' });
+    const consumed = await hold(false, 'CLASSIC'); const rpc = await openComposedReservationRpc();
+    try {
+      const created = await rpc.call('createReservation', { holdId: consumed.holdId, passengers: [{ ...passenger(randomUUID(), '1A'), assignedSeats: [] }], payment: { paymentReference: `pay_ok_${randomUUID()}` }, idempotencyKey: randomUUID() }) as { bookingId: string };
+      reservations.push(created.bookingId); allowanceReservations.push(created.bookingId);
+      await expect(release(consumed.holdId)).rejects.toMatchObject({ code: 9, details: 'OFFER_NO_LONGER_AVAILABLE' });
+    } finally { rpc.client.close(); await rpc.app.close(); }
+  }, 150_000);
+  /** audit-46 H1: el cambio de fecha de una reserva BUSINESS/FLEX con asiento reserva el asiento nuevo con la cabina comprada del tramo cambiado. */
+  it('PST-BUS-05 / I: cambio de fecha en BUSINESS/FLEX con asiento: el hold y el asiento nuevo van en BUSINESS', async () => {
+    const selected = await offerWithCapacity('BUSINESS', 'FLEX');
+    if (!selected) { process.stderr.write('PST-BUS-05: SIN CUPO en BUSINESS/FLEX en los próximos 21 días; no se pudo ejercitar (no es un fallo).\n'); return; }
+    const held = await firstValueFrom(pricingClient.holdOffer({ ownerId, offerId: selected.offerId, itinerarySelections: selected.itinerarySelections, passengersBreakdown: { adults: 1, youths: 0, children: 0, infants: 0 }, idempotencyKey: randomUUID() }));
+    const rpc = await openComposedReservationRpc();
+    try {
+      const created = await rpc.call('createReservation', { holdId: held.holdId, passengers: [{ ...passenger(randomUUID(), '1A'), assignedSeats: [] }], payment: { paymentReference: `pay_ok_${randomUUID()}` }, idempotencyKey: randomUUID() }) as { bookingId: string };
+      reservations.push(created.bookingId); allowanceReservations.push(created.bookingId);
+      const stored = await store.findById(ownerId, created.bookingId); if (!stored) throw new Error('reserva real no quedó persistida');
+      const route = stored.itineraries[0] as { itineraryId: string; segments: Array<{ segmentId: string; departure: { at: string; iataCode: string }; arrival: { iataCode: string } }>; pricingOptions: Array<{ cabinClass: string; fareBrand: string }> };
+      expect(route.pricingOptions[0]).toMatchObject({ cabinClass: 'BUSINESS', fareBrand: 'FLEX' });
+      const date = new Date(route.segments[0].departure.at); date.setUTCDate(date.getUTCDate() + 1); const newDate = date.toISOString().slice(0, 10);
+      const searched = await rpc.call('searchDateChange', { bookingId: created.bookingId, changes: [{ itineraryId: route.itineraryId, newDepartureDate: newDate }] }) as { offers: Array<{ changeOfferId: string; segments: Array<{ segmentId: string; flightInstanceId: string }> }> };
+      if (!searched.offers.length) { process.stderr.write('PST-BUS-05: sin oferta de cambio de fecha para BUSINESS/FLEX; no se pudo ejercitar (no es un fallo).\n'); return; }
+      const offer = searched.offers[0];
+      await firstValueFrom(pricingClient.searchOffers({ legs: [{ origin: route.segments[0].departure.iataCode, destination: route.segments[0].arrival.iataCode, departureDate: newDate }], passengers: { adults: 1, youths: 0, children: 0, infants: 0 } }));
+      let newSeat: string;
+      try { newSeat = await availableSeat(offer.segments[0].segmentId, 'BUSINESS'); } catch (error) { process.stderr.write(`PST-BUS-05: SIN ASIENTO BUSINESS libre en el vuelo nuevo (${(error as Error).message}); no se pudo ejercitar (no es un fallo).\n`); return; }
+      const changed = await rpc.call('confirmDateChange', { bookingId: created.bookingId, changeOfferId: offer.changeOfferId, payment: { paymentReference: `pay_ok_${randomUUID()}` }, assignedSeats: [{ segmentId: offer.segments[0].segmentId, seatNumber: newSeat }], idempotencyKey: randomUUID() }) as { status: string };
+      const row = await reservation.reservation.findUniqueOrThrow({ where: { id: created.bookingId } });
+      if (row.status !== 'CONFIRMED') throw new Error(`PST-BUS-05 quedó pendiente en paso ${(row.pendingOperation as { step?: string } | null)?.step ?? 'unknown'}: ${(row.pendingOperation as { lastFailureCode?: string } | null)?.lastFailureCode ?? 'sin código'}`);
+      expect(changed).toMatchObject({ status: 'CONFIRMED' });
+      await expect(ancillaries.seatAssignment.findFirst({ where: { bookingId: created.bookingId, segmentId: offer.segments[0].segmentId, seatNumber: newSeat, status: { not: 'RELEASED' } } })).resolves.toMatchObject({ cabinClass: 'BUSINESS' });
+    } finally { rpc.client.close(); await rpc.app.close(); }
+  }, 150_000);
+  /** audit-47 H1 (REGLA 1): un asiento de un tramo ajeno se rechaza ANTES de cualquier efecto; la misma referencia de pago sirve después en un cambio válido. */
+  it('PST-BUS-06 / I: cambio de fecha con asiento de tramo ajeno: rechazo sin reclamar ni verificar el pago, reserva y hold intactos; después la MISMA referencia confirma un cambio válido', async () => {
+    const selected = await offerWithCapacity('BUSINESS', 'FLEX');
+    if (!selected) { process.stderr.write('PST-BUS-06: SIN CUPO en BUSINESS/FLEX en los próximos 21 días; no se pudo ejercitar (no es un fallo).\n'); return; }
+    const held = await firstValueFrom(pricingClient.holdOffer({ ownerId, offerId: selected.offerId, itinerarySelections: selected.itinerarySelections, passengersBreakdown: { adults: 1, youths: 0, children: 0, infants: 0 }, idempotencyKey: randomUUID() }));
+    const rpc = await openComposedReservationRpc();
+    try {
+      const created = await rpc.call('createReservation', { holdId: held.holdId, passengers: [{ ...passenger(randomUUID(), '1A'), assignedSeats: [] }], payment: { paymentReference: `pay_ok_${randomUUID()}` }, idempotencyKey: randomUUID() }) as { bookingId: string };
+      reservations.push(created.bookingId); allowanceReservations.push(created.bookingId);
+      const stored = await store.findById(ownerId, created.bookingId); if (!stored) throw new Error('reserva real no quedó persistida');
+      const route = stored.itineraries[0] as { itineraryId: string; segments: Array<{ segmentId: string; departure: { at: string; iataCode: string }; arrival: { iataCode: string } }> };
+      const date = new Date(route.segments[0].departure.at); date.setUTCDate(date.getUTCDate() + 1); const newDate = date.toISOString().slice(0, 10);
+      const searched = await rpc.call('searchDateChange', { bookingId: created.bookingId, changes: [{ itineraryId: route.itineraryId, newDepartureDate: newDate }] }) as { offers: Array<{ changeOfferId: string; segments: Array<{ segmentId: string }>; priceDifference?: { totalToPay?: string } }> };
+      if (!searched.offers.length) { process.stderr.write('PST-BUS-06: sin oferta de cambio de fecha; no se pudo ejercitar (no es un fallo).\n'); return; }
+      const offer = searched.offers[0]; const toPay = Number(offer.priceDifference?.totalToPay ?? '0');
+      process.stderr.write(`PST-BUS-06: diferencia a pagar ${offer.priceDifference?.totalToPay ?? '0'}${toPay > 0 ? '' : ' (importe cero: no ejercita el reclamo del pago; el caso con importe lo cubre la unitaria CAB-07)'}\n`);
+      await firstValueFrom(pricingClient.searchOffers({ legs: [{ origin: route.segments[0].departure.iataCode, destination: route.segments[0].arrival.iataCode, departureDate: newDate }], passengers: { adults: 1, youths: 0, children: 0, infants: 0 } }));
+      let newSeat: string;
+      try { newSeat = await availableSeat(offer.segments[0].segmentId, 'BUSINESS'); } catch (error) { process.stderr.write(`PST-BUS-06: SIN ASIENTO BUSINESS libre en el vuelo nuevo (${(error as Error).message}); no se pudo ejercitar (no es un fallo).\n`); return; }
+      const reference = `pay_ok_${randomUUID()}`; const before = await reservation.reservation.findUniqueOrThrow({ where: { id: created.bookingId } });
+      await expect(rpc.call('confirmDateChange', { bookingId: created.bookingId, changeOfferId: offer.changeOfferId, payment: { paymentReference: reference }, assignedSeats: [{ segmentId: randomUUID(), seatNumber: newSeat }], idempotencyKey: randomUUID() })).rejects.toMatchObject({ code: 9, details: 'OFFER_NO_LONGER_AVAILABLE' });
+      await expect(reservation.paymentUsage.findUnique({ where: { paymentReference: reference } })).resolves.toBeNull();
+      const after = await reservation.reservation.findUniqueOrThrow({ where: { id: created.bookingId } });
+      expect(after).toMatchObject({ status: 'CONFIRMED', holdId: before.holdId });
+      const retried = await rpc.call('confirmDateChange', { bookingId: created.bookingId, changeOfferId: offer.changeOfferId, payment: { paymentReference: reference }, assignedSeats: [{ segmentId: offer.segments[0].segmentId, seatNumber: newSeat }], idempotencyKey: randomUUID() }) as { status: string };
+      expect(retried).toMatchObject({ status: 'CONFIRMED' });
+    } finally { rpc.client.close(); await rpc.app.close(); }
+  }, 150_000);
 });

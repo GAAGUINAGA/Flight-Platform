@@ -9,7 +9,7 @@ const money = (total: string) => ({ currency: 'USD', total, baseFare: null, taxe
 const fail = (category: ConstructorParameters<typeof AppError>[0]['category'], code: string, retryAfterSeconds?: number): Handler => () => { throw new AppError({ category, code, correlationId: 'corr-x', retryAfterSeconds }); };
 const NOW = '2026-12-01T15:00:00Z';
 const options = () => ({ baggageOptions: [
-  { passengerId: 'PAX-1', itineraryId: ITINERARY_ID, maxAllowed: 3, alreadyPurchased: 1, price: money('35.00') },
+  { passengerId: 'PAX-1', itineraryId: ITINERARY_ID, maxAllowed: 2, alreadyPurchased: 1, price: money('35.00') }, // el servidor ya descuenta lo comprado: 3 − 0 incluidas − 1
   { passengerId: 'PAX-2', itineraryId: ITINERARY_ID, maxAllowed: 3, alreadyPurchased: 0, price: money('35.00') }
 ] });
 const base = { Booking: () => ({ booking: booking() }) };
@@ -29,11 +29,22 @@ describe('postventa (§3.11): importe y condiciones siempre antes de confirmar',
     expect(await screen.findByText('Por ahora no hay cambios disponibles para esta reserva.')).toBeInTheDocument();
   });
 
+  it('ASV-02b equipaje con tarifa FLEX (2 incluidas): el selector ofrece exactamente lo que el servidor acepta, sin descontar dos veces lo comprado', async () => {
+    renderApp('/reservas/b-1/postventa?pestana=equipaje', { session: signedIn(), handlers: { ...base, BaggageOptions: () => ({ baggageOptions: [
+      { passengerId: 'PAX-1', itineraryId: ITINERARY_ID, maxAllowed: 1, alreadyPurchased: 0, price: money('35.00') }, // 3 − 2 incluidas − 0
+      { passengerId: 'PAX-2', itineraryId: ITINERARY_ID, maxAllowed: 0, alreadyPurchased: 1, price: money('35.00') } // 3 − 2 incluidas − 1: ya no admite más
+    ] }) } });
+    const first = await screen.findByLabelText('Maletas adicionales de Ana Pérez en FP103');
+    expect(within(first).getAllByRole('option').map((option) => option.textContent)).toEqual(['0', '1']);
+    const second = screen.getByLabelText(/Maletas adicionales de .* en FP103/, { selector: '#qty-PAX-2\\|' + ITINERARY_ID });
+    expect(within(second).getAllByRole('option').map((option) => option.textContent)).toEqual(['0']); expect(second).toBeDisabled();
+  });
+
   it('ASV-02 equipaje: opciones por pasajero y tramo → cantidad → resumen con importe y condiciones → pagar; clave y referencia por acción', async () => {
     const user = userEvent.setup();
     const view = renderApp('/reservas/b-1/postventa?pestana=equipaje', { session: signedIn(), handlers: { ...base, BaggageOptions: () => options(), AddBaggage: () => ({ addBaggage: { passengerId: 'PAX-1', itineraryId: ITINERARY_ID, totalBaggage: 3 } }) } });
     const select = await screen.findByLabelText('Maletas adicionales de Ana Pérez en FP103');
-    expect(within(select).getAllByRole('option').map((option) => option.textContent)).toEqual(['0', '1', '2']); // máximo 3, ya compró 1
+    expect(within(select).getAllByRole('option').map((option) => option.textContent)).toEqual(['0', '1', '2']); // el servidor dice que puede agregar 2 más (máximo 3, ya compró 1)
     expect(screen.getAllByText('USD 35,00').length).toBeGreaterThan(0);
     await user.selectOptions(select, '2'); await user.click(screen.getByRole('button', { name: 'Revisar y pagar' }));
     const summary = screen.getByRole('region', { name: 'Resumen del equipaje' });
@@ -103,7 +114,7 @@ describe('postventa (§3.11): importe y condiciones siempre antes de confirmar',
     await screen.findByText('Confirmamos 1 de 2 líneas.');
     first.unmount(); reloaded = true; // «recarga»: estado en memoria nuevo
     const view = renderApp('/reservas/b-1/postventa?pestana=equipaje', { session: signedIn(), handlers: { ...base, BaggageOptions: () => ({ baggageOptions: [
-      { passengerId: 'PAX-1', itineraryId: ITINERARY_ID, maxAllowed: 3, alreadyPurchased: 2, price: money('35.00') }, { passengerId: 'PAX-2', itineraryId: ITINERARY_ID, maxAllowed: 3, alreadyPurchased: 0, price: money('35.00') }] }) } });
+      { passengerId: 'PAX-1', itineraryId: ITINERARY_ID, maxAllowed: 1, alreadyPurchased: 2, price: money('35.00') }, { passengerId: 'PAX-2', itineraryId: ITINERARY_ID, maxAllowed: 3, alreadyPurchased: 0, price: money('35.00') }] }) } });
     expect(reloaded).toBe(true);
     await screen.findByLabelText('Maletas adicionales de Ana Pérez en FP103');
     expect(screen.queryByRole('region', { name: 'Resumen del equipaje' })).not.toBeInTheDocument(); // empieza de cero, con lo ya comprado a la vista

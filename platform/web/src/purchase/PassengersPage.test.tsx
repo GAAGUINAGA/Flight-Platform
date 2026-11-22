@@ -61,6 +61,40 @@ describe('datos de los pasajeros (§3.6)', () => {
     expect(await screen.findByRole('heading', { name: 'Pago' })).toBeInTheDocument();
   });
 
+  describe('maletas adicionales: solo lo que el servidor acepta (máximo total − incluidas en la tarifa)', () => {
+    const TWO = { ...OFFER, itineraries: [itinerary({ id: 'it-1', flight: 'FP103', from: 'UIO', to: 'GPS', departure: '2026-12-10T13:35:00Z', arrival: '2026-12-10T16:30:00Z', minutes: 175, cabins: [['ECONOMY', 'Basic', '127.39', 9, 0], ['BUSINESS', 'Flex', '420.00', 9, 2]] })] };
+    const started = (brand: 'Basic' | 'Flex') => {
+      const purchase = new PurchaseStore(memoryStore(), new IntentBook(counterIds())); purchase.start(TWO, BACK, { adults: 1, youths: 0, children: 0, infants: 0 });
+      if (brand === 'Flex') purchase.selectFare('it-1', { cabinClass: 'BUSINESS', fareBrand: 'Flex' });
+      purchase.setHold({ holdId: 'h-1', signature: 's' });
+      return purchase;
+    };
+    const options = (select: HTMLElement) => within(select).getAllByRole('option').map((option) => option.textContent);
+
+    it('PAS-08 con BASIC (0 incluidas) ofrece el máximo (0 a 3); con FLEX (2 incluidas) no más de 1', async () => {
+      renderApp('/compra/pasajeros', { session: signedIn(), purchase: started('Basic'), handlers });
+      expect(options(await screen.findByLabelText(/FP103 · maletas adicionales/))).toEqual(['0', '1', '2', '3']);
+    });
+    it('PAS-09 con FLEX el selector ofrece solo 0 y 1 y lo explica; elegir 1 no da error', async () => {
+      const user = userEvent.setup();
+      renderApp('/compra/pasajeros', { session: signedIn(), purchase: started('Flex'), handlers });
+      const select = await screen.findByLabelText(/FP103 · maletas adicionales/);
+      expect(options(select)).toEqual(['0', '1']);
+      expect(screen.getByText('Tu tarifa incluye 2 maletas facturadas; puedes agregar hasta 1.')).toBeInTheDocument();
+      await user.selectOptions(select, '1'); expect(select).toHaveValue('1');
+    });
+    it('PAS-10 al cambiar de tarifa, una cantidad ya elegida que excede el nuevo máximo se ajusta y se avisa', async () => {
+      const purchase = started('Basic'); purchase.setDrafts(purchase.getState().drafts.map((draft) => ({ ...draft, extraBaggage: { 'it-1': 3 } })));
+      renderApp('/compra/pasajeros', { session: signedIn(), purchase, handlers });
+      const select = await screen.findByLabelText(/FP103 · maletas adicionales/); expect(select).toHaveValue('3');
+      expect(screen.queryByText('Ajustamos tus maletas adicionales.')).not.toBeInTheDocument();
+      act(() => { purchase.selectFare('it-1', { cabinClass: 'BUSINESS', fareBrand: 'Flex' }); });
+      expect(await screen.findByText('Ajustamos tus maletas adicionales.')).toBeInTheDocument();
+      expect(screen.getByLabelText(/FP103 · maletas adicionales/)).toHaveValue('1');
+      expect(purchase.getState().drafts[0].extraBaggage['it-1']).toBe(1);
+    });
+  });
+
   it('PAS-05 el contador sale del servidor: descuenta desde su remainingSeconds y, al llegar a cero, confirma con el servidor (410 ⇒ vencido, sin avanzar)', async () => {
     let calls = 0;
     renderApp('/compra/pasajeros', { session: signedIn(), purchase: startedPurchase({ withHold: true, withPassengers: true }).purchase, handlers: { Hold: () => { calls += 1; return calls === 1 ? hold({ remainingSeconds: 2 }) : gone(); } } });

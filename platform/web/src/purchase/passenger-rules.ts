@@ -32,9 +32,22 @@ export interface RuleContext {
   now?: Date;
   /** Aeropuertos nacionales (por omisión, los del Gateway). */
   domestic?: ReadonlySet<string>;
+  /** Máximo de maletas adicionales por tramo (itineraryId) con la tarifa elegida; sin él solo rige el tope por entrada. */
+  maxExtraBaggage?: Readonly<Record<string, number>>;
 }
 
+/** Tope por entrada de equipaje en una reserva (el RPC `createReservation` acepta 1..3 maletas por tramo). */
 export const MAX_EXTRA_BAGGAGE = 3;
+/**
+ * Maletas facturadas TOTALES (incluidas en la tarifa + adicionales) por pasajero y tramo. La regla es del servidor: `BAGGAGE_MAX_ALLOWED`
+ * de Ancillaries (por omisión 3; `microservices/ancillaries-service/src/infrastructure/grpc/server.ts`), y la aplica `PrismaBaggageStore.reserve`
+ * (franquicia + ya compradas + pedidas > máximo ⇒ BAGGAGE_LIMIT_EXCEEDED). Antes de que exista la reserva ninguna operación pública entrega ese
+ * máximo (`baggageOptions` pide una reserva y el contrato no cambia), así que se refleja aquí UNA vez; si el servidor lo cambia hay que cambiarlo
+ * aquí. Con la reserva creada, la postventa NO usa este número: usa el `maxAllowed` que entrega el servidor.
+ */
+export const MAX_CHECKED_BAGS_PER_PASSENGER = 3;
+/** Máximo de maletas ADICIONALES que admite una tarifa: el total permitido menos las maletas que ya incluye (nunca más de lo que acepta una entrada). */
+export const maxExtraBaggage = (included: number | null | undefined): number => Math.max(0, Math.min(MAX_EXTRA_BAGGAGE, MAX_CHECKED_BAGS_PER_PASSENGER - (included ?? 0)));
 /** Los mismos aeropuertos nacionales que el Gateway toma por omisión (`DEFAULT_DOMESTIC_AIRPORTS`). */
 export const DOMESTIC_AIRPORTS: ReadonlySet<string> = new Set(['UIO', 'GYE', 'CUE', 'LTX', 'MEC', 'GPS', 'SCY', 'ESM', 'TUA', 'LOH', 'PVO', 'OCC', 'TPC', 'XMS', 'CPV', 'JIP', 'AIQ', 'ATF']);
 
@@ -124,6 +137,10 @@ export function validatePassengers(passengers: readonly PassengerDraft[], contex
     for (const [itineraryId, quantity] of Object.entries(passenger.extraBaggage)) {
       if (!Number.isInteger(quantity) || quantity < 0 || quantity > MAX_EXTRA_BAGGAGE) set(`extraBaggage.${itineraryId}`, `Puedes llevar entre 0 y ${MAX_EXTRA_BAGGAGE} maletas adicionales.`);
       else if (quantity > 0 && passenger.passengerType === 'INFANT') set(`extraBaggage.${itineraryId}`, 'Los infantes no llevan equipaje facturado propio.');
+      else if (context.maxExtraBaggage && quantity > (context.maxExtraBaggage[itineraryId] ?? MAX_EXTRA_BAGGAGE)) {
+        const limit = context.maxExtraBaggage[itineraryId] ?? MAX_EXTRA_BAGGAGE;
+        set(`extraBaggage.${itineraryId}`, limit === 0 ? 'Con la tarifa elegida no se pueden agregar maletas adicionales.' : `Con la tarifa elegida puedes agregar hasta ${limit} ${limit === 1 ? 'maleta adicional' : 'maletas adicionales'}.`);
+      }
     }
   });
 

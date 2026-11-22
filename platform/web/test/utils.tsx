@@ -83,7 +83,7 @@ export async function expectAccessible(container: HTMLElement = document.body): 
 
 // ───────── Datos de ejemplo ─────────
 const money = (total: string) => ({ currency: 'USD', total, baseFare: null, taxes: '12.00' });
-export function itinerary(options: { id: string; flight: string; from: string; to: string; departure: string; arrival: string; minutes: number; stops?: string[]; cabins?: Array<[cabin: 'ECONOMY' | 'BUSINESS', brand: string, price: string, seats?: number]> }): ItineraryFieldsFragment {
+export function itinerary(options: { id: string; flight: string; from: string; to: string; departure: string; arrival: string; minutes: number; stops?: string[]; cabins?: Array<[cabin: 'ECONOMY' | 'BUSINESS', brand: string, price: string, seats?: number, checkedBaggageIncluded?: number]> }): ItineraryFieldsFragment {
   const points = [options.from, ...(options.stops ?? []), options.to];
   return {
     itineraryId: options.id, totalDurationMinutes: options.minutes, stopsCount: (options.stops ?? []).length,
@@ -91,9 +91,9 @@ export function itinerary(options: { id: string; flight: string; from: string; t
       segmentId: `${options.id}-s${index}`, flightNumber: index === 0 ? options.flight : `${options.flight}${index}`, layoverMinutes: null, marketingCarrier: 'FP', operatingCarrier: 'FP', aircraft: 'A320', durationMinutes: options.minutes, status: 'SCHEDULED',
       departure: { iataCode: from, at: options.departure, terminal: null }, arrival: { iataCode: points[index + 1], at: options.arrival, terminal: null }
     })),
-    pricingOptions: (options.cabins ?? [['ECONOMY', 'Light', '127.39']]).map(([cabinClass, fareBrand, price, seats = 9]) => ({
+    pricingOptions: (options.cabins ?? [['ECONOMY', 'Light', '127.39']]).map(([cabinClass, fareBrand, price, seats = 9, checkedBaggageIncluded = 0]) => ({
       cabinClass, fareBrand, availableSeats: seats, fareRules: { isRefundable: false, isChangeable: true },
-      baggageAllowance: { personalItemIncluded: true, carryOnIncluded: 1, checkedBaggageIncluded: 0 }, extraCheckedBaggagePrice: money('35.00'),
+      baggageAllowance: { personalItemIncluded: true, carryOnIncluded: 1, checkedBaggageIncluded }, extraCheckedBaggagePrice: money('35.00'),
       pricePerPassengerType: [{ passengerType: 'ADULT', price: money(price) }]
     }))
   };

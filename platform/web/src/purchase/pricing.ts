@@ -1,5 +1,6 @@
 import type { PassengerType } from '@flight-platform/graphql-schema/generated/types';
 import { multiplyAmount, sumAmounts, toCents } from './amounts';
+import { maxExtraBaggage } from './passenger-rules';
 import type { FareSelection, Offer, PassengerCounts } from './purchase-store';
 
 /** Precios que la pantalla muestra a partir de la oferta elegida (el servidor congela el total real al reservar). Sin React ni DOM. */
@@ -41,6 +42,11 @@ export function baggageTotal(offer: Offer, selections: Readonly<Record<string, F
     const line = multiplyAmount(unit, count); if (line) parts.push(line);
   }
   return sumAmounts(parts).total;
+}
+
+/** Máximo de maletas adicionales por tramo (itineraryId) con la tarifa elegida: el total que admite el servidor menos las maletas que la tarifa ya incluye. Se recalcula al cambiar de tarifa. */
+export function extraBaggageLimits(offer: Offer, selections: Readonly<Record<string, FareSelection>>): Record<string, number> {
+  return Object.fromEntries(offer.itineraries.map((itinerary) => [itinerary.itineraryId, maxExtraBaggage(optionFor(itinerary, selections[itinerary.itineraryId])?.baggageAllowance.checkedBaggageIncluded)]));
 }
 
 export const addAmounts = (...values: string[]): string => sumAmounts(values).total;

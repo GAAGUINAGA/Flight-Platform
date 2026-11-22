@@ -1,5 +1,5 @@
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
-import { bookByApi, expectAccessible, expectLegible, findCheckInFlight, findFlight, holdSeatByApi, signUp, watch, type FoundFlight, type TestUser } from './support';
+import { bookByApi, expectAccessible, expectLegible, findCheckInFlight, findFlight, graphql, holdSeatByApi, signUp, watch, type FoundFlight, type TestUser } from './support';
 
 /**
  * Extremo a extremo de F12c-2b contra la plataforma local con la web (`npm run local:up -- -SkipDocker -Web`, datos de `npm run local:seed`):
@@ -30,6 +30,18 @@ async function chooseOffer(page: Page): Promise<void> {
 }
 
 const freeSeats = (page: Page) => page.locator('button[data-seat][data-status="AVAILABLE"]');
+
+/**
+ * La tarifa es una tarjeta (`<label>`) que envuelve un `<input type="radio">` oculto visualmente (opacity 0 y pointer-events none: el foco y el teclado
+ * siguen funcionando, pero el puntero no lo alcanza). Una persona hace clic en la TARJETA, así que la prueba también: se localiza la etiqueta que
+ * contiene al radio con ese nombre accesible. No se usa `force: true`.
+ */
+const fareRadio = (page: Page, name: RegExp) => page.getByRole('radio', { name });
+const fareCard = (page: Page, name: RegExp) => page.locator('label').filter({ has: fareRadio(page, name) });
+async function chooseFare(page: Page, name: RegExp): Promise<void> {
+  await fareCard(page, name).click();
+  await expect(fareRadio(page, name)).toBeChecked();
+}
 
 async function fillPassenger(page: Page, user: TestUser, document = `17${String(Date.now()).slice(-8)}`): Promise<void> {
   const card = page.getByRole('region', { name: 'Pasajero 1 · Adulto' });
@@ -162,6 +174,74 @@ test('E2E-10 la compra completa: oferta y asientos, pasajeros, pago, confirmaci�
   const hosts = new Set([...seen.hosts].filter((host) => !/^(localhost|127\.0\.0\.1):/.test(host)));
   expect([...hosts]).toEqual([]);
   expect(seen.problems).toEqual([]);
+});
+
+test('E2E-18 la compra en BUSINESS con asiento se confirma (fix-compra-ejecutiva: antes fallaba con 400 al reservar el asiento con la cabina equivocada)', async ({ page, request }) => {
+  const user = await signUp(request); await loginAs(page, user); await chooseOffer(page);
+  // La tarifa se elige como lo haría una persona: clic en la tarjeta de «Business · FLEX» (nombre accesible del radio) y se ESPERA a que quede marcada.
+  const business = /^Business · FLEX/; const economy = /^Economy · BASIC/;
+  test.skip(await fareRadio(page, business).count() === 0, 'No aplicable: la oferta elegida no trae la tarifa Business FLEX (los datos sembrados la crean en todos los vuelos; npm run local:seed los repone).');
+  await chooseFare(page, business);
+  await expect(fareRadio(page, economy)).not.toBeChecked(); // «Economy · BASIC» ya no está marcada
+  await expect(page.getByRole('radio', { checked: true })).toHaveCount(1);
+  await expect(page.getByRole('group', { name: 'Mapa de asientos' })).toBeVisible();
+  // El mapa es el de la cabina elegida: solo filas de Business (letras A, C, D y F; las B y E son de Economy).
+  await freeSeats(page).first().waitFor({ timeout: 10_000 }).catch(() => undefined);
+  test.skip(await freeSeats(page).count() === 0, 'No aplicable: no queda ningún asiento Business libre en ese vuelo (cupo agotado por corridas anteriores; npm run local:seed repone los datos).');
+  await expect(page.locator('button[data-seat$="B"], button[data-seat$="E"]')).toHaveCount(0);
+  const seat = await freeSeats(page).first().getAttribute('data-seat') ?? ''; expect(seat).toMatch(/^\d+[ACDF]$/);
+  await freeSeats(page).first().click();
+  await expect(page.locator(`button[data-seat="${seat}"]`)).toHaveAttribute('data-status', 'CHOSEN');
+  await page.getByRole('button', { name: 'Continuar a datos de pasajeros' }).click();
+  await expect(page.getByRole('heading', { name: 'Datos de los pasajeros' })).toBeVisible();
+  // Con FLEX (2 maletas incluidas) el máximo visible de maletas extra es el que acepta el servidor (3 en total − 2 incluidas = 1).
+  const bags = page.getByLabel(/maletas adicionales/).first();
+  await expect(bags.locator('option')).toHaveText(['0', '1']);
+  await bags.selectOption('1');
+  await fillPassenger(page, user);
+  await page.getByRole('button', { name: 'Continuar al pago' }).click();
+  await expect(page.getByRole('heading', { name: 'Pago', exact: true })).toBeVisible();
+  await page.getByLabel('Resultado del procesamiento').selectOption('ok');
+  await page.getByRole('button', { name: /^Pagar USD/ }).click();
+  await expect(page.getByRole('heading', { name: '¡Tu reserva está confirmada!' })).toBeVisible();
+  const pnr = (await page.getByTestId('pnr').innerText()).trim(); expect(pnr).toMatch(/^[A-Z0-9]{5,8}$/);
+
+  // El asiento comprado es de Business y la reserva guardó la maleta; el servidor ya no admite más (0): lo visible era exactamente lo permitido.
+  await page.getByRole('link', { name: 'Ver mi reserva' }).click(); await expect(page.getByTestId('pnr')).toHaveText(pnr);
+  const bookingId = /\/reservas\/([^/?#]+)/.exec(page.url())?.[1] ?? ''; expect(bookingId).not.toBe('');
+  const detail = await graphql<{ booking: { status: string; itineraries: Array<{ pricingOptions: Array<{ cabinClass: string; fareBrand: string }> }>; passengers: Array<{ assignedSeats: Array<{ seatNumber: string }>; extraBaggage: Array<{ quantity: number }> }> } }>(request, 'Booking', { bookingId }, user.token);
+  expect(detail.data?.booking.status).toBe('CONFIRMED');
+  expect(detail.data?.booking.itineraries[0].pricingOptions[0]).toMatchObject({ cabinClass: 'BUSINESS', fareBrand: 'FLEX' });
+  expect(detail.data?.booking.passengers[0].assignedSeats.map((entry) => entry.seatNumber)).toEqual([seat]);
+  expect(detail.data?.booking.passengers[0].extraBaggage.map((entry) => entry.quantity)).toEqual([1]);
+  const after = await graphql<{ baggageOptions: Array<{ maxAllowed: number; alreadyPurchased: number }> }>(request, 'BaggageOptions', { bookingId }, user.token);
+  expect(after.data?.baggageOptions[0]).toMatchObject({ maxAllowed: 0, alreadyPurchased: 1 });
+});
+
+test('E2E-19 las tarjetas de tarifa se eligen con el teclado (Tab, flechas y espacio), el foco se ve y la pantalla pasa axe', async ({ page, request }) => {
+  const user = await signUp(request); await loginAs(page, user); await chooseOffer(page);
+  const radios = page.getByRole('radio'); const total = await radios.count();
+  test.skip(total < 2, 'No aplicable: la oferta elegida trae una sola tarifa.');
+  await expectAccessible(page, 'Oferta · tarifas');
+  // Tab llega al grupo de tarifas: en un grupo de radios el foco entra por la tarifa marcada.
+  const checked = page.getByRole('radio', { checked: true }); await expect(checked).toHaveCount(1);
+  for (let i = 0; i < 40 && !(await checked.evaluate((node) => node === document.activeElement)); i += 1) await page.keyboard.press('Tab');
+  await expect(checked).toBeFocused();
+  // El foco se ve: la tarjeta que contiene al radio con foco dibuja un contorno (no queda «invisible» por tener el radio oculto).
+  const card = page.locator('label').filter({ has: checked });
+  await expect.poll(() => card.evaluate((node) => getComputedStyle(node).outlineStyle)).not.toBe('none');
+  // Flecha: marca y enfoca la tarifa siguiente; sigue habiendo una sola marcada.
+  const initial = await checked.evaluate((node) => (node.closest('label')?.textContent ?? '').slice(0, 20));
+  await page.keyboard.press('ArrowDown');
+  await expect(page.getByRole('radio', { checked: true })).toHaveCount(1);
+  const moved = page.getByRole('radio', { checked: true }); await expect(moved).toBeFocused();
+  expect(await moved.evaluate((node) => (node.closest('label')?.textContent ?? '').slice(0, 20))).not.toBe(initial);
+  // Flecha atrás vuelve a la anterior; espacio sobre una tarifa enfocada sin marcar la marca.
+  await page.keyboard.press('ArrowUp'); await expect(page.getByRole('radio', { checked: true })).toHaveCount(1);
+  expect(await page.getByRole('radio', { checked: true }).evaluate((node) => (node.closest('label')?.textContent ?? '').slice(0, 20))).toBe(initial);
+  const last = radios.nth(total - 1); await last.focus(); await expect(last).not.toBeChecked();
+  await page.keyboard.press('Space'); await expect(last).toBeChecked(); await expect(page.getByRole('radio', { checked: true })).toHaveCount(1);
+  await expectAccessible(page, 'Oferta · tarifa elegida con teclado');
 });
 
 test('E2E-11 el check-in fuera de ventana explica cuándo abre (hora local del aeropuerto) y el servidor tiene la última palabra', async ({ page, request }) => {

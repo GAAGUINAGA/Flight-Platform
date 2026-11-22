@@ -4,11 +4,37 @@ import { StoredReservation } from './reservation-store';
 
 type PassengerData = { passengerId: string; passengerType: string; assignedSeats?: Array<{ segmentId: string; seatNumber: string }>; extraBaggage?: Array<{ itineraryId: string; quantity: number }> };
 
-/** Asientos y equipaje extra que los pasajeros pidieron al reservar; se reservan al aprobarse el pago. */
-export function allocationOf(passengers: unknown[]): { assignments: Array<Record<string, unknown>>; baggage: Array<Record<string, unknown>> } {
-  const data = passengers as PassengerData[];
+type ItineraryLike = { segments?: Array<{ segmentId?: string }>; pricingOptions?: Array<{ cabinClass?: string; fareRules?: { isChangeable?: boolean } }> };
+
+/**
+ * UNA sola regla para saber en qué cabina está un segmento (ADR-fixCompra-01): la cabina de la tarifa COMPRADA del itinerario al que pertenece ese
+ * segmento. La usan crear la reserva, reanudar pendientes y el cambio de fecha (donde `itineraries` son los de la oferta de cambio ya aplicada).
+ * Nunca hay valor por omisión ni se toma el primer itinerario: si el segmento no está en ningún itinerario, o su itinerario no tiene UNA cabina
+ * determinable, es un error de negocio (OFFER_NO_LONGER_AVAILABLE) y no se reserva nada con una cabina inventada.
+ * REGLA 2 (ADR-fixCompra-01): la preferencia es un FILTRO. Cuando se pasa `prefer`, SOLO cuentan las tarifas que la cumplen; si ninguna la cumple, o las que
+ * la cumplen no tienen cabina o tienen cabinas distintas entre sí, se rechaza: nunca se cae a las tarifas que no la cumplen. Sin `prefer`, una cabina
+ * única entre las tarifas del itinerario; si no, rechazo.
+ */
+export function cabinOfSegment(itineraries: unknown[], segmentId: string, prefer?: (option: { fareRules?: { isChangeable?: boolean } }) => boolean): string {
+  const itinerary = (itineraries as ItineraryLike[]).find((candidate) => (candidate.segments ?? []).some((segment) => segment.segmentId === segmentId));
+  const eligible = (itinerary?.pricingOptions ?? []).filter((option) => !prefer || prefer(option));
+  const hasCabin = (option: { cabinClass?: string }): boolean => typeof option.cabinClass === 'string' && option.cabinClass !== '';
+  if (prefer && !eligible.every(hasCabin)) throw new DomainError('OFFER_NO_LONGER_AVAILABLE'); // una tarifa que cumple la preferencia pero no tiene cabina: no se adivina con otra
+  const cabins = [...new Set(eligible.filter(hasCabin).map((option) => option.cabinClass as string))];
+  if (cabins.length !== 1) throw new DomainError('OFFER_NO_LONGER_AVAILABLE');
+  return cabins[0];
+}
+
+/** Versión curry de `cabinOfSegment` para repartir los asientos de una reserva. */
+export function cabinBySegment(itineraries: unknown[], prefer?: (option: { fareRules?: { isChangeable?: boolean } }) => boolean): (segmentId: string) => string {
+  return (segmentId) => cabinOfSegment(itineraries, segmentId, prefer);
+}
+
+/** Asientos y equipaje extra que los pasajeros pidieron al reservar; se reservan al aprobarse el pago. Cada asiento lleva la cabina comprada de SU segmento (Ancillaries la compara con la del asiento). */
+export function allocationOf(passengers: unknown[], itineraries: unknown[] = []): { assignments: Array<Record<string, unknown>>; baggage: Array<Record<string, unknown>> } {
+  const data = passengers as PassengerData[]; const cabinOf = cabinBySegment(itineraries);
   return {
-    assignments: data.flatMap((passenger) => (passenger.assignedSeats ?? []).map((seat) => ({ ...seat, passengerId: passenger.passengerId, passengerType: passenger.passengerType, cabinClass: 'ECONOMY' }))),
+    assignments: data.flatMap((passenger) => (passenger.assignedSeats ?? []).map((seat) => ({ ...seat, passengerId: passenger.passengerId, passengerType: passenger.passengerType, cabinClass: cabinOf(seat.segmentId) }))),
     baggage: data.flatMap((passenger) => (passenger.extraBaggage ?? []).map((item) => ({ ...item, passengerId: passenger.passengerId })))
   };
 }

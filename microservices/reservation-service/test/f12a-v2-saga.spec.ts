@@ -24,7 +24,7 @@ class RecordingPricing extends FakePricingPort { releasedHolds: string[] = []; a
 class RecordingAncillaries extends FakeAncillariesPort { seatsReserved = 0; confirmed = 0; failSeats?: Error; async reserveSeats() { if (this.failSeats) throw this.failSeats; this.seatsReserved += 1; } async confirmSeats() { this.confirmed += 1; } }
 
 function world() {
-  const pricing = new RecordingPricing(); pricing.holds.set('hold', { holdId: 'hold', ownerId: 'client-a~user-1', status: 'HELD', expiresAt: '2099-01-01T00:00:00.000Z', lockedPrice: { currency: 'USD', total: '100.00' }, passengersBreakdown: { adults: 1, youths: 0, children: 0, infants: 0 }, itineraries: [{ itineraryId: '00000000-0000-4000-8000-000000000301', pricingOptions: [{ baggageAllowance: { checkedBaggageIncluded: 0 } }] }] });
+  const pricing = new RecordingPricing(); pricing.holds.set('hold', { holdId: 'hold', ownerId: 'client-a~user-1', status: 'HELD', expiresAt: '2099-01-01T00:00:00.000Z', lockedPrice: { currency: 'USD', total: '100.00' }, passengersBreakdown: { adults: 1, youths: 0, children: 0, infants: 0 }, itineraries: [{ itineraryId: '00000000-0000-4000-8000-000000000301', segments: [{ segmentId: 'seg-1' }], pricingOptions: [{ cabinClass: 'ECONOMY', baggageAllowance: { checkedBaggageIncluded: 0 } }] }] });
   pricing.holds.set('hold-v1', { ...pricing.holds.get('hold')!, holdId: 'hold-v1', ownerId: 'owner-v1' });
   const store = new InMemoryReservationStore(); const channel = new ScriptedPayment(); const legacy = new FakePaymentVerifier(); const payment = new RoutingPaymentVerifier(legacy, { BOOKING: channel });
   const ancillaries = new RecordingAncillaries(); const inventory = new RecordingInventory(); const ticketing = new FakeTicketingPort(); ticketing.tickets = ISSUED; const events = new FakeEventPublisher();
@@ -178,7 +178,7 @@ describe('F12a v2: pago por canal, emisión diferida y eventos de la reserva', (
     expect(a).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-a[0-9a-f]{3}-[0-9a-f]{12}$/);
   });
   it('RSV-V2-29: allocationOf extrae asientos y equipaje de los pasajeros', () => {
-    const { assignments, baggage } = allocationOf([{ ...withSeat, extraBaggage: [{ itineraryId: 'it', quantity: 2 }] }]);
+    const { assignments, baggage } = allocationOf([{ ...withSeat, extraBaggage: [{ itineraryId: 'it', quantity: 2 }] }], [{ segments: [{ segmentId: 'seg-1' }], pricingOptions: [{ cabinClass: 'ECONOMY' }] }]);
     expect(assignments).toEqual([{ segmentId: 'seg-1', seatNumber: '12A', passengerId: 'pax-1', passengerType: 'ADULT', cabinClass: 'ECONOMY' }]); expect(baggage).toEqual([{ itineraryId: 'it', quantity: 2, passengerId: 'pax-1' }]);
   });
 

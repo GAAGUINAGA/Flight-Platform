@@ -74,7 +74,7 @@ export function BaggageTab({ booking, onDone }: { booking: Booking; onDone: () =
         <thead><tr><th scope="col">Pasajero</th><th scope="col">Vuelo</th><th scope="col">Precio por maleta</th><th scope="col">Ya compradas</th><th scope="col">Agregar</th></tr></thead>
         <tbody>
           {options.map((option) => {
-            const max = Math.max(0, (option.maxAllowed ?? 0) - (option.alreadyPurchased ?? 0)); const id = `qty-${key(option)}`;
+            const max = Math.max(0, option.maxAllowed ?? 0); /* el servidor ya descuenta franquicia y lo comprado: maxAllowed = máximo total − incluidas − ya compradas */ const id = `qty-${key(option)}`;
             return (
               <tr key={key(option)}>
                 <th scope="row">{names.get(option.passengerId) ?? option.passengerId}</th>
