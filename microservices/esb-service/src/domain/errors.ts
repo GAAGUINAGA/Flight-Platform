@@ -1,3 +1,5 @@
+import { sanitizeInvalidParams, type InvalidParam } from '@flight-platform/shared';
+
 /** Códigos gRPC que el ESB distingue (valores numéricos del estándar; el dominio no importa grpc-js). */
 export const GRPC = { INVALID_ARGUMENT: 3, DEADLINE_EXCEEDED: 4, NOT_FOUND: 5, PERMISSION_DENIED: 7, UNIMPLEMENTED: 12, INTERNAL: 13, UNAVAILABLE: 14, UNAUTHENTICATED: 16 } as const;
 
@@ -14,22 +16,26 @@ export interface OperationError {
   grpcStatus: string;
   catalogCode: string | null;
   step?: string;
+  /** Campos inválidos de un VALIDATION_FAILED (nombre `passengers.<i>.<campo>` y motivo de una lista cerrada; nunca valores). ADR-F12b1fix-05. */
+  invalidParams?: InvalidParam[];
 }
 
 const CATALOG_CODE = /^[A-Z][A-Z0-9_]{2,63}$/;
 
-export function operationError(source: OperationError['source'], grpcCode: number, catalogCode?: unknown, step?: string): OperationError {
+export function operationError(source: OperationError['source'], grpcCode: number, catalogCode?: unknown, step?: string, invalidParams?: unknown): OperationError {
+  const code = typeof catalogCode === 'string' && CATALOG_CODE.test(catalogCode) ? catalogCode : null;
+  // Solo se conservan con VALIDATION_FAILED y tras volver a filtrarlos: lo que no cumple el formato no sale del ESB.
+  const params = code === 'VALIDATION_FAILED' ? sanitizeInvalidParams(invalidParams) : [];
   return {
-    source, grpcCode, grpcStatus: grpcStatusName(grpcCode),
-    catalogCode: typeof catalogCode === 'string' && CATALOG_CODE.test(catalogCode) ? catalogCode : null,
-    ...(step ? { step } : {})
+    source, grpcCode, grpcStatus: grpcStatusName(grpcCode), catalogCode: code,
+    ...(step ? { step } : {}), ...(params.length ? { invalidParams: params } : {})
   };
 }
 
 /** Traduce lo que lanza un cliente gRPC (`{code, details}`) a un error del sobre. Lo desconocido es INTERNAL del ESB. */
 export function errorFromThrown(thrown: unknown, step?: string): OperationError {
   if (typeof thrown === 'object' && thrown !== null && 'code' in thrown && typeof thrown.code === 'number' && thrown.code > 0) {
-    return operationError('service', thrown.code, (thrown as { details?: unknown }).details, step);
+    return operationError('service', thrown.code, (thrown as { details?: unknown }).details, step, (thrown as { invalidParams?: unknown }).invalidParams);
   }
   return operationError('esb', GRPC.INTERNAL, undefined, step);
 }

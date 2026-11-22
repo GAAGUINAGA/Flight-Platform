@@ -1,5 +1,6 @@
 import { status as grpcStatus } from '@grpc/grpc-js';
 import { HttpException } from '@nestjs/common';
+import { invalidParamsFromMetadata, safeInvalidParams } from './invalid-params';
 
 // Duck typing: `web-errors` importa este módulo y un import directo de GatewayProblemError sería circular.
 const isGatewayProblem = (error: unknown): error is { statusCode: number; code: string; safeDetail?: string; problemType?: string; invalidParams?: Array<{ name: string; reason: string }> } =>
@@ -61,7 +62,12 @@ export function v2ProblemFromError(error: unknown, request: V2RequestInfo): V2Pr
     if (grpc === grpcStatus.UNAUTHENTICATED) return buildV2Problem('UNAUTHORIZED', request);
     if (grpc === grpcStatus.PERMISSION_DENIED) return buildV2Problem('FORBIDDEN', request);
     // Un código del catálogo manda sobre el estado gRPC (p. ej. BOARDING_PASS_NOT_AVAILABLE llega como NOT_FOUND pero el contrato lo lista como 409).
-    if (typeof details === 'string' && details in V2_PROBLEM_STATUS) return buildV2Problem(details, request);
+    if (typeof details === 'string' && details in V2_PROBLEM_STATUS) {
+      // VALIDATION_FAILED de Reservation con los campos inválidos (ADR-F12b1fix-05): se copian a `invalidParams` (nombre y motivo, sin valores).
+      // Llegan por el sobre del ESB (`invalidParams`) o, con transporte directo, por la metadata del error gRPC.
+      const params = details === 'VALIDATION_FAILED' ? safeInvalidParams((error as { invalidParams?: unknown }).invalidParams ?? invalidParamsFromMetadata((error as { metadata?: unknown }).metadata)) : [];
+      return buildV2Problem(details, request, params.length ? { invalidParams: params } : {});
+    }
     if (grpc === grpcStatus.NOT_FOUND) return buildV2Problem('NOT_FOUND', request, { detail: 'Recurso no encontrado' });
     if (grpc === grpcStatus.INVALID_ARGUMENT) return buildV2Problem('VALIDATION_FAILED', request);
     return buildV2Problem('INTERNAL_ERROR', request, { detail: 'Ocurrió un error inesperado' });

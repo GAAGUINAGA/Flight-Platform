@@ -30,6 +30,8 @@ export default defineConfig(({ mode }) => {
     resolve: {
       alias: [
         { find: '@flight-platform/shared/dist/src/airport-zones', replacement: fromPackages('shared/src/airport-zones.ts') },
+        { find: '@flight-platform/shared/dist/src/passenger-rules', replacement: fromPackages('shared/src/passenger-rules.ts') },
+        { find: '@flight-platform/shared/dist/src/countries', replacement: fromPackages('shared/src/countries.ts') },
         { find: /^@flight-platform\/(brand|design-tokens|format|session)$/, replacement: fromPackages('$1/src/index.ts') }
       ]
     },

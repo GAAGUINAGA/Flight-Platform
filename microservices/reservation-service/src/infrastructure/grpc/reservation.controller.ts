@@ -1,7 +1,7 @@
 import { Controller, Inject, Logger } from '@nestjs/common';
 import { Metadata, status } from '@grpc/grpc-js';
 import { GrpcMethod, RpcException } from '@nestjs/microservices';
-import { DomainError, RequestContext, requestContextFromMetadata, requireRole, rpcString } from '@flight-platform/shared';
+import { DOCUMENT_PATTERN, DomainError, EMAIL_PATTERN, invalidParamsFromZodIssues, invalidParamsToMetadata, isValidName, NATIONALITY_LENGTH, PHONE_PATTERN, RequestContext, requestContextFromMetadata, requireRole, rpcString, type ZodIssueLike } from '@flight-platform/shared';
 import { z } from 'zod';
 
 export interface ReservationHandlers {
@@ -18,7 +18,9 @@ export interface ReservationHandlers {
   adminResolveBookingOwner?(input: unknown): Promise<unknown>;
 }
 export const RESERVATION_DEPS = Symbol('RESERVATION_DEPS');
-const passengerSchema = z.object({ passengerId: rpcString(128), passengerType: z.enum(['ADULT', 'YOUTH', 'CHILD', 'INFANT']), associatedAdultId: z.string().guid().optional(), firstName: z.string().trim().min(1).max(50), lastName: z.string().trim().min(1).max(50), documentType: z.enum(['PASSPORT', 'NATIONAL_ID']), documentNumber: z.string().regex(/^[A-Za-z0-9]{5,20}$/), nationality: z.string().trim().min(2).max(3), documentExpiryDate: z.string().date().optional(), birthDate: z.string().date(), gender: z.enum(['M', 'F', 'X']), contact: z.object({ email: z.string().email(), phone: z.string().regex(/^\+[1-9]\d{1,14}$/) }).strict(), assignedSeats: z.array(z.object({ segmentId: z.string().guid(), seatNumber: rpcString(4) }).strict()), extraBaggage: z.array(z.object({ itineraryId: z.string().guid(), quantity: z.number().int().min(1).max(3) }).strict()) }).strict();
+/** Nombres y apellidos: la regla compartida con la web (ADR-F12b1fix-05): recortados, 1 a 50 caracteres, letras Unicode, marcas, espacios simples, apóstrofo, guion y punto. */
+const personName = z.string().trim().min(1).max(50).refine(isValidName);
+const passengerSchema = z.object({ passengerId: rpcString(128), passengerType: z.enum(['ADULT', 'YOUTH', 'CHILD', 'INFANT']), associatedAdultId: z.string().guid().optional(), firstName: personName, lastName: personName, documentType: z.enum(['PASSPORT', 'NATIONAL_ID']), documentNumber: z.string().regex(DOCUMENT_PATTERN), nationality: z.string().trim().min(NATIONALITY_LENGTH.min).max(NATIONALITY_LENGTH.max), documentExpiryDate: z.string().date().optional(), birthDate: z.string().date(), gender: z.enum(['M', 'F', 'X']), contact: z.object({ email: z.string().regex(EMAIL_PATTERN), phone: z.string().regex(PHONE_PATTERN) }).strict(), assignedSeats: z.array(z.object({ segmentId: z.string().guid(), seatNumber: rpcString(4) }).strict()), extraBaggage: z.array(z.object({ itineraryId: z.string().guid(), quantity: z.number().int().min(1).max(3) }).strict()) }).strict();
 const paymentChannel = z.enum(['BOOKING', 'WEB']).optional();
 const createSchema = z.object({ holdId: z.string().guid(), passengers: z.array(passengerSchema).min(1).max(9), payment: z.object({ paymentReference: rpcString(255) }).strict(), idempotencyKey: rpcString(255), paymentChannel, deferIssuanceFailure: z.boolean().optional(), webMaxActiveBookings: z.number().int().min(1).max(100_000).optional(), webMaxPassengersPerDay: z.number().int().min(1).max(100_000).optional() }).strict();
 const getSchema = z.object({ bookingId: z.string().guid() }).strict();
@@ -40,7 +42,10 @@ const validate = (data: unknown, schema: z.ZodObject, rpc: string): Record<strin
   if (!parsed.success) {
     const fields = [...new Set(parsed.error.issues.map((issue) => issue.path.map(String).join('.')).filter(Boolean))];
     validationLogger.warn(`${rpc} validation failed fields=${fields.join(',') || '(root)'}`);
-    throw new RpcException({ code: status.INVALID_ARGUMENT, details: 'VALIDATION_FAILED' });
+    // Los campos de pasajeros (nombre y motivo de una lista cerrada, nunca el valor) viajan en el error para que el cliente marque cada uno (ADR-F12b1fix-05).
+    // Sigue siendo la misma RpcException de siempre; solo lleva la metadata cuando hay campos de pasajeros que nombrar.
+    const invalidParams = invalidParamsFromZodIssues(parsed.error.issues as ZodIssueLike[]);
+    throw new RpcException({ code: status.INVALID_ARGUMENT, details: 'VALIDATION_FAILED', ...(invalidParams.length ? { metadata: invalidParamsToMetadata(invalidParams) } : {}) });
   }
   return parsed.data;
 };

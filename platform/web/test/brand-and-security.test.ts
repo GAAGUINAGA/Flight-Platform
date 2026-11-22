@@ -16,6 +16,8 @@ const sources = all.filter((file) => /\.(ts|tsx|css)$/.test(file) && !/\.test\.t
 const read = (file: string): string => readFileSync(file, 'utf8');
 /** El único archivo que resuelve los archivos de la marca (por carpeta y extensión, sin nombrar ninguno). */
 const ASSET_RESOLVER = 'src/brand/assets.ts';
+/** Excepción acotada: las banderas de países NO son activos de la marca; salen del paquete `flag-icons` (MIT, versión fija) y las resuelve solo este archivo (ADR-F12b1fix-05). */
+const FLAG_RESOLVER = 'src/data/flags.ts';
 
 describe('marca · la web no contiene valores de marca escritos a mano', () => {
   it('MRC-01 ningún color literal (hex, rgb, hsl) en el código ni en los estilos: solo variables de los tokens', () => {
@@ -29,7 +31,7 @@ describe('marca · la web no contiene valores de marca escritos a mano', () => {
   });
 
   it('MRC-02 ninguna ruta de imagen o de fuente fuera del resolvedor único de la marca', () => {
-    const offenders = sources.filter((file) => rel(file) !== ASSET_RESOLVER && /\.(png|jpe?g|gif|webp|avif|svg|ico|woff2?|ttf|otf)\b/i.test(read(file))).map(rel);
+    const offenders = sources.filter((file) => rel(file) !== ASSET_RESOLVER && rel(file) !== FLAG_RESOLVER && /\.(png|jpe?g|gif|webp|avif|svg|ico|woff2?|ttf|otf)\b/i.test(read(file))).map(rel);
     expect(offenders).toEqual([]);
     const resolver = read(join(root, ASSET_RESOLVER));
     expect(resolver).toContain('packages/brand/assets/');

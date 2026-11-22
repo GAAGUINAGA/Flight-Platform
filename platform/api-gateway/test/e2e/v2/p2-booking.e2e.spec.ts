@@ -161,6 +161,15 @@ describeReal('F12a P2 · reservas, emisión y boletos v2 (contra servicios reale
       const id = randomUUID(); const ok = await book(stack, s, s.client, 'u1', held, { passengers: [passenger(id), passenger('PAX-2', { documentNumber: 'OTHER9999' })] });
       expect(ok.response.status).toBe(201); expect(ok.response.body.passengers.map((p: { passengerId: string }) => p.passengerId).sort()).toEqual([id, 'PAX-2'].sort());
     }, 120_000);
+    it('V2-P2-59b (ADR-F12b1fix-05, punto 12) un pasajero que Reservation rechaza llega al cliente como 400 VALIDATION_FAILED con invalidParams {name, reason} de cada campo, sin valores, y no se crea ninguna reserva', async () => {
+      const s = await scenario(); const held = await hold(stack, s, s.client, 'u1');
+      const before = (await reservations(s.client)).length;
+      const { response } = await book(stack, s, s.client, 'u1', held, { passengers: [passenger('PAX-1', { firstName: 'Ana2', lastName: 'Perez_9', documentNumber: 'DOC-SECRETO-1' })] });
+      expect(response.status).toBe(400); expect(response.body.code).toBe('VALIDATION_FAILED'); expectV2Response('POST', '/vuelos/bookings', 400, response.body);
+      expect(response.body.invalidParams).toEqual(expect.arrayContaining([{ name: 'passengers.0.firstName', reason: 'INVALID_FORMAT' }, { name: 'passengers.0.lastName', reason: 'INVALID_FORMAT' }, { name: 'passengers.0.documentNumber', reason: 'INVALID_FORMAT' }]));
+      expect(JSON.stringify(response.body)).not.toMatch(/Ana2|Perez_9|SECRETO/); // nunca los valores escritos
+      expect((await reservations(s.client)).length).toBe(before);
+    }, 90_000);
     it('V2-P2-59 sin token 401, scope insuficiente 403 y cuerpo inválido 400 con invalidParams', async () => {
       const s = await scenario(); const held = await hold(stack, s, s.client, 'u1'); const body = { holdId: held.holdId, passengers: [passenger('PAX-1')], payment: { paymentReference: newReference() } };
       const anonymous = await request(stack.server).post('/api/v2/vuelos/bookings').set('Idempotency-Key', randomUUID()).send(body); expect(anonymous.status).toBe(401); expect(anonymous.body.code).toBe('UNAUTHORIZED');

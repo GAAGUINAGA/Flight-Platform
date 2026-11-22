@@ -19,7 +19,9 @@
       "@flight-platform/design-tokens": ["../../packages/design-tokens/src/index.ts"],
       "@flight-platform/format": ["../../packages/format/src/index.ts"],
       "@flight-platform/session": ["../../packages/session/src/index.ts"],
-      "@flight-platform/shared/dist/src/airport-zones": ["../../packages/shared/src/airport-zones.ts"]
+      "@flight-platform/shared/dist/src/airport-zones": ["../../packages/shared/src/airport-zones.ts"],
+      "@flight-platform/shared/dist/src/passenger-rules": ["../../packages/shared/src/passenger-rules.ts"],
+      "@flight-platform/shared/dist/src/countries": ["../../packages/shared/src/countries.ts"]
     }
   },
   "include": ["src", "test", "e2e", "vite.config.ts", "playwright.config.ts", "security-headers.ts"]

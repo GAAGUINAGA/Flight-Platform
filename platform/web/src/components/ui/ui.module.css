@@ -39,6 +39,36 @@
 }
 .control[aria-invalid='true'] { border-color: var(--color-error); border-width: 2px; }
 .hint { font-size: var(--font-size-xs); color: var(--color-text-muted); }
+/* Ayuda breve cuando se bloquea un carácter (región `status`: se anuncia a lectores de pantalla; vacía no ocupa lugar) */
+.liveHint { font-size: var(--font-size-xs); font-weight: var(--font-weight-semibold); color: var(--color-text); }
+.liveHint:not(:empty) { padding-left: var(--space-s2); border-left: 3px solid var(--color-warning); }
+.inline { display: flex; gap: var(--space-s2); align-items: stretch; min-width: 0; }
+.inline > .control { flex: 1 1 auto; min-width: 0; }
+.iconButton {
+  flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; min-width: var(--size-control); min-height: var(--size-control);
+  border: 1px solid var(--color-line-strong); border-radius: var(--radius-md); background: var(--color-background); color: var(--color-primary); cursor: pointer;
+}
+.nativeDate { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; overflow: hidden; }
+.dateWrap { position: relative; display: flex; flex-direction: column; gap: var(--space-s1); min-width: 0; }
+
+/* Selector de país: campo con bandera, lista con búsqueda */
+/* `.combo` es el elemento de la maqueta (puede estirarse en alto si la fila de la cuadrícula lo hace); `.comboBox` mide exactamente lo que el campo: la bandera y la lista se anclan a él, nunca al elemento estirado. */
+.combo { flex: 1 1 auto; min-width: 0; }
+.comboBox { position: relative; min-width: 0; }
+.comboFlag { position: absolute; left: var(--space-s3); top: 50%; transform: translateY(-50%); width: 24px; height: 18px; object-fit: cover; border: 1px solid var(--color-line-strong); border-radius: 2px; pointer-events: none; }
+.comboInput { padding-left: calc(var(--space-s3) + 24px + var(--space-s2)); text-overflow: ellipsis; }
+.comboList {
+  position: absolute; z-index: 20; left: 0; right: 0; top: calc(100% + 2px); margin: 0; padding: var(--space-s1) 0; list-style: none; max-height: 280px; overflow-y: auto;
+  background: var(--color-background); border: 1px solid var(--color-line-strong); border-radius: var(--radius-md); box-shadow: var(--shadow-raised);
+}
+.comboOption { display: flex; align-items: center; gap: var(--space-s3); padding: var(--space-s2) var(--space-s3); font-size: var(--font-size-sm); color: var(--color-text); cursor: pointer; }
+.comboOption img { width: 24px; height: 18px; object-fit: cover; border: 1px solid var(--color-line-strong); border-radius: 2px; flex: 0 0 auto; }
+.comboOption[aria-selected='true'] { font-weight: var(--font-weight-bold); }
+.comboOption[data-active='true'] { background: var(--color-primary); color: var(--color-on-primary); outline: 2px solid transparent; }
+.comboDial { margin-left: auto; font-variant-numeric: tabular-nums; }
+.comboEmpty { padding: var(--space-s3); font-size: var(--font-size-sm); color: var(--color-text-muted); }
+.phoneGroup { display: grid; grid-template-columns: minmax(0, 11rem) minmax(0, 1fr); gap: var(--space-s2); }
+@media (max-width: 480px) { .phoneGroup { grid-template-columns: minmax(0, 1fr); } }
 .fieldError { display: flex; align-items: center; gap: var(--space-s1); font-size: var(--font-size-xs); font-weight: var(--font-weight-semibold); color: var(--color-error); }
 
 /* Avisos: icono + texto (el estado nunca va solo por color) */

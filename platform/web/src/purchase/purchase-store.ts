@@ -27,11 +27,13 @@ export interface PurchaseState {
   correlationId: string | null;
   drafts: PassengerDraft[];
   holder: string;
+  /** Errores por campo (`índice.campo`) que el servidor devolvió al pagar. Solo en memoria; cada uno se borra cuando la persona edita ese campo. */
+  serverErrors: Record<string, string>;
 }
 
 const KEY = 'fp.purchase';
 const EMPTY_COUNTS: PassengerCounts = { adults: 1, youths: 0, children: 0, infants: 0 };
-const initial = (): PurchaseState => ({ offer: null, back: null, counts: EMPTY_COUNTS, selections: {}, seats: {}, hold: null, correlationId: null, drafts: [], holder: '' });
+const initial = (): PurchaseState => ({ offer: null, back: null, counts: EMPTY_COUNTS, selections: {}, seats: {}, hold: null, correlationId: null, drafts: [], holder: '', serverErrors: {} });
 
 type Persisted = Pick<PurchaseState, 'offer' | 'back' | 'counts' | 'selections' | 'seats' | 'hold' | 'correlationId'>;
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -125,6 +127,13 @@ export class PurchaseStore {
   setHold(hold: HoldRef | null): void { this.set({ ...this.state, hold }); }
   setDrafts(drafts: PassengerDraft[]): void { this.set({ ...this.state, drafts }); }
   setHolder(holder: string): void { this.set({ ...this.state, holder }); }
+  setServerErrors(serverErrors: Record<string, string>): void { this.set({ ...this.state, serverErrors }); }
+  /** La persona editó el campo: el error del servidor sobre ese valor ya no aplica. */
+  clearServerError(key: string): void {
+    if (!(key in this.state.serverErrors)) return;
+    const { [key]: removed, ...rest } = this.state.serverErrors; void removed;
+    this.set({ ...this.state, serverErrors: rest });
+  }
 
   /** Termina la compra (reserva creada o abandonada): borra todo, incluidos los datos de los pasajeros. */
   reset(): void { this.intents.clear(); this.set(initial()); }

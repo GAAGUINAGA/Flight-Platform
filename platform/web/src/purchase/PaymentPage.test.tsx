@@ -14,7 +14,9 @@ const open = (extra: Record<string, Handler> = {}, config: Partial<AppConfig> = 
   return { ...started, view: renderApp('/compra/pago', { session: signedIn(), purchase: started.purchase, handlers: { ...base, ...extra }, config }) };
 };
 const pay = async (user: ReturnType<typeof userEvent.setup>) => user.click(await screen.findByRole('button', { name: /^Pagar USD/ }));
-const createCalls = (view: ReturnType<typeof renderApp>) => view.client.calls.filter((call) => call.name === 'CreateBooking');
+/** Texto al que apunta `aria-describedby` del campo. */
+const described = (element: HTMLElement): string => (element.getAttribute('aria-describedby') ?? '').split(' ').map((id) => document.getElementById(id)?.textContent ?? '').join(' ').trim();
+const createCalls =(view: ReturnType<typeof renderApp>) => view.client.calls.filter((call) => call.name === 'CreateBooking');
 
 describe('pago (§3.7): un paso de pago normal con procesamiento simulado', () => {
   it('PAY-01 resumen del importe, medios de pago y titular; JAMÁS campos de tarjeta; la nota de demostración solo aquí y sin hablar de «prueba»', async () => {
@@ -145,6 +147,63 @@ describe('pago (§3.7): un paso de pago normal con procesamiento simulado', () =
     incomplete.unmount();
     renderApp('/compra/pago', { session: signedIn() });
     expect(await screen.findByRole('heading', { name: 'No hay una compra en curso' })).toBeInTheDocument();
+  });
+
+  describe('un dato que el servidor rechazó se lleva a su campo (ADR-F12b1fix-05)', () => {
+    const invalid = (code: string, names: string[]): Handler => () => { throw new AppError({ category: 'VALIDATION', code, correlationId: 'corr-v', invalidParams: names.map((name) => ({ name, reason: 'valor no válido' })) }); };
+
+    it('PAY-12 VALIDATION_FAILED con invalidParams vuelve a los pasajeros con el error en el campo y el pasajero, lo escrito intacto y el foco en el primer campo con error', async () => {
+      const user = userEvent.setup();
+      const { purchase } = open({ CreateBooking: invalid('VALIDATION_FAILED', ['input.passengers.1.documentNumber', 'input.passengers.0.contact.email']) }); await pay(user);
+      expect(await screen.findByRole('heading', { name: 'Datos de los pasajeros' })).toBeInTheDocument();
+      const documents = screen.getAllByLabelText('Número de documento'); const email = screen.getByLabelText('Correo electrónico de contacto');
+      expect(documents[1]).toHaveAttribute('aria-invalid', 'true'); expect(email).toHaveAttribute('aria-invalid', 'true');
+      expect(described(documents[1])).toMatch(/Escribe el número del documento/); expect(described(email)).toBe('Escribe un correo electrónico válido.');
+      expect(documents[0]).not.toHaveAttribute('aria-invalid');
+      await waitFor(() => expect(email).toHaveFocus()); // el correo del pasajero 1 va antes que el documento del 2
+      expect(documents[1]).toHaveValue('1798765432'); expect(purchase.getState().drafts[1].documentNumber).toBe('1798765432'); // se conserva lo escrito
+      const summary = screen.getByRole('alert'); expect(summary).toHaveTextContent('Hay 2 campos por corregir');
+      expect(within(summary).getByRole('link', { name: 'Pasajero 2: Número de documento' })).toBeInTheDocument(); expect(within(summary).getByRole('link', { name: 'Pasajero 1: Correo electrónico' })).toBeInTheDocument();
+      // Al corregir un campo, su error del servidor desaparece; el otro sigue.
+      await user.type(documents[1], '0');
+      expect(documents[1]).not.toHaveAttribute('aria-invalid'); expect(email).toHaveAttribute('aria-invalid', 'true');
+    });
+
+    it('PAY-13 BAGGAGE_LIMIT_EXCEEDED llega como error del campo de maletas del pasajero y tramo que las pidió, con la cantidad intacta', async () => {
+      const user = userEvent.setup();
+      const { purchase } = open({ CreateBooking: invalid('BAGGAGE_LIMIT_EXCEEDED', []) });
+      purchase.setDrafts(purchase.getState().drafts.map((draft, index) => (index === 0 ? { ...draft, extraBaggage: { 'it-1': 2 } } : draft)));
+      await pay(user);
+      expect(await screen.findByRole('heading', { name: 'Datos de los pasajeros' })).toBeInTheDocument();
+      const select = document.getElementById('bag-0-it-1') as HTMLSelectElement;
+      expect(select).toHaveAttribute('aria-invalid', 'true'); expect(select).toHaveValue('2');
+      expect(described(select)).toMatch(/Superaste el máximo de maletas permitido para este tramo/);
+      await waitFor(() => expect(select).toHaveFocus());
+      expect(screen.getByRole('alert')).toHaveTextContent('Pasajero 1: Maletas adicionales (FP103)');
+    });
+
+    it('PAY-15 el servidor rechaza campos que la web dio por válidos (no pudo preverlo): con los motivos de la lista cerrada, la web marca cada uno en su campo y pasajero, sin perder lo escrito', async () => {
+      const user = userEvent.setup();
+      const rejected: Handler = () => { throw new AppError({ category: 'VALIDATION', code: 'VALIDATION_FAILED', correlationId: 'corr-s', invalidParams: [{ name: 'input.passengers.1.birthDate', reason: 'AGE_NOT_ALLOWED_FOR_TYPE' }, { name: 'input.passengers.0.contact.phone', reason: 'INVALID_FORMAT' }, { name: 'input.passengers.1.lastName', reason: 'REQUIRED' }] }); };
+      const { purchase } = open({ CreateBooking: rejected });
+      const before = JSON.stringify(purchase.getState().drafts); await pay(user);
+      expect(await screen.findByRole('heading', { name: 'Datos de los pasajeros' })).toBeInTheDocument();
+      const births = screen.getAllByLabelText('Fecha de nacimiento'); const lastNames = screen.getAllByLabelText('Apellidos'); const phones = screen.getAllByLabelText(/Teléfono/);
+      expect(births[1]).toHaveAttribute('aria-invalid', 'true'); expect(described(births[1])).toMatch(/La fecha de nacimiento no corresponde a un pasajero/);
+      expect(lastNames[1]).toHaveAttribute('aria-invalid', 'true'); expect(described(lastNames[1])).toBe('Completa este dato.');
+      expect(phones[0]).toHaveAttribute('aria-invalid', 'true');
+      expect(births[0]).not.toHaveAttribute('aria-invalid'); expect(lastNames[0]).not.toHaveAttribute('aria-invalid'); expect(phones[1]).not.toHaveAttribute('aria-invalid');
+      expect(screen.getByRole('alert')).toHaveTextContent('Hay 3 campos por corregir');
+      expect(JSON.stringify(purchase.getState().drafts)).toBe(before); // nada se pierde ni se normaliza de nuevo
+    });
+
+    it('PAY-14 un VALIDATION_FAILED que no nombra ningún campo (un servicio antiguo, o un rechazo que no es de un campo) se queda en el pago con el panel de error y la salida «Corregir datos»', async () => {
+      const user = userEvent.setup();
+      open({ CreateBooking: invalid('VALIDATION_FAILED', []) }); await pay(user);
+      const alert = await screen.findByRole('alert'); expect(alert).toHaveTextContent('Revisa los datos ingresados.');
+      expect(within(alert).getByRole('link', { name: 'Corregir datos' })).toHaveAttribute('href', '/compra/pasajeros');
+      expect(screen.getByRole('heading', { name: 'Pago' })).toBeInTheDocument();
+    });
   });
 
   it('PAY-11 sin sesión, el pago lleva al inicio de sesión y vuelve al pago', async () => {

@@ -80,6 +80,12 @@ describe('GQL-ERR: ProblemDetails v2 → errores de GraphQL con extensiones cont
     const gateway = new FakeGateway(() => ({ status: 400, body: { code: 'VALIDATION_FAILED', invalidParams: [{ name: 'passengers[0].assignedSeats[0]', reason: 'Asiento no válido', extra: 'x' }, { name: '<script>', reason: 'malo' }, { name: 'ok', reason: 'texto con <html> y `comillas`' }] } })); const { app } = makeApp({}, gateway);
     const error = (await run(app, 'Booking', { bookingId: UUID_A }, { token: customer })).body.errors?.[0]; expect(error?.extensions.invalidParams).toEqual([{ name: 'passengers[0].assignedSeats[0]', reason: 'Asiento no válido' }, { name: 'ok' }]);
   });
+  it('GQL-ERR-06b los campos de pasajeros que el Gateway copia de Reservation (ADR-F12b1fix-05) llegan a la web tal cual: nombre del contrato y motivo de la lista cerrada', async () => {
+    const sent = [{ name: 'passengers.0.firstName', reason: 'INVALID_FORMAT' }, { name: 'passengers.1.birthDate', reason: 'AGE_NOT_ALLOWED_FOR_TYPE' }, { name: 'passengers.0.contact.phone', reason: 'REQUIRED' }];
+    const { app } = makeApp({}, new FakeGateway(() => ({ status: 400, body: { code: 'VALIDATION_FAILED', invalidParams: sent } })));
+    const error = (await run(app, 'Booking', { bookingId: UUID_A }, { token: customer })).body.errors?.[0];
+    expect(error?.extensions).toMatchObject({ code: 'VALIDATION_FAILED', category: 'VALIDATION', invalidParams: sent });
+  });
   it('GQL-ERR-07 un fallo de red del Gateway ⇒ GATEWAY_UNAVAILABLE; una excepción inesperada ⇒ INTERNAL_ERROR sin stack ni mensaje', async () => {
     const down = makeApp({}, new FakeGateway(() => { throw new Error('ECONNREFUSED 10.0.0.5:443 secreto interno'); }));
     const reply = await run(down.app, 'Booking', { bookingId: UUID_A }, { token: customer }); expect(reply.body.errors?.[0].extensions).toMatchObject({ code: 'INTERNAL_ERROR', category: 'INTERNAL' });

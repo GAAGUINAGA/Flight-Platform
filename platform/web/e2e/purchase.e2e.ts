@@ -1,4 +1,4 @@
-import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
+import { expect, test, type APIRequestContext, type Locator, type Page } from '@playwright/test';
 import { bookByApi, expectAccessible, expectLegible, findCheckInFlight, findFlight, graphql, holdSeatByApi, signUp, watch, type FoundFlight, type TestUser } from './support';
 
 /**
@@ -47,8 +47,8 @@ async function fillPassenger(page: Page, user: TestUser, document = `17${String(
   const card = page.getByRole('region', { name: 'Pasajero 1 · Adulto' });
   await card.getByLabel('Nombres').fill('Ana María'); await card.getByLabel('Apellidos').fill('Pérez Vera');
   await card.getByLabel('Número de documento').fill(document);
-  await card.getByLabel('Fecha de nacimiento').fill('1990-03-14'); await card.getByLabel('Género').selectOption('F');
-  await card.getByLabel('Correo electrónico de contacto').fill(user.email); await card.getByLabel('Teléfono de contacto').fill('+593987654321');
+  await card.getByLabel('Fecha de nacimiento', { exact: true }).fill('14/03/1990'); await card.getByLabel('Género').selectOption('F'); // la fecha se escribe en formato local dd/mm/aaaa
+  await card.getByLabel('Correo electrónico de contacto').fill(user.email); await card.getByLabel('Teléfono de contacto', { exact: true }).fill('987654321'); // Ecuador (+593) por omisión: solo el número nacional
 }
 
 /** Búsqueda → oferta → un asiento → pasajero → pago. Devuelve el asiento elegido. */
@@ -345,4 +345,95 @@ test('E2E-17 sin sesión, las pantallas de compra y reservas llevan al inicio de
   await expectLegible(page, 'Oferta (móvil)'); await expectAccessible(page, 'Oferta (móvil)');
   await page.goto('/reservas'); await expect(page.getByRole('heading', { name: 'Aún no tienes reservas' })).toBeVisible();
   await expectLegible(page, 'Mis reservas (móvil)'); await expectAccessible(page, 'Mis reservas vacío');
+});
+
+test('E2E-34 datos de pasajero inválidos: error por campo al salir de cada uno y al enviar (resumen, foco en el primero, nada se pierde); al corregirlos se compra', async ({ page, request }) => {
+  const user = await signUp(request); await loginAs(page, user); await chooseOffer(page);
+  await freeSeats(page).first().click();
+  await page.getByRole('button', { name: 'Continuar a datos de pasajeros' }).click();
+  await expect(page.getByRole('heading', { name: 'Datos de los pasajeros' })).toBeVisible();
+  const card = page.getByRole('region', { name: 'Pasajero 1 · Adulto' });
+
+  await test.step('al salir del campo aparece su error; mientras se escribe, no', async () => {
+    const names = card.getByLabel('Nombres');
+    await names.pressSequentially('-Ana'); await expect(names).not.toHaveAttribute('aria-invalid', 'true'); // escribir no se castiga: la regla se avisa al salir
+    await card.getByLabel('Apellidos').focus(); // sale del campo
+    await expect(names).toHaveAttribute('aria-invalid', 'true');
+    await expect(card.getByText(/Escribe los nombres solo con letras/)).toBeVisible();
+    await expect(names).toHaveValue('-Ana');
+  });
+
+  await test.step('al pegar: los símbolos de un nombre y las letras del teléfono se bloquean con una ayuda anunciada (nunca en silencio)', async () => {
+    const names = card.getByLabel('Nombres'); const phone = card.getByLabel('Teléfono de contacto', { exact: true });
+    await names.fill(''); await names.focus(); await page.keyboard.insertText('Ana@#2 <b>'); // insertText entra como un pegado: un solo cambio de texto
+    await expect(names).toHaveValue('Ana b');
+    await expect(card.getByRole('status').filter({ hasText: 'Solo letras, espacios, apóstrofo, guion y punto.' })).toBeVisible();
+    await phone.focus(); await page.keyboard.insertText('09ab87');
+    await expect(phone).toHaveValue('0987');
+    await expect(card.getByRole('status').filter({ hasText: 'Solo números.' })).toBeVisible();
+    const documentField = card.getByLabel('Número de documento'); await documentField.fill(''); await documentField.focus(); await page.keyboard.insertText('ab12-3456789012'); // cédula de Ecuador: solo dígitos y 10
+    await expect(documentField).toHaveValue('1234567890');
+    await phone.fill(''); await names.fill('-Ana'); // vuelven a quedar con error para la siguiente parte
+  });
+
+  await test.step('datos inválidos en varios campos: el envío muestra el resumen, enfoca el primer campo con error y conserva lo escrito', async () => {
+    await card.getByLabel('Apellidos').fill('Pérez Vera'); await card.getByLabel('Número de documento').fill('12');
+    await card.getByLabel('Fecha de nacimiento', { exact: true }).fill('01/01/2999'); await card.getByLabel('Género').selectOption('F'); // fuera del rango (hoy − 125 años a hoy): no se acepta
+    await card.getByLabel('Correo electrónico de contacto').fill('sin-arroba'); // el teléfono sigue vacío
+    await page.getByRole('button', { name: 'Continuar al pago' }).click();
+    const summary = page.getByRole('alert').filter({ hasText: 'Revisa los datos marcados.' });
+    await expect(summary).toBeVisible();
+    for (const link of ['Pasajero 1: Nombres', 'Pasajero 1: Número de documento', 'Pasajero 1: Fecha de nacimiento', 'Pasajero 1: Correo electrónico', 'Pasajero 1: Teléfono']) await expect(summary.getByRole('link', { name: link })).toBeVisible();
+    await expect(card.getByLabel('Nombres')).toBeFocused(); // el primer campo con error
+    await expect(card.getByText(/La fecha debe estar entre \d\d\/\d\d\/\d{4} y \d\d\/\d\d\/\d{4}\./)).toBeVisible();
+    await expect(card.getByText('Escribe tu número completo, solo con dígitos; el código de país ya está elegido.')).toBeVisible();
+    await expect(card.getByText('La cédula ecuatoriana lleva exactamente 10 números.')).toBeVisible();
+    await expect(card.getByLabel('Apellidos')).toHaveValue('Pérez Vera'); await expect(card.getByLabel('Número de documento')).toHaveValue('12'); // nada se pierde
+    await expectAccessible(page, 'Pasajeros con errores por campo'); await expectLegible(page, 'Pasajeros con errores por campo');
+    await expect(page.getByRole('heading', { name: 'Pago', exact: true })).toHaveCount(0);
+  });
+
+  await test.step('al corregirlos, se continúa y se compra', async () => {
+    await fillPassenger(page, user);
+    await page.getByRole('button', { name: 'Continuar al pago' }).click();
+    await expect(page.getByRole('heading', { name: 'Pago', exact: true })).toBeVisible();
+    await page.getByRole('button', { name: /^Pagar USD/ }).click();
+    await expect(page.getByRole('heading', { name: '¡Tu reserva está confirmada!' })).toBeVisible();
+  });
+});
+
+test('E2E-35 selector de país: la bandera queda dentro de la caja del campo, centrada en vertical y sin tapar el texto (nombre largo, foco, lista abierta, 360 px, prefijo del teléfono)', async ({ page, request }) => {
+  const user = await signUp(request); await loginAs(page, user); await chooseOffer(page);
+  await freeSeats(page).first().click();
+  await page.getByRole('button', { name: 'Continuar a datos de pasajeros' }).click();
+  await expect(page.getByRole('heading', { name: 'Datos de los pasajeros' })).toBeVisible();
+  const card = page.getByRole('region', { name: 'Pasajero 1 · Adulto' });
+
+  // La bandera del campo (no las de la lista) debe caer toda dentro de la caja del input, centrada en vertical, y el texto empezar después de ella.
+  const expectFlagInside = async (field: Locator, label: string): Promise<void> => {
+    const input = await field.boundingBox(); const flag = await field.locator('xpath=preceding-sibling::img[1]').boundingBox();
+    expect(input, `${label}: caja del campo`).not.toBeNull(); expect(flag, `${label}: caja de la bandera`).not.toBeNull();
+    if (!input || !flag) return;
+    expect(flag.x, `${label}: dentro por la izquierda`).toBeGreaterThanOrEqual(input.x);
+    expect(flag.y, `${label}: dentro por arriba`).toBeGreaterThanOrEqual(input.y);
+    expect(flag.x + flag.width, `${label}: dentro por la derecha`).toBeLessThanOrEqual(input.x + input.width);
+    expect(flag.y + flag.height, `${label}: dentro por abajo`).toBeLessThanOrEqual(input.y + input.height);
+    expect(Math.abs((flag.y + flag.height / 2) - (input.y + input.height / 2)), `${label}: centrada en vertical`).toBeLessThanOrEqual(1.5);
+    const textStart = await field.evaluate((element) => element.getBoundingClientRect().left + parseFloat(getComputedStyle(element).paddingLeft) + parseFloat(getComputedStyle(element).borderLeftWidth));
+    expect(textStart, `${label}: el texto empieza después de la bandera`).toBeGreaterThanOrEqual(flag.x + flag.width);
+  };
+  const nationality = card.getByRole('combobox', { name: 'Nacionalidad' });
+  const prefix = card.getByRole('combobox', { name: 'País del teléfono' });
+  const pick = async (text: string): Promise<void> => { await nationality.click(); await nationality.fill(text); await page.getByRole('option', { name: new RegExp(text, 'i') }).first().click(); };
+
+  for (const viewport of [{ width: 1280, height: 900 }, { width: 360, height: 800 }]) {
+    await page.setViewportSize(viewport); const tag = `${viewport.width} px`;
+    await pick('Croacia'); await expectFlagInside(nationality, `Croacia, ${tag}`);
+    await pick('República Dominicana'); await expectFlagInside(nationality, `nombre largo, ${tag}`);
+    await nationality.focus(); await expectFlagInside(nationality, `con foco, ${tag}`);
+    await nationality.click(); await expect(page.getByRole('listbox', { name: 'Nacionalidad' })).toBeVisible(); await expectFlagInside(nationality, `lista abierta, ${tag}`);
+    await page.keyboard.press('Escape');
+    await expectFlagInside(prefix, `prefijo del teléfono, ${tag}`);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), `${tag}: sin desborde horizontal`).toBe(true);
+  }
 });

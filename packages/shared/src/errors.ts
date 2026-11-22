@@ -1,7 +1,8 @@
 import { RpcException } from '@nestjs/microservices';
 import { Catch, RpcExceptionFilter } from '@nestjs/common';
-import { status } from '@grpc/grpc-js';
+import { status, type Metadata } from '@grpc/grpc-js';
 import { Observable, throwError } from 'rxjs';
+import { invalidParamsFromMetadata, invalidParamsToMetadata, sanitizeInvalidParams, type InvalidParam } from './invalid-params.js';
 
 export const ERROR_CODES = [
   'VALIDATION_FAILED', 'SEAT_TAKEN', 'AMOUNT_MISMATCH', 'BOOKING_NOT_CONFIRMED',
@@ -61,9 +62,22 @@ export class DomainError extends Error {
   }
 }
 
-export interface SafeGrpcError { code: number; details: string }
+/** VALIDATION_FAILED con los campos inválidos (ADR-F12b1fix-05, punto 12): viajan como metadata final del error gRPC, sin valores ni datos personales. */
+export class ValidationFailedError extends DomainError {
+  readonly invalidParams: InvalidParam[];
+  constructor(invalidParams: readonly InvalidParam[]) {
+    super('VALIDATION_FAILED');
+    this.invalidParams = sanitizeInvalidParams(invalidParams);
+  }
+}
+
+export interface SafeGrpcError { code: number; details: string; metadata?: Metadata }
+
+const withInvalidParams = (base: { code: number; details: string }, params: readonly InvalidParam[]): SafeGrpcError =>
+  base.details === 'VALIDATION_FAILED' && params.length ? { ...base, metadata: invalidParamsToMetadata(params) } : base;
 
 export function safeGrpcError(error: unknown): SafeGrpcError {
+  if (error instanceof ValidationFailedError) return withInvalidParams({ code: GRPC_STATUS_BY_CODE.VALIDATION_FAILED, details: error.code }, error.invalidParams);
   if (error instanceof DomainError) {
     return { code: GRPC_STATUS_BY_CODE[error.code], details: error.code };
   }
@@ -78,7 +92,7 @@ export function safeGrpcError(error: unknown): SafeGrpcError {
     const { code, details } = payload;
     if (typeof code === 'number' && typeof details === 'string') {
       if (ERROR_CODES.includes(details as ErrorCode) && GRPC_STATUS_BY_CODE[details as ErrorCode] === code) {
-        return { code, details };
+        return withInvalidParams({ code, details }, invalidParamsFromMetadata((payload as { metadata?: unknown }).metadata));
       }
       if (details === 'UNAUTHENTICATED' && code === status.UNAUTHENTICATED) return { code, details };
       if (details === 'PERMISSION_DENIED' && code === status.PERMISSION_DENIED) return { code, details };

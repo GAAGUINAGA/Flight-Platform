@@ -34,7 +34,7 @@ describe('estado de la compra en curso', () => {
 
   it('CMP-04 la selección sobrevive a una recarga, pero los datos de los pasajeros NUNCA se guardan en el almacenamiento (§3.0)', () => {
     const { storage, store } = make(); store.start(OFFER, BACK, COUNTS); store.setSeat(SEGMENT_ID, 0, '8A'); store.setHold({ holdId: 'h-1', signature: 's' });
-    store.setDrafts(store.getState().drafts.map((draft) => ({ ...draft, firstName: 'Ana', documentNumber: '1712345678', email: 'ana@example.test', phone: '+593987654321' }))); store.setHolder('Ana Pérez');
+    store.setDrafts(store.getState().drafts.map((draft) => ({ ...draft, firstName: 'Ana', documentNumber: '1712345678', email: 'ana@example.test', phoneCountry: 'EC', phoneNational: '987654321' }))); store.setHolder('Ana Pérez');
     const saved = storage.getItem('fp.purchase')!;
     for (const secret of ['1712345678', 'ana@example.test', '+593987654321', 'Ana', 'Pérez', 'documentNumber']) expect(saved).not.toContain(secret);
     expect(Object.keys(JSON.parse(saved) as object).sort()).toEqual(['back', 'correlationId', 'counts', 'hold', 'offer', 'seats', 'selections']);

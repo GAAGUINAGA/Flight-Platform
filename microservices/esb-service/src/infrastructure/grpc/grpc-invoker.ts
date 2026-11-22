@@ -3,7 +3,7 @@ import { dirname, join } from 'node:path';
 import { existsSync } from 'node:fs';
 import type { OnModuleDestroy } from '@nestjs/common';
 import { lastValueFrom, type Observable } from 'rxjs';
-import { createGrpcClient, createGrpcMetadata } from '@flight-platform/shared';
+import { createGrpcClient, createGrpcMetadata, invalidParamsFromMetadata } from '@flight-platform/shared';
 import type { EsbConfig } from '../../config';
 import type { ServiceName } from '../../domain/catalog';
 import type { CallContext, ServiceInvoker } from '../../application/ports';
@@ -49,7 +49,13 @@ export class GrpcServiceInvoker implements ServiceInvoker, OnModuleDestroy {
     const grpc = this.clientFor(service);
     if (typeof grpc[method] !== 'function') throw new Error('Unknown gRPC method');
     const metadata = createGrpcMetadata({ url: this.config.grpcUrls[service], internalApiKey: this.config.internalApiKey, correlationId: context.correlationId, ownerId: context.ownerId, role: context.role });
-    return lastValueFrom(grpc[method](input, metadata, { deadline: deadlineAt }));
+    try { return await lastValueFrom(grpc[method](input, metadata, { deadline: deadlineAt })); }
+    catch (thrown) {
+      // Los campos inválidos de un VALIDATION_FAILED vienen en la metadata final del error: se pasan como propiedad para que el dominio los ponga en el sobre.
+      const invalidParams = invalidParamsFromMetadata((thrown as { metadata?: unknown } | null)?.metadata);
+      if (invalidParams.length && typeof thrown === 'object' && thrown !== null) Object.assign(thrown, { invalidParams });
+      throw thrown;
+    }
   }
 
   async close(): Promise<void> {

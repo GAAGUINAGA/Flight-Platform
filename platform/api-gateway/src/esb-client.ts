@@ -5,6 +5,7 @@ import { status } from '@grpc/grpc-js';
 import type { GatewayConfig } from './config';
 import type { AuthContext } from './auth';
 import { ESB_OPERATIONS } from './esb-operations';
+import { safeInvalidParams, type InvalidParam } from './v2/invalid-params';
 
 /** Plazos que usaba el transporte gRPC: 5 s, o `GATEWAY_ORCHESTRATION_DEADLINE_MS` (30 s) en las cuatro operaciones orquestadas de Reservation. */
 const DEFAULT_DEADLINE_MS = 5_000;
@@ -21,10 +22,10 @@ export function deadlineFor(service: string, method: string, env: Record<string,
 
 /** Error con la misma forma que el de un cliente gRPC (`code` numérico y `details` = código del catálogo): `asProblem` no cambia (ADR-F12b-02). */
 export class EsbCallError extends Error {
-  constructor(readonly code: number, readonly details: string | undefined, readonly step?: string) { super(`ESB ${status[code] ?? 'ERROR'}`); }
+  constructor(readonly code: number, readonly details: string | undefined, readonly step?: string, readonly invalidParams?: InvalidParam[]) { super(`ESB ${status[code] ?? 'ERROR'}`); }
 }
 
-interface Envelope { ok: boolean; result?: unknown; error?: { source?: string; grpcCode?: number; catalogCode?: string | null; step?: string } }
+interface Envelope { ok: boolean; result?: unknown; error?: { source?: string; grpcCode?: number; catalogCode?: string | null; step?: string; invalidParams?: unknown } }
 
 /** Un error propio del ESB (llave, operación, sobre, falla interna) no es culpa del cliente: llega como INTERNAL. */
 export function errorFromEnvelope(body: Envelope | undefined): EsbCallError {
@@ -34,7 +35,8 @@ export function errorFromEnvelope(body: Envelope | undefined): EsbCallError {
     // Salvo plazo vencido o servicio no disponible, que son transitorios y siguen siendo 503 con Retry-After.
     return new EsbCallError(error.grpcCode === status.DEADLINE_EXCEEDED || error.grpcCode === status.UNAVAILABLE ? error.grpcCode : status.INTERNAL, undefined);
   }
-  return new EsbCallError(error.grpcCode, error.catalogCode ?? undefined, error.step);
+  const invalidParams = error.catalogCode === 'VALIDATION_FAILED' ? safeInvalidParams(error.invalidParams) : [];
+  return new EsbCallError(error.grpcCode, error.catalogCode ?? undefined, error.step, invalidParams.length ? invalidParams : undefined);
 }
 
 export interface EsbCall { operation: string; input: object; correlationId: string; auth?: AuthContext; deadlineMs: number; abortMarginMs?: number }

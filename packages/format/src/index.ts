@@ -3,3 +3,5 @@ export { addDays, dayOffset, dayOffsetLabel, formatDate, formatDuration, formatL
 export { compareAmounts, formatAmount, formatMoney, type MoneyLike } from './money';
 export { maskDocument } from './document';
 export { boardingPassQr, MAX_QR_VALUE_LENGTH, type QrMatrix } from './boarding-qr';
+export * from './passenger-rules';
+export * from './countries';

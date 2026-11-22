@@ -18,6 +18,7 @@ import { HoldGate, HoldTimer, useHoldClock } from './HoldTimer';
 import { paymentReference, runIntent, type PaymentScenario } from './intent';
 import { validatePassengers } from './passenger-rules';
 import { addAmounts, baggageTotal } from './pricing';
+import { FIELD_ERROR_CODES, mapServerErrors } from './server-errors';
 import { RequireSession, Stepper, SummaryLine } from './Shared';
 import s from './purchase.module.css';
 
@@ -85,7 +86,15 @@ function PaymentScreen() {
       const { booking, outcome } = result.createBooking;
       store.reset();
       navigate(`/reservas/${encodeURIComponent(booking.bookingId)}/confirmacion`, { replace: true, state: { outcome, booking } });
-    } catch (failure) { setError(toAppError(failure)); } finally { lock.current = false; setBusy(false); }
+    } catch (failure) {
+      const failed = toAppError(failure);
+      // Un dato que el servidor rechazó: se lleva al campo y pasajero (lo escrito se conserva en el almacén) en lugar de un aviso general.
+      if (FIELD_ERROR_CODES.has(failed.code)) {
+        const mapped = mapServerErrors(failed, drafts);
+        if (Object.keys(mapped.errors).length > 0) { store.setServerErrors(mapped.errors); navigate('/compra/pasajeros'); return; }
+      }
+      setError(failed);
+    } finally { lock.current = false; setBusy(false); }
   };
 
   return (
