@@ -2,13 +2,36 @@
 
 Rama `docs/repaso-backlog`, desde `main` en `a640c11` (audit-53 APROBADO). Solo documentación: no se cambió código ni se tocó `BACKLOG.md`; el humano decide qué entradas se cierran.
 
+## Decisiones del humano (2026-11-22)
+
+Las 14 decisiones de la tabla «Decisiones que necesitan al humano o a Booking» (más abajo) se resolvieron el 2026-11-22; el detalle, la regla permanente sobre el contrato con Booking y la verificación de los flujos con Booking están en `docs/dev/decisiones-triaje-2026-11.md`. Resumen por número de decisión:
+
+| # | Resolución |
+|---|---|
+| 1 | Se mantiene la edad por tipo (YOUTH 12–17, ADULT ≥ 18, al comprar); se acoge a la regla de Booking. B-002 queda decidida. |
+| 2 | Sin instancias mínimas; los 503 del escalado a cero se aceptan; reintentos con espera en las tareas programadas, en el BACKLOG con prioridad baja. B-052 queda decidida. |
+| 3 | El seed no se automatiza; renovado el 2026-11-22 con vuelos hasta fines de enero de 2027. B-042 hecha (próxima renovación antes del 2027-01-07). La rotación de `svc_gateway` (B-076) sigue pospuesta con riesgo aceptado. |
+| 4 | Se mantiene la regla actual de apertura (cada cabina con al menos una tarifa válida). B-131 y B-128 quedan como límite conocido. |
+| 5 | El índice único de vuelos **no** se hace. B-125 decidida. |
+| 6 | Ver la verificación de flujos con Booking; `booking.ticket_issuing` no se quita. B-086 solo registrada. |
+| 7 | Regla A: el contrato con Booking no cambia. B-011 queda fuera de alcance. |
+| 8 | Cédula de 10 dígitos y rangos de fechas solo en la web. B-007 y B-009 decididas. |
+| 9 | La búsqueda por PNR pasa a disponibilidad (check-in «desconocido»). Es código para una entrega posterior (B-121). |
+| 10 | `HIDDEN_CABINS` se conserva como interruptor de emergencia (B-134); documentado en `docs/dev/guia-operacion.md`. |
+| 11 | PLAN actualizado (GAP-025, `holdId` en `hold.expired`). B-059 hecha. |
+| 12 | Orden: catálogo de rutas (B-092), cancelar reservas ajenas (B-118), listado del registro de accesos (B-119). Premium y primera clase fuera de alcance (parte de B-012). |
+| 13 | La marca y las fotos no se tocan (B-102). |
+| 14 | Se cierran las 43 entradas en `BACKLOG.md`. |
+
+Con estas decisiones, la propuesta «4. F12d» ya no incluye instancias mínimas (decisión 2) y las entregas del grupo G8 quedan sujetas a la regla A (ver `decisiones-triaje-2026-11.md`). El aviso urgente sobre el seed (B-042) quedó superado el 2026-11-22.
+
 ## Cómo se hizo y qué límites tiene
 
 - Se revisaron las **244 líneas** de `BACKLOG.md` y se agruparon en **138 entradas** (`B-001` a `B-138`). Algunas líneas aparecen duplicadas en el BACKLOG (L139/L141, L197/L201, L198/L202, L199/L203); aquí cuentan como una sola. Cada fila cita las líneas de origen (`L…`).
 - Cada entrada se contrastó con el código, los ADR, las bitácoras y el historial de git de `main`. La columna **Verificación y razón** dice qué se comprobó; «Verificado» significa que se leyó el código o el archivo citado, «No verificado» que no se pudo comprobar así.
 - **No se ejecutó ninguna prueba.** Las entradas de pruebas intermitentes o de datos locales (grupo G1) se mantienen como vigentes porque requieren la base local y Docker, que administra el humano (AGENTS.md); su estado real se conoce solo al repetirlas.
 - Ante la duda se dejó la entrada como **Vigente**, nunca como resuelta.
-- El propio `BACKLOG.md` tiene líneas con la codificación dañada (`?`, `Ã³`, espacios en lugar de tildes): L21–L23, L42–L45, L96, L103–L122, L134–L135 y otras. No se corrigió (tarea solo de lectura), pero conviene arreglarlo cuando se limpie el archivo.
+- El propio `BACKLOG.md` tiene líneas con la codificación dañada (`?`, `Ã³`, espacios en lugar de tildes): L21–L23, L42–L45, L96, L103–L122, L134–L135 y otras. No se corrigió en el triaje (tarea solo de lectura); se corrigió el 2026-11-22 en la entrega `docs/decisiones-y-booking` (decisión 14). Las referencias `L…` de este documento son a las líneas del BACKLOG **anterior** a esa limpieza.
 
 **Estados:** Vigente · Resuelta (con commit o auditoría) · Obsoleta (ya no aplica, por diseño o por haberse retirado la causa) · Lección (regla de proceso, no una tarea).
 **Categorías:** a defecto visible para clientes o socios · b seguridad o datos personales · c integridad de datos o dinero · d pruebas inestables o entorno local · e deuda técnica o de arquitectura · f operación y observabilidad · g decisión de negocio pendiente · h mejora o alcance nuevo · i lección o regla de proceso.

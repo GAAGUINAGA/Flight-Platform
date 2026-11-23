@@ -83,7 +83,7 @@ Todos son variables de entorno con este valor por defecto (§8).
 | GAP-019 | `/bookings/{id}/*` inexistente o ajeno ⇒ 404 |
 | GAP-020 | 202 sin cuerpo en baggage, date-change y cancel |
 | GAP-024 | `QUOTE_EXPIRED` en `/cancel` ⇒ 409 |
-| GAP-025 | `secret` enmascarado en lecturas (`"****" + últimos 4`). `hold.expired`: `data = { status: "EXPIRED" }`. `flight.*`: un evento por reserva afectada |
+| GAP-025 | `secret` enmascarado en lecturas (`"****" + últimos 4`). `hold.expired`: `data = { holdId, status: "EXPIRED" }` (el `holdId` permite al consumidor relacionarlo con su bloqueo; ADR-F11-13, cuerpo real publicado por Inventory y aceptado por Webhooks). `flight.*`: un evento por reserva afectada |
 | GAP-027 | `POST check-in` sin cuerpo ⇒ check-in de todos los elegibles |
 | GAP-021 | La compra de equipaje es síncrona y responde 200 |
 
@@ -101,6 +101,12 @@ Todos son variables de entorno con este valor por defecto (§8).
 | `PNR_CREATION_FAILED`, `TICKET_ISSUANCE_FAILED` | En `failureReason` del ticket o estado `FAILED` de la reserva | `INTERNAL` |
 
 El HTTP final lo decide el Gateway por `code` + operación (por eso `OFFER_NO_LONGER_AVAILABLE` es 409 en `/offers/hold` y 410 en `/bookings`).
+
+### 1.5 Regla permanente: el contrato con Booking no cambia (decisión del humano, 2026-11-22)
+
+> Ningún cambio puede modificar el contrato con Booking (`contracts/openapi/vuelos-openapi-v2.yaml`, la forma de los eventos y webhooks que reciben, ni el comportamiento que hoy observan). La plataforma se acoge a Booking. Si una mejora exige cambiar el contrato, no se hace: se registra en el BACKLOG como fuera de alcance.
+
+Rige para el developer y para el auditor en todas las fases y entregas. Una mejora que cambie lo que Booking observa (campos, eventos, códigos de error, estados) queda fuera de alcance aunque el contrato ya declare el campo.
 
 ---
 

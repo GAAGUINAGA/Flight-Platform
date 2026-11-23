@@ -3,3 +3,4 @@
 - Tras el merge, el despliegue se hace desde main (WIF solo acepta main).
 - Auditoría de despliegue: corta; verifica solo las tareas de despliegue usando las salidas registradas en la bitácora y un health check propio contra la URL pública.
 - Ambas auditorías cuentan para el límite de rechazos por separado.
+- **Regla permanente (decisión del humano, 2026-11-22; PLAN §1.5):** Ningún cambio puede modificar el contrato con Booking (`contracts/openapi/vuelos-openapi-v2.yaml`, la forma de los eventos y webhooks que reciben, ni el comportamiento que hoy observan). La plataforma se acoge a Booking. Si una mejora exige cambiar el contrato, no se hace: se registra en el BACKLOG como fuera de alcance. El developer no la incumple y el auditor la verifica en cada fase (diff de `contracts/openapi/` y de la forma de los eventos y respuestas v2).
