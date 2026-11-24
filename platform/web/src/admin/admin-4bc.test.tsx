@@ -60,6 +60,24 @@ describe('check-in de la aerolínea (F12c-4b)', () => {
     const limited = userEvent.setup(); await search(limited); await limited.click(screen.getByRole('button', { name: 'Ver pases de abordar' }));
     expect(await screen.findByText('Hiciste demasiadas solicitudes. Espera un momento e inténtalo de nuevo.')).toBeInTheDocument(); expect(screen.queryByTestId('boarding-pass')).not.toBeInTheDocument();
   });
+  it('ADM4-B-W-05 (decisión 9) con el check-in DESCONOCIDO se muestra la reserva con el aviso y cómo reintentar; «Hacer check-in» y los pases quedan deshabilitados con el motivo accesible; nunca se dice «sin check-in»', async () => {
+    const unknownBooking = bookingByPnr({ checkIn: { status: 'UNKNOWN', passengers: [] } });
+    let current = unknownBooking;
+    const view = mount('/admin/reservas', { AdminBookingByPnr: () => current, AdminCheckIn: () => checkInResult, AdminBoardingPasses: () => passes });
+    const user = userEvent.setup(); await search(user);
+    expect(screen.getAllByText('Ana Pérez').length).toBeGreaterThan(0); // la reserva se muestra
+    const notice = within(screen.getByTestId('checkin-unknown')); expect(notice.getByText('Estado del check-in: no se pudo consultar en este momento.')).toBeInTheDocument(); expect(notice.getByText(/Vuelve a consultar en unos segundos/)).toBeInTheDocument();
+    expect(screen.queryByText('Sin check-in')).not.toBeInTheDocument(); expect(screen.queryByText('Con check-in')).not.toBeInTheDocument();
+    const reason = screen.getByTestId('checkin-unknown-reason'); expect(reason).toHaveAttribute('id', 'checkin-unknown-reason');
+    for (const name of ['Hacer check-in', 'Ver pases de abordar']) { const button = screen.getByRole('button', { name }); expect(button).toBeDisabled(); expect(button).toHaveAttribute('aria-describedby', 'checkin-unknown-reason'); expect(document.getElementById('checkin-unknown-reason')?.textContent).toMatch(/no se conozca el estado del check-in/); }
+    await user.click(screen.getByRole('button', { name: 'Hacer check-in' })); expect(calls(view, 'AdminCheckIn')).toHaveLength(0); expect(calls(view, 'AdminBoardingPasses')).toHaveLength(0);
+    // Reintentar: vuelve a consultar el mismo PNR y, con Operations de vuelta, se habilita todo.
+    expect(calls(view, 'AdminBookingByPnr')).toHaveLength(1);
+    current = notStarted;
+    await user.click(within(screen.getByTestId('checkin-unknown')).getByRole('button', { name: 'Volver a consultar' }));
+    await waitFor(() => expect((screen.getByRole('button', { name: 'Hacer check-in' }) as HTMLButtonElement).disabled).toBe(false));
+    expect(calls(view, 'AdminBookingByPnr')).toHaveLength(2); expect(calls(view, 'AdminBookingByPnr')[1].variables).toEqual({ pnr: 'J4R8GZ' }); expect(screen.queryByTestId('checkin-unknown')).not.toBeInTheDocument();
+  });
 });
 
 const catalog = { adminAircraftCatalog: [{ code: 'A320', cabins: [{ cabinClass: 'BUSINESS', seats: 12 }, { cabinClass: 'ECONOMY', seats: 150 }] }, { code: 'E190', cabins: [{ cabinClass: 'ECONOMY', seats: 99 }] }] };

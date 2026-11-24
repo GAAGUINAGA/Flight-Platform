@@ -185,11 +185,44 @@ describe('F12c-4a: buscar una reserva por PNR (POST /api/admin/v1/bookings/searc
       expect(response.status).toBe(503); expect(response.headers['retry-after']).toBeDefined(); expect(JSON.stringify(response.body)).not.toContain('Ana');
     });
   });
-  it('ADM4-P-14: si Operations falla, no hay datos parciales: el error se registra y se propaga sin cuerpo de reserva', async () => {
+  it.each([
+    ['UNAVAILABLE (14)', { code: 14, details: 'UNAVAILABLE' }], ['DEADLINE_EXCEEDED (4)', { code: 4, details: 'deadline' }], ['INTERNAL (13)', { code: 13, details: 'INTERNAL' }]
+  ])('ADM4-P-14 (decisión 9, lista cerrada UNAVAILABLE, DEADLINE_EXCEEDED, INTERNAL): si Operations no responde (%s), se devuelve la reserva con el check-in UNKNOWN (nunca «sin check-in»), conforme al OpenAPI, y se registra FOUND', async (_name, failure) => {
     await withApp(async (server, log) => {
-      operationsFailure = { code: 14, details: 'UNAVAILABLE' };
+      operationsFailure = failure;
       const response = await search(server, PNR);
-      expect(response.status).toBe(503); expect(JSON.stringify(response.body)).not.toContain('Pérez'); expect(log.rows.at(-1)).toMatchObject({ subject: PNR, result: 'ERROR' });
+      expect(response.status).toBe(200); expect(validate('AdminBookingView', response.body).errors).toBeNull();
+      expect(response.body).toMatchObject({ bookingId: BOOKING, pnr: PNR, checkIn: { status: 'UNKNOWN', passengers: [] } });
+      expect(response.body.checkIn.status).not.toBe('NOT_STARTED'); expect(response.body.passengers[0]).toMatchObject({ firstName: 'Ana' });
+      expect(JSON.stringify(response.body)).not.toContain('ana@example.com'); expect(JSON.stringify(response.body)).not.toContain('deadline');
+      expect(log.rows).toHaveLength(1); expect(log.rows[0]).toMatchObject({ subject: PNR, result: 'FOUND', errorCode: null });
+      expect(calls.map((call) => call.method)).toEqual(['adminGetReservationByPnr', 'adminGetCheckInStatus']);
+    });
+  });
+  it.each([
+    ['PERMISSION_DENIED (7)', { code: 7, details: 'FORBIDDEN' }, 403, 'FORBIDDEN'], ['INVALID_ARGUMENT (3)', { code: 3, details: 'VALIDATION_FAILED' }, 400, 'VALIDATION_FAILED'], ['UNAUTHENTICATED (16)', { code: 16, details: 'UNAUTHORIZED' }, 401, 'UNAUTHORIZED'],
+    ['NOT_FOUND (5)', { code: 5, details: 'NOT_FOUND' }, 404, null], ['FAILED_PRECONDITION (9)', { code: 9, details: 'INTERNAL' }, 500, 'UNKNOWN_ERROR'], ['error propio del gateway (sin código gRPC)', new Error('fallo con ana@example.com'), 500, 'UNKNOWN_ERROR']
+  ] as Array<[string, unknown, number, string | null]>)('ADM4-P-14d (audit-54 H1): un fallo de Operations que NO es «no responde» (%s) se propaga como antes: no es UNKNOWN ni 200 FOUND', async (_name, failure, status, errorCode) => {
+    await withApp(async (server, log) => {
+      operationsFailure = failure;
+      const response = await search(server, PNR);
+      expect(response.status).toBe(status); expect(JSON.stringify(response.body)).not.toMatch(/UNKNOWN|Pérez|ana@example\.com/);
+      expect(log.rows).toHaveLength(1); expect(log.rows[0]).toMatchObject(errorCode === null ? { subject: PNR, result: 'NOT_FOUND' } : { subject: PNR, result: expect.stringMatching(/^(ERROR|REJECTED)$/), errorCode });
+    });
+  });
+  it.each([['UNAVAILABLE', { code: 14, details: 'UNAVAILABLE' }, 503, 'UNAVAILABLE'], ['DEADLINE_EXCEEDED', { code: 4, details: 'deadline' }, 503, 'DEADLINE_EXCEEDED']])('ADM4-P-14b: si Reservation (la fuente de la reserva) falla (%s), la búsqueda sigue fallando, sin datos, y NO consulta a Operations', async (_name, failure, status, errorCode) => {
+    await withApp(async (server, log) => {
+      reservationFailure = failure;
+      const response = await search(server, PNR);
+      expect(response.status).toBe(status); expect(JSON.stringify(response.body)).not.toMatch(/Pérez|UNKNOWN/);
+      expect(log.rows.at(-1)).toMatchObject({ subject: PNR, result: 'ERROR', errorCode }); expect(calls.map((call) => call.method)).toEqual(['adminGetReservationByPnr']);
+    });
+  });
+  it('ADM4-P-14c: con Operations disponible no cambia nada: el estado del check-in es el real, aunque sea sin check-in (NOT_STARTED)', async () => {
+    await withApp(async (server) => {
+      jest.mocked(callGatewayGrpc).mockImplementation(async (_c, _s, method) => (method === 'adminGetReservationByPnr' ? reservationView : { bookingId: BOOKING, status: 'NOT_STARTED', passengers: [] }));
+      const response = await search(server, PNR);
+      expect(response.status).toBe(200); expect(response.body.checkIn).toEqual({ status: 'NOT_STARTED', passengers: [] });
     });
   });
 
@@ -203,8 +236,8 @@ describe('F12c-4a: buscar una reserva por PNR (POST /api/admin/v1/bookings/searc
       await step('FOUND', () => search(server, PNR), { result: 'FOUND', subject: PNR });
       reservationFailure = { code: 5 }; await step('NOT_FOUND', () => search(server, 'ZZZZZZ'), { result: 'NOT_FOUND', subject: 'ZZZZZZ' });
       reservationFailure = { code: 14, details: 'connect ECONNREFUSED 10.0.0.1' }; await step('ERROR reservation', () => search(server, PNR), { result: 'ERROR', subject: PNR, errorCode: 'UNAVAILABLE' });
-      reservationFailure = undefined; operationsFailure = { code: 4, details: 'deadline' }; await step('ERROR operations', () => search(server, PNR), { result: 'ERROR', subject: PNR, errorCode: 'DEADLINE_EXCEEDED' });
-      operationsFailure = new Error('fallo propio del gateway con ana@example.com'); await step('ERROR del gateway', () => search(server, PNR), { result: 'ERROR', subject: PNR, errorCode: 'UNKNOWN_ERROR' });
+      reservationFailure = undefined; operationsFailure = { code: 4, details: 'deadline' }; await step('FOUND con Operations caída', () => search(server, PNR), { result: 'FOUND', subject: PNR });
+      reservationFailure = new Error('fallo propio del gateway con ana@example.com'); operationsFailure = undefined; await step('ERROR del gateway', () => search(server, PNR), { result: 'ERROR', subject: PNR, errorCode: 'UNKNOWN_ERROR' });
       expect(seen.map(([name, count]) => [name, count])).toEqual(seen.map(([name]) => [name, 1]));
     });
   });

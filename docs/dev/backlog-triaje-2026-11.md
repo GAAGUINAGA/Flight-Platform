@@ -23,7 +23,7 @@ Las 14 decisiones de la tabla «Decisiones que necesitan al humano o a Booking»
 | 13 | La marca y las fotos no se tocan (B-102). |
 | 14 | Se cierran las 43 entradas en `BACKLOG.md`. |
 
-Con estas decisiones, la propuesta «4. F12d» ya no incluye instancias mínimas (decisión 2) y las entregas del grupo G8 quedan sujetas a la regla A (ver `decisiones-triaje-2026-11.md`). El aviso urgente sobre el seed (B-042) quedó superado el 2026-11-22.
+Con estas decisiones, la propuesta «4. F12d» ya no incluye instancias mínimas (decisión 2) y las entregas del grupo G8 quedan sujetas a la regla A (ver `decisiones-triaje-2026-11.md`). **[Entrega 2, 2026-11-22, regla A precisada: B-090 (`gate`) y `status` en `booking.checked_in` pasan a «cumplir el contrato» (entrega 3, con aviso a Booking); B-071, B-053 y B-082 quedan fuera de alcance; B-070 es permitida si la salida v2 queda idéntica; B-062 se divide (filtro fuera de alcance, reintento permitido). Detalle en `decisiones-triaje-2026-11.md`.]** El aviso urgente sobre el seed (B-042) quedó superado el 2026-11-22.
 
 ## Cómo se hizo y qué límites tiene
 

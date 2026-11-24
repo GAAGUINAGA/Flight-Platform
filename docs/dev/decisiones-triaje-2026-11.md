@@ -4,7 +4,9 @@ Origen: `docs/dev/backlog-triaje-2026-11.md` (138 entradas, tabla de «Decisione
 
 ## A. Regla permanente
 
-> Ningún cambio puede modificar el contrato con Booking (`contracts/openapi/vuelos-openapi-v2.yaml`, la forma de los eventos y webhooks que reciben, ni el comportamiento que hoy observan). La plataforma se acoge a Booking. Si una mejora exige cambiar el contrato, no se hace: se registra en el BACKLOG como fuera de alcance.
+> Ningún cambio puede MODIFICAR el contrato con Booking (contracts/openapi/vuelos-openapi-v2.yaml y la forma de los eventos y webhooks) ni OBLIGARLOS A CAMBIAR nada de su lado. SÍ se permite CUMPLIR lo que el contrato ya declara (por ejemplo, llenar un campo declarado que hoy enviamos vacío o ausente), avisando a Booking antes del despliegue. Un cambio que el contrato admite pero que altera lo que Booking recibe hoy de una forma que podría obligarlos a adaptarse (por ejemplo, un código de respuesta distinto) NO se hace. Si una mejora no cumple esto, queda en el BACKLOG como fuera de alcance.
+
+*(Texto precisado por el humano en la entrega 2, 2026-11-22. Sustituye al de la entrega 1, que prohibía también cumplir campos ya declarados.)*
 
 Escrita en `AGENTS.md` (Reglas aprendidas), `docs/audit/context/PLAN.md` (§1.5) y `docs/audit/context/flujo-cierre.md`, donde la leen el developer y el auditor.
 
@@ -27,16 +29,20 @@ Escrita en `AGENTS.md` (Reglas aprendidas), `docs/audit/context/PLAN.md` (§1.5)
 | 13 | La marca y las fotos no se tocan. | B-102 | Sin acción; el crédito visible sigue siendo obligatorio mientras las fotos sean provisionales. |
 | 14 | Se cierran las 43 entradas (32 resueltas y 11 obsoletas del triaje). | ver D | Hecho en `BACKLOG.md`. |
 
-### Consecuencias de la regla A sobre entradas abiertas (para que el humano las confirme)
+### Consecuencias de la regla A sobre entradas abiertas (revisadas con el texto precisado, entrega 2, 2026-11-22)
 
-El triaje propuso un grupo (G8) que cambia lo que Booking observa. Con la regla A **no deben implementarse** sin revisarlas una a una; mientras tanto no se tocan y el BACKLOG las marca como «sujeta a la regla A»:
+Criterio: se permite CUMPLIR lo que el contrato ya declara (con aviso previo a Booking); NO se hace lo que lo modifica o puede obligarlos a adaptarse (p. ej. otro código de respuesta). Clasificación, sin implementar nada en la entrega 2:
 
-| Entrada | Por qué toca a lo que Booking observa |
+| Entrada | Conclusión con el criterio |
 |---|---|
-| B-011 (publicar el máximo de maletas) | Exige cambiar el contrato: fuera de alcance. |
-| B-090 (`gate` en estado de vuelo y pases) | Agrega un campo a respuestas v2 que hoy no lo traen (el contrato lo declara, pero Booking observa su ausencia). |
-| B-071 (202 con pago pendiente en equipaje y cambio de fecha) | Cambia el código de respuesta que hoy observan (422 `PAYMENT_NOT_AUTHORIZED`). |
-| B-070 (`CHILDRE`/`TOTAL` en Pricing) | Solo es seguro si la salida v2 que ven queda idéntica (hoy el Gateway ya la normaliza). |
+| B-011 (publicar el máximo de maletas) | Exige cambiar el contrato: **fuera de alcance**. |
+| B-090 (`gate` en estado de vuelo y pases) | El contrato ya declara `gate` (`FlightStatusEndpoint`, `BoardingPass`): **cumplir el contrato, se hace en la entrega 3**, avisando a Booking antes del despliegue. |
+| `status` en `booking.checked_in` (`BookingEventData`, obligatorio en el contrato) | **Cumplir el contrato, se hace en la entrega 3**, con aviso previo a Booking. `passengersCheckedIn` (opcional) se decide en esa entrega. |
+| B-071 (202 con pago pendiente en equipaje y cambio de fecha) | Cambia el código de respuesta que hoy observan (422 `PAYMENT_NOT_AUTHORIZED`): **fuera de alcance**. |
+| B-070 (`CHILDRE`/`TOTAL` en Pricing) | Cambio interno: Pricing y el Gateway ya entregan a Booking `ADULT/YOUTH/CHILD/INFANT` sin `TOTAL`. No modifica ni obliga a nada **si la salida v2 queda idéntica** (se probaría comparando antes/después). **Permitida bajo esa condición**; no se implementa aquí. |
+| B-053 (503 `RATE_LIMIT_EXCEEDED` → `SERVICE_UNAVAILABLE`) | Cambia el `code` del cuerpo de error que Booking recibe hoy (PLAN GAP-031 fija ese 503) y podría obligarlos a adaptar su manejo: **fuera de alcance**. Solo cabe documentar el fallo cerrado y probarlo, sin cambiar la respuesta. |
+| B-062 (avisos de vuelo a reservas ya canceladas) | Dos partes. Filtrar las canceladas **cambia qué avisos recibe un socio** (dejaría de recibir avisos que hoy llegan): **fuera de alcance**. El reintento de la notificación fallida desde el planificador solo entrega lo que hoy se pierde y no cambia la forma: **permitido** como cumplimiento, con aviso previo a Booking. |
+| B-082 (rutas con barra final o mayúsculas: 400 → 401) | Cambia un código de respuesta (400 por 401) que el contrato admite; Booking no envía esas variantes de forma legítima, pero el criterio da el código distinto como ejemplo de lo que NO se hace: **fuera de alcance** (el humano puede reconsiderarlo si Booking lo confirma). |
 | B-112, B-033, B-093 | Internas (Pricing, proto aditivo, validación v1): permitidas mientras no cambien respuestas v2 ya observables. |
 
 ## C. Verificación de los flujos con Booking (solo lectura)
@@ -73,7 +79,7 @@ Cadena común de eventos salientes: el servicio publica por el ESB (`esbEventCli
 - Pruebas: `operations-service/test/f12c4b-admin-airline-check-in.spec.ts:43-51` (OPS-AC-01: publica con el dueño real; el evento no lleva al administrador); `reservation-service/test/f12c4b-resolve-owner.spec.ts`; `webhooks-service/test/integration/webhooks-v2.spec.ts:34` (WHK-V2-IT-02) y `test/unit/webhook-v2.spec.ts:79` (WHK-V2-09): la suscripción del cliente recibe `<clientId>~*`; `esb-service/test/e2e/bus-end-to-end.spec.ts:63-99` (`booking.checked_in` por el bus hasta el webhook v2 y el feed); `api-gateway/test/e2e/v2/p4-postsale.e2e.spec.ts:219-224` (V2-P4-50, check-in del cliente por v2 y evento en el feed).
 - Qué falta (no se corrige aquí):
   1. **No hay una prueba que encadene** el check-in del panel con un dueño compuesto `booking~<usuario>` hasta el webhook o feed del socio: OPS-AC-01 usa un dueño simple (`partner-owner-777`) y la entrega al cliente por prefijo se prueba aparte. Por lectura el recorrido es correcto. Agregar esa prueba **no cambia el contrato**.
-  2. **El cuerpo del evento no trae `status`**, que `BookingEventData` declara obligatorio (`:3307-3309`), ni `passengersCheckedIn` (opcional, `:3457`). Operations publica `data = { bookingId, pnr }` (`operations-service/src/infrastructure/adapters/grpc-adapters.ts:64`); el CloudEvent entregado sale con `bookingId`, `pnr` y `ownerId` (por lectura de `buildCloudEvent`, `domain/webhook.ts:31-40`, que no agrega `status`; `bus-end-to-end.spec.ts:99` comprueba `{ bookingId, pnr }` sin cubrir `status`). Es el mismo cuerpo para el check-in del cliente y el de la aerolínea, y es lo que Booking observa hoy. **Completarlo sí cambiaría lo que Booking recibe** (campo nuevo en el evento) y por la regla A **no se hace**: queda en el BACKLOG como fuera de alcance, para consultarlo con Booking si lo piden.
+  2. **El cuerpo del evento no trae `status`**, que `BookingEventData` declara obligatorio (`:3307-3309`), ni `passengersCheckedIn` (opcional, `:3457`). Operations publica `data = { bookingId, pnr }` (`operations-service/src/infrastructure/adapters/grpc-adapters.ts:64`); el CloudEvent entregado sale con `bookingId`, `pnr` y `ownerId` (por lectura de `buildCloudEvent`, `domain/webhook.ts:31-40`, que no agrega `status`; `bus-end-to-end.spec.ts:99` comprueba `{ bookingId, pnr }` sin cubrir `status`). Es el mismo cuerpo para el check-in del cliente y el de la aerolínea, y es lo que Booking observa hoy. **[Actualizado en la entrega 2, con la regla A precisada]** `status` está declarado y es obligatorio en el contrato: completarlo es CUMPLIR el contrato, se permite y **se hace en la entrega 3**, avisando a Booking antes del despliegue. (En la entrega 1 se había clasificado como fuera de alcance.)
 
 ### `booking.ticket_issuing` (solo registro)
 
@@ -86,4 +92,4 @@ Booking no lo pidió. Está en el enum del contrato (`:3230`, «se mantiene por 
 | (a) boletos emitidos | Sí | Publicación de mejor esfuerzo, sin reintento propio | No |
 | (b) reserva confirmada | Sí | Nada | — |
 | (c) vuelos disponibles (búsqueda v2) | Sí | Nada (depende del seed vigente) | — |
-| (d) check-in desde el panel | Sí, por tramos | Prueba de punta a punta con dueño compuesto; el cuerpo no trae `status` | Prueba: no. Agregar `status`: **sí** (no se hace) |
+| (d) check-in desde el panel | Sí, por tramos | Prueba de punta a punta con dueño compuesto; el cuerpo no trae `status` | Prueba: no. Agregar `status`: cumple el contrato, se hace en la entrega 3 con aviso a Booking |

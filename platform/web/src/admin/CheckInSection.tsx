@@ -10,7 +10,7 @@ import { ErrorPanel } from '../components/ErrorPanel';
 import { Button } from '../components/ui/Button';
 import { Notice } from '../components/ui/Notice';
 import ui from '../components/ui/ui.module.css';
-import { checkInStatusLabel } from './pnr-rules';
+import { checkInStatusLabel, isCheckInUnknown } from './pnr-rules';
 import a from './admin.module.css';
 
 type Booking = NonNullable<AdminBookingByPnrQuery['adminBookingByPnr']>;
@@ -35,6 +35,8 @@ export function CheckInSection({ booking, onChecked }: { booking: Booking; onChe
   const names = new Map(booking.passengers.map((passenger) => [passenger.passengerId, `${passenger.firstName} ${passenger.lastName}`]));
   const flightOf = new Map(booking.segments.map((segment) => [segment.segmentId, segment]));
   const confirmed = booking.status === 'CONFIRMED';
+  // Estado desconocido (Operations no respondió): el check-in también depende de Operations, así que no se ofrece ni él ni los pases hasta volver a consultar.
+  const unknown = isCheckInUnknown(booking.checkIn.status);
 
   const loadPasses = async (): Promise<void> => {
     setLoadingPasses(true); setPassError(null);
@@ -51,7 +53,7 @@ export function CheckInSection({ booking, onChecked }: { booking: Booking; onChe
   return (
     <section aria-labelledby="checkin-title" className={a.panel} data-testid="checkin-section">
       <h3 id="checkin-title">Check-in de la aerolínea</h3>
-      <p className={a.muted}>Estado: {checkInStatusLabel(booking.checkIn.status)}. Se aplican las mismas reglas que al cliente: ventana de 48 horas a 60 minutos antes de la salida, reserva confirmada y boletos emitidos.</p>
+      <p className={a.muted}>Estado: {unknown ? 'no se pudo consultar en este momento' : checkInStatusLabel(booking.checkIn.status)}. Se aplican las mismas reglas que al cliente: ventana de 48 horas a 60 minutos antes de la salida, reserva confirmada y boletos emitidos.</p>
       {done ? <Notice kind={done.status === 'COMPLETED' ? 'success' : 'warning'} title={done.status === 'COMPLETED' ? 'Check-in hecho.' : 'El check-in terminó con fallos.'}><p data-testid="checkin-result">{done.checkedInPassengers.map((passenger) => `${names.get(passenger.passengerId) ?? 'Pasajero'}: ${checkInStatusLabel(passenger.status)}`).join(' · ')}</p></Notice> : null}
       {step === 'confirm' ? (
         <div className={a.confirm} data-testid="checkin-confirm">
@@ -65,9 +67,11 @@ export function CheckInSection({ booking, onChecked }: { booking: Booking; onChe
         </div>
       ) : (
         <div className={ui.actions}>
-          <Button onClick={() => { clearError(); setStep('confirm'); }} disabled={!confirmed}>Hacer check-in</Button>
-          {hasCheckedIn(booking.checkIn) && !passes ? <Button variant="secondary" onClick={() => void loadPasses()} loading={loadingPasses}>Ver pases de abordar</Button> : null}
-          {!confirmed ? <span className={a.muted}>Solo una reserva confirmada admite check-in.</span> : null}
+          <Button onClick={() => { clearError(); setStep('confirm'); }} disabled={!confirmed || unknown} aria-describedby={unknown ? 'checkin-unknown-reason' : undefined}>Hacer check-in</Button>
+          {unknown ? <Button variant="secondary" disabled aria-describedby="checkin-unknown-reason">Ver pases de abordar</Button> : null}
+          {!unknown && hasCheckedIn(booking.checkIn) && !passes ? <Button variant="secondary" onClick={() => void loadPasses()} loading={loadingPasses}>Ver pases de abordar</Button> : null}
+          {unknown ? <span id="checkin-unknown-reason" className={a.muted} data-testid="checkin-unknown-reason">No se puede hacer el check-in ni ver los pases mientras no se conozca el estado del check-in. Vuelve a consultar la reserva.</span> : null}
+          {!unknown && !confirmed ? <span className={a.muted}>Solo una reserva confirmada admite check-in.</span> : null}
         </div>
       )}
       {passError ? <ErrorPanel error={passError} onRetry={() => void loadPasses()} /> : null}

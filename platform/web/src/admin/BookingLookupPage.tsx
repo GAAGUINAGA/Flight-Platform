@@ -14,7 +14,7 @@ import { LoadingState } from '../components/ui/LoadingState';
 import { Notice } from '../components/ui/Notice';
 import ui from '../components/ui/ui.module.css';
 import { DataTable } from './parts';
-import { bookingStatusLabel, channelLabel, checkInStatusLabel, normalizePnr, passengerTypeLabel, splitLocal, ticketStatusLabel } from './pnr-rules';
+import { bookingStatusLabel, channelLabel, CHECK_IN_UNKNOWN, checkInStatusLabel, isCheckInUnknown, normalizePnr, passengerTypeLabel, splitLocal, ticketStatusLabel } from './pnr-rules';
 import a from './admin.module.css';
 
 type Booking = NonNullable<AdminBookingByPnrQuery['adminBookingByPnr']>;
@@ -23,12 +23,19 @@ type Phase = { kind: 'idle' } | { kind: 'loading' } | { kind: 'found'; booking: 
 
 const when = (local: string, iata: string): string => { const { date, time } = splitLocal(local); return `${formatDate(date)} · ${time} (hora local de ${iata})`; };
 
-function Result({ booking, onChecked }: { booking: Booking; onChecked: (result: CheckInResult) => void }) {
+function Result({ booking, onChecked, onRetry }: { booking: Booking; onChecked: (result: CheckInResult) => void; onRetry: () => void }) {
+  const unknown = isCheckInUnknown(booking.checkIn.status);
   const names = new Map(booking.passengers.map((passenger) => [passenger.passengerId, `${passenger.firstName} ${passenger.lastName}`]));
   const flightOf = new Map(booking.segments.map((segment) => [segment.segmentId, segment.flightNumber]));
   return (
     <section className={`${ui.card} ${a.panel}`} aria-labelledby="booking-title" data-testid="booking-result">
       <h2 id="booking-title">Reserva <code>{booking.pnr}</code></h2>
+      {unknown ? (
+        <div data-testid="checkin-unknown">
+          <Notice kind="warning" title="Estado del check-in: no se pudo consultar en este momento."><p>La reserva se muestra, pero no se pudo saber si ya tiene check-in. Vuelve a consultar en unos segundos; mientras tanto no se puede hacer el check-in ni ver los pases. Cada consulta cuenta en el límite de búsquedas por hora.</p></Notice>
+          <div className={ui.actions}><Button variant="secondary" onClick={onRetry}>Volver a consultar</Button></div>
+        </div>
+      ) : null}
       <dl className={a.diff}>
         <div className={a.diffRow}><dt>Estado</dt><dd>{bookingStatusLabel(booking.status)}</dd><dd /></div>
         <div className={a.diffRow}><dt>Canal</dt><dd>{channelLabel(booking.channel)}{booking.partnerRef ? <> · referencia del socio <code className={a.wrapCode}>{booking.partnerRef}</code></> : null}</dd><dd /></div>
@@ -58,7 +65,7 @@ function Result({ booking, onChecked }: { booking: Booking; onChecked: (result: 
                 <th scope="row">{passenger.firstName} {passenger.lastName}</th><td>{passengerTypeLabel(passenger.passengerType)}</td>
                 <td>{passenger.seats.length ? passenger.seats.map((seat) => `${flightOf.get(seat.segmentId) ?? 'Tramo'}: ${seat.seatNumber}`).join(' · ') : '—'}</td>
                 <td>{passenger.extraBaggage.length ? passenger.extraBaggage.reduce((sum, entry) => sum + entry.quantity, 0) : 0}</td>
-                <td>{state ? checkInStatusLabel(state.status) : checkInStatusLabel('NOT_STARTED')}</td>
+                <td>{state ? checkInStatusLabel(state.status) : checkInStatusLabel(unknown ? CHECK_IN_UNKNOWN : 'NOT_STARTED')}</td>
               </tr>
             );
           })}
@@ -93,10 +100,8 @@ export function BookingLookupPage() {
   const [text, setText] = useState(''); const [phase, setPhase] = useState<Phase>({ kind: 'idle' });
   const generation = useRef(0);
 
-  const search = async (event: FormEvent): Promise<void> => {
-    event.preventDefault();
+  const lookup = async (pnr: string): Promise<void> => {
     if (phase.kind === 'loading') return;
-    const pnr = normalizePnr(text);
     const mine = ++generation.current; setPhase({ kind: 'loading' });
     try {
       const data = await client.execute(AdminBookingByPnrOperation, { pnr }, { correlationId: newCorrelationId() });
@@ -104,6 +109,7 @@ export function BookingLookupPage() {
       setPhase(data.adminBookingByPnr ? { kind: 'found', booking: data.adminBookingByPnr } : { kind: 'missing' });
     } catch (failure) { if (mine === generation.current) setPhase({ kind: 'error', error: toAppError(failure) }); }
   };
+  const search = async (event: FormEvent): Promise<void> => { event.preventDefault(); await lookup(normalizePnr(text)); };
 
   return (
     <>
@@ -116,7 +122,7 @@ export function BookingLookupPage() {
       {phase.kind === 'loading' ? <LoadingState phase="normal" label="Buscando la reserva" skeletons={1} /> : null}
       {phase.kind === 'missing' ? <div className={`${ui.card} ${a.empty}`} role="status" data-testid="booking-missing"><h2>Reserva no encontrada</h2><p className={a.muted}>No hay una reserva con ese localizador.</p></div> : null}
       {phase.kind === 'error' ? <ErrorPanel error={phase.error} onRetry={() => setPhase({ kind: 'idle' })} /> : null}
-      {phase.kind === 'found' ? <Result booking={phase.booking} onChecked={(result) => setPhase((previous) => (previous.kind === 'found' ? { kind: 'found', booking: { ...previous.booking, checkIn: { status: result.status, passengers: result.checkedInPassengers } } } : previous))} /> : null}
+      {phase.kind === 'found' ? <Result booking={phase.booking} onRetry={() => void lookup(phase.booking.pnr)} onChecked={(result) => setPhase((previous) => (previous.kind === 'found' ? { kind: 'found', booking: { ...previous.booking, checkIn: { status: result.status, passengers: result.checkedInPassengers } } } : previous))} /> : null}
     </>
   );
 }

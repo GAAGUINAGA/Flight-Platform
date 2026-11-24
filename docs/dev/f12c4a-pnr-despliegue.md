@@ -75,5 +75,5 @@ Datos de la reserva, nombres, cuerpos de petición ni IPs. Un PNR mal formado se
 
 ## 7. Comportamiento ante fallos
 - Si el registro no puede escribirse, **no se devuelve la reserva** (503 `PROVIDER_UNAVAILABLE`, `Retry-After`).
-- Si Operations no responde, la búsqueda falla completa (503) en lugar de mostrar un estado de check-in incompleto; el error queda registrado.
+- Si Operations no responde, la búsqueda devuelve la reserva con el check-in `UNKNOWN` (disponibilidad, decisión 9 del 2026-11-22; ADR-F12c4-01, adenda) y se registra como `FOUND`; el panel deshabilita el check-in y los pases hasta volver a consultar. Si falla Reservation, la búsqueda falla (503) y queda registrada como `ERROR`. *(Antes de la entrega 2 fallaba completa en ambos casos.)*
 - Superar el límite ⇒ 429 `RATE_LIMIT_EXCEEDED` (`type` `admin-pnr-search-limit`, `Retry-After: 60`); los intentos rechazados por el límite no cuentan, así que el bloqueo termina al pasar la hora.

@@ -28,6 +28,9 @@ info:
       siguen el patrón de punto único de `/bookings/search` (no se validan contra este documento: cada intento de un administrador autenticado queda registrado). Solo agregados: nada existente cambia.
     - 2026-11-15 (F12c-4a, audit-40 H1; decisión del humano, PLAN §4.4 regla 4; adenda al ADR-F12c4-01): solo documentación, sin cambio de comportamiento. El orden dentro del punto único es leer el cuerpo → **límite** → validar → buscar
       (antes se decía validar → límite). Con el límite alcanzado, cualquier intento, también uno con cuerpo inválido, recibe `429` con `Retry-After` y se registra `RATE_LIMITED`; el `404` por cuerpo inválido solo aplica si no se alcanzó el límite.
+    - 2026-11-22 (entrega 2; decisión 9 del humano; adenda al ADR-F12c4-01): `POST /bookings/search` pasa de INTEGRIDAD a DISPONIBILIDAD. Si Operations no responde (`UNAVAILABLE`, `DEADLINE_EXCEEDED` o un error interno
+      al consultar el check-in), responde `200` con la reserva y `checkIn.status = "UNKNOWN"` (con `checkIn.passengers` vacío) en lugar de `503`. **Valor nuevo** de `checkIn.status`: `UNKNOWN` = no se pudo consultar
+      (no equivale a «sin check-in», `NOT_STARTED`). Si falla Reservation sigue respondiendo como antes. La búsqueda se registra como `FOUND`. Es una API interna (no la de Booking); el esquema no cambia de forma (`status` ya es texto).
 servers:
   - url: /api/admin/v1
     description: Gateway (misma URL base que el resto de la plataforma)
@@ -198,6 +201,9 @@ paths:
         Cada búsqueda queda registrada (quién, qué PNR, cuándo y el resultado: encontrada o no), sin guardar los datos de la reserva.
         Un PNR inexistente, ajeno o mal formado, o un cuerpo inválido, responde igual: `404 NOT_FOUND`, salvo que el administrador haya alcanzado su límite, en cuyo caso responde `429 RATE_LIMIT_EXCEEDED`. Límite por administrador y hora (`ADMIN_PNR_SEARCH_LIMIT_PER_HOUR`, 30 por omisión).
         Es POST (con cuerpo) para que el PNR no viaje en la URL ni en los registros de proxy.
+
+        **Disponibilidad.** La reserva sale de Reservation (si falla, la búsqueda falla: `503`). El estado del check-in sale de Operations: si no responde, se devuelve la reserva igual con `checkIn.status = UNKNOWN` y
+        la búsqueda se registra como `FOUND`.
 
         **Intento.** Un intento es un pedido de un administrador autenticado que pasó las comprobaciones de transporte (HTTPS). Orden obligatorio: transporte → autenticación → rol →
         punto único (leer el cuerpo → LÍMITE → validar → buscar). Todo lo que ocurre dentro del punto único se registra en `gateway.admin_access_log`, una fila por intento, antes de responder.
@@ -574,7 +580,7 @@ components:
           additionalProperties: false
           required: [status, passengers]
           properties:
-            status: { type: string, description: "NOT_STARTED, IN_PROGRESS, COMPLETED o FAILED" }
+            status: { type: string, description: "NOT_STARTED, IN_PROGRESS, COMPLETED, FAILED o UNKNOWN. UNKNOWN: Operations no respondió y no se pudo consultar el check-in (la lista de pasajeros va vacía); no equivale a NOT_STARTED." }
             passengers:
               type: array
               items:

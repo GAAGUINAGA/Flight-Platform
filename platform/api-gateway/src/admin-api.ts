@@ -74,9 +74,16 @@ export class AdminApiController {
     let view: Record<string, unknown>;
     try { view = await callGatewayGrpc(this.config, 'reservation', 'adminGetReservationByPnr', { pnr }, correlationId, req.auth) as Record<string, unknown>; }
     catch (error) { throw serviceFailure(error, pnr); }
+    // DISPONIBILIDAD (decisión 9, ADR-F12c4-01 adenda 2026-11-22): la reserva ya se encontró; si Operations no responde (UNAVAILABLE, DEADLINE_EXCEEDED o un error
+    // interno) se devuelve igual, con el check-in «UNKNOWN». Nunca se inventa «sin check-in». Solo se registra el código, nunca el texto del error.
     let checkIn: Record<string, unknown>;
     try { checkIn = await callGatewayGrpc(this.config, 'operations', 'adminGetCheckInStatus', { bookingId: String(view.bookingId) }, correlationId, req.auth) as Record<string, unknown>; }
-    catch (error) { throw serviceFailure(error, pnr); }
+    catch (error) {
+      // Lista CERRADA (audit-54 H1): solo «Operations no responde». Cualquier otro código (PERMISSION_DENIED, INVALID_ARGUMENT, UNAUTHENTICATED, NOT_FOUND, FAILED_PRECONDITION…) o un error sin código gRPC se propaga como antes.
+      if (!OPERATIONS_NO_RESPONSE.has(grpcCodeOf(error))) throw serviceFailure(error, pnr);
+      logger.warn(`admin PNR search: check-in status unavailable (${adminErrorCode(error)}); responding with checkIn UNKNOWN correlationId=${correlationId}`);
+      checkIn = { status: CHECK_IN_UNKNOWN, passengers: [] };
+    }
     return { outcome: { result: 'FOUND', subject: pnr }, response: publicAdminBooking(view, checkIn) };
   }
   // ───────────── F12c-4b y F12c-4c (ADR-F12c4-01, adenda 4b/4c): mismo patrón de punto único que la búsqueda ─────────────
@@ -315,6 +322,10 @@ Get('web-bookings')(P, 'webBookings', d('webBookings')); Req()(P, 'webBookings',
 Roles('admin')(AdminApiController); Scopes('flights:admin')(AdminApiController);
 
 const logger = new Logger('AdminApiContract');
+export const CHECK_IN_UNKNOWN = 'UNKNOWN';
+/** Códigos gRPC que significan «Operations no responde» (decisión 9): DEADLINE_EXCEEDED (4), INTERNAL (13) y UNAVAILABLE (14). Lista cerrada. */
+const OPERATIONS_NO_RESPONSE: ReadonlySet<number | undefined> = new Set([4, 13, 14]);
+const grpcCodeOf = (error: unknown): number | undefined => { const code = typeof error === 'object' && error !== null ? (error as { code?: unknown }).code : undefined; return typeof code === 'number' ? code : undefined; };
 const requestInfo = (req: Request, res: Response) => ({ method: req.method, path: req.path, correlationId: String(res.getHeader('X-Correlation-Id') ?? '') || undefined });
 interface AdminSpec { servers?: unknown; components: { schemas: { ProblemDetails: object } } }
 

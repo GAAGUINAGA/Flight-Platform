@@ -34,6 +34,11 @@ describe('GQL-PNR: adminBookingByPnr', () => {
     expect((result.tickets as Array<Record<string, unknown>>)[0].eTicketLast4).toBe('7890');
     expect(JSON.stringify(result)).not.toMatch(/AB1234567|ana@example\.com|\+593990000000|pay_secret_1|cliente-x|1234567890|ownerId|paymentReference/);
   });
+  it('GQL-PNR-02b (decisión 9) el check-in UNKNOWN del Gateway (Operations no respondió) llega tal cual, sin error y sin convertirlo en «sin check-in»', async () => {
+    const { app } = makeApp({}, new FakeGateway(() => ({ status: 200, body: { ...body, checkIn: { status: 'UNKNOWN', passengers: [] } } })));
+    const result = await run(app, 'AdminBookingByPnr', { pnr: 'J4R8GZ' }, admin);
+    expect(result.body.errors).toBeUndefined(); expect(reply(result)).toMatchObject({ pnr: 'J4R8GZ', checkIn: { status: 'UNKNOWN', passengers: [] } });
+  });
   it('GQL-PNR-03 el tipo no declara ningún campo personal ni de pago: una consulta libre que lo pida falla en la validación', async () => {
     const schema = buildSchema(readSchemaSdl()); const names = Object.entries(schema.getTypeMap()).filter(([name]) => /^Admin(Booking|CheckIn)/.test(name)).flatMap(([, type]) => isObjectType(type) ? Object.keys(type.getFields()) : []);
     expect(names.length).toBeGreaterThan(20); for (const forbidden of ['documentNumber', 'documentType', 'documentExpiryDate', 'birthDate', 'nationality', 'contact', 'email', 'phone', 'paymentReference', 'ownerId', 'owner', 'clientId', 'eTicketNumber', 'barcode']) expect(names).not.toContain(forbidden);

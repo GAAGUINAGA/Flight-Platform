@@ -104,9 +104,9 @@ El HTTP final lo decide el Gateway por `code` + operación (por eso `OFFER_NO_LO
 
 ### 1.5 Regla permanente: el contrato con Booking no cambia (decisión del humano, 2026-11-22)
 
-> Ningún cambio puede modificar el contrato con Booking (`contracts/openapi/vuelos-openapi-v2.yaml`, la forma de los eventos y webhooks que reciben, ni el comportamiento que hoy observan). La plataforma se acoge a Booking. Si una mejora exige cambiar el contrato, no se hace: se registra en el BACKLOG como fuera de alcance.
+> Ningún cambio puede MODIFICAR el contrato con Booking (`contracts/openapi/vuelos-openapi-v2.yaml` y la forma de los eventos y webhooks) ni OBLIGARLOS A CAMBIAR nada de su lado. SÍ se permite CUMPLIR lo que el contrato ya declara (por ejemplo, llenar un campo declarado que hoy enviamos vacío o ausente), avisando a Booking antes del despliegue. Un cambio que el contrato admite pero que altera lo que Booking recibe hoy de una forma que podría obligarlos a adaptarse (por ejemplo, un código de respuesta distinto) NO se hace. Si una mejora no cumple esto, queda en el BACKLOG como fuera de alcance.
 
-Rige para el developer y para el auditor en todas las fases y entregas. Una mejora que cambie lo que Booking observa (campos, eventos, códigos de error, estados) queda fuera de alcance aunque el contrato ya declare el campo.
+Rige para el developer y para el auditor en todas las fases y entregas (texto precisado por el humano en la entrega 2, 2026-11-22).
 
 ---
 

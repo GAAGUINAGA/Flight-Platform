@@ -77,7 +77,7 @@ npm run local:down
 ```
 
 ## Reglas aprendidas (obligatorias)
-- **Regla permanente (decisión del humano, 2026-11-22; PLAN §1.5):** Ningún cambio puede modificar el contrato con Booking (`contracts/openapi/vuelos-openapi-v2.yaml`, la forma de los eventos y webhooks que reciben, ni el comportamiento que hoy observan). La plataforma se acoge a Booking. Si una mejora exige cambiar el contrato, no se hace: se registra en el BACKLOG como fuera de alcance.
+- **Regla permanente (decisión del humano, 2026-11-22, precisada en la entrega 2; PLAN §1.5):** Ningún cambio puede MODIFICAR el contrato con Booking (contracts/openapi/vuelos-openapi-v2.yaml y la forma de los eventos y webhooks) ni OBLIGARLOS A CAMBIAR nada de su lado. SÍ se permite CUMPLIR lo que el contrato ya declara (por ejemplo, llenar un campo declarado que hoy enviamos vacío o ausente), avisando a Booking antes del despliegue. Un cambio que el contrato admite pero que altera lo que Booking recibe hoy de una forma que podría obligarlos a adaptarse (por ejemplo, un código de respuesta distinto) NO se hace. Si una mejora no cumple esto, queda en el BACKLOG como fuera de alcance.
 - Un solo developer activo a la vez. Trabaja en una rama `feat/<FASE>-<servicio>` en el checkout principal; sin worktrees.
 - Prisma: `prisma` y `@prisma/client` fijados en `6.12.0` exacto (versiones posteriores traen deepmerge-ts con vulnerabilidad alta).
 - El cliente de Prisma es código generado e ignorado por git: el workflow de CI debe ejecutar `prisma generate` antes de lint, build y test.

@@ -6,7 +6,10 @@ const STATUS: Record<string, string> = {
   CHANGE_PENDING: 'Cambio pendiente', CANCELLATION_PENDING: 'Cancelación pendiente', CANCELLED: 'Cancelada'
 };
 const TICKET: Record<string, string> = { ISSUED: 'Emitido', PENDING: 'Pendiente', VOIDED: 'Anulado', REFUNDED: 'Reembolsado', FAILED: 'Fallido', USED: 'Usado' };
-const CHECK_IN: Record<string, string> = { NOT_STARTED: 'Sin check-in', IN_PROGRESS: 'En curso', COMPLETED: 'Completado', FAILED: 'Con fallos', CHECKED_IN: 'Con check-in', NOT_CHECKED_IN: 'Sin check-in' };
+/** Valor explícito del Gateway cuando Operations no respondió (decisión 9, ADR-F12c4-01): NO equivale a «sin check-in». */
+export const CHECK_IN_UNKNOWN = 'UNKNOWN';
+export const isCheckInUnknown = (status: string): boolean => status === CHECK_IN_UNKNOWN;
+const CHECK_IN: Record<string, string> = { NOT_STARTED: 'Sin check-in', IN_PROGRESS: 'En curso', COMPLETED: 'Completado', FAILED: 'Con fallos', CHECKED_IN: 'Con check-in', NOT_CHECKED_IN: 'Sin check-in', [CHECK_IN_UNKNOWN]: 'No se pudo consultar' };
 const PASSENGER: Record<string, string> = { ADULT: 'Adulto', YOUTH: 'Joven', CHILD: 'Niño', INFANT: 'Infante' };
 
 export const bookingStatusLabel = (value: string): string => STATUS[value] ?? value;
