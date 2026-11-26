@@ -324,6 +324,7 @@ export interface BoardingPass {
   boardingPosition?: string | undefined;
   barcode: string;
   barcodeType: string;
+  gate?: string | undefined;
 }
 
 export interface FlightStatusEndpoint {
@@ -332,6 +333,7 @@ export interface FlightStatusEndpoint {
   scheduledAt: string;
   estimatedAt?: string | undefined;
   actualAt?: string | undefined;
+  gate?: string | undefined;
 }
 
 export interface FlightStatus {

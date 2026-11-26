@@ -47,8 +47,8 @@ describe('F12c-4b: AdminCheckIn (OPS-AC)', () => {
     expect([...new Set(seenOwners)]).toEqual([REAL_OWNER]); expect([...store.owners]).toEqual([REAL_OWNER]);
     expect(publish).toHaveBeenCalledTimes(1);
     const event = publish.mock.calls[0][0] as Record<string, unknown>;
-    expect(event).toMatchObject({ ownerId: REAL_OWNER, bookingId, pnr: PNR, eventType: 'booking.checked_in' });
-    expect(Object.keys(event).sort()).toEqual(['bookingId', 'eventType', 'occurredAt', 'ownerId', 'pnr']);
+    expect(event).toMatchObject({ ownerId: REAL_OWNER, bookingId, pnr: PNR, status: 'CONFIRMED', eventType: 'booking.checked_in' });
+    expect(Object.keys(event).sort()).toEqual(['bookingId', 'eventType', 'occurredAt', 'ownerId', 'pnr', 'status']);
   });
   it('OPS-AC-02: las mismas reglas que el cliente — fuera de la ventana NO se fuerza (P5): antes de las 48 h y después del cierre', async () => {
     for (const now of ['2026-10-17T11:59:00.000Z', '2026-10-20T11:30:00.000Z']) {

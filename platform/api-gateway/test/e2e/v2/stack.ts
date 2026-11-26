@@ -92,7 +92,7 @@ export interface Scenario {
 export interface Stack {
   gateway: INestApplication; server: ReturnType<INestApplication['getHttpServer']>; payments: PaymentSimulator; devAuth: DevAuthService; clients: DevAuthClientStore;
   db: { inventory: InventoryPrisma; pricing: PricingPrisma; ancillaries: AncillariesPrisma; reservation: ReservationPrisma; ticketing: TicketingPrisma; webhooks: WebhooksPrisma; operations: OperationsPrisma };
-  scheduler: GatewayScheduler; newClient(scopes?: string[]): Promise<TestClient>; scenario(options?: { sellable?: number; domestic?: boolean; hoursAhead?: number; origin?: string; destination?: string; changeable?: boolean; cabin?: 'ECONOMY' | 'PREMIUM_ECONOMY' | 'BUSINESS' | 'FIRST' }): Promise<Scenario>; dispatchWebhooks(): Promise<number>; subscribe(ownerId: string, events: string[], secret?: string, apiVersion?: '1' | '2'): Promise<{ id: string; secret: string }>; close(): Promise<void>;
+  scheduler: GatewayScheduler; newClient(scopes?: string[]): Promise<TestClient>; scenario(options?: { sellable?: number; domestic?: boolean; hoursAhead?: number; origin?: string; destination?: string; changeable?: boolean; cabin?: 'ECONOMY' | 'PREMIUM_ECONOMY' | 'BUSINESS' | 'FIRST'; clientId?: string }): Promise<Scenario>; dispatchWebhooks(): Promise<number>; subscribe(ownerId: string, events: string[], secret?: string, apiVersion?: '1' | '2'): Promise<{ id: string; secret: string }>; close(): Promise<void>;
 }
 
 export async function startStack(env: Record<string, string | undefined> = {}): Promise<Stack> {
@@ -134,7 +134,7 @@ export async function startStack(env: Record<string, string | undefined> = {}): 
   const dispatchWebhooks = async () => { await esb.pump(); const client = service('webhooks', undefined, 'system') as unknown as { dispatchPending(input: object): import('rxjs').Observable<{ dispatchedCount: number }> }; const { firstValueFrom } = await import('rxjs'); return (await firstValueFrom(client.dispatchPending({}))).dispatchedCount; };
 
   const scenario: Stack['scenario'] = async (options = {}) => {
-    const client = await registerClient(clients, ALL); const flightId = randomUUID(); const code = () => Array.from({ length: 3 }, () => String.fromCharCode(65 + randomInt(0, 26))).join('');
+    const client = await registerClient(clients, ALL, options.clientId); const flightId = randomUUID(); const code = () => Array.from({ length: 3 }, () => String.fromCharCode(65 + randomInt(0, 26))).join('');
     const origin = options.origin ?? (options.domestic ? 'ZQD' : code()); let destination = options.destination ?? (options.domestic ? 'ZQE' : code()); if (destination === origin) destination = 'QQQ';
     // El número es FP + 4 dígitos (patrón del contrato); se descartan los que otro escenario o una corrida anterior dejó en Inventory u Operations.
     let flightNumber = ''; for (let attempt = 0; attempt < 50; attempt += 1) { flightNumber = `FP${randomInt(1000, 10000)}`; if (await inventory.flightInstance.count({ where: { flightNumber } }) === 0 && await operations.operationalFlight.count({ where: { flightNumber } }) === 0) break; }

@@ -221,6 +221,7 @@ message BoardingPass {
   optional string boarding_position = 5;
   string barcode = 6;
   string barcode_type = 7;
+  optional string gate = 8;
 }
 message FlightStatusEndpoint {
   string iata_code = 1;
@@ -228,6 +229,7 @@ message FlightStatusEndpoint {
   string scheduled_at = 3;
   optional string estimated_at = 4;
   optional string actual_at = 5;
+  optional string gate = 6;
 }
 message FlightStatus {
   string flight_number = 1;

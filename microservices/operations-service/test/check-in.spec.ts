@@ -2,6 +2,7 @@ import { DomainError } from '@flight-platform/shared';
 import { CheckInUseCase } from '../src/application/check-in';
 import { CheckInPass, CheckInResult, CheckInStore } from '../src/application/check-in-ports';
 import { FlightStore } from '../src/application/ports';
+import { RecoverCheckInsUseCase } from '../src/application/recover-check-ins';
 
 const bookingId = '00000000-0000-4000-8000-000000000001';
 const segmentId = '00000000-0000-4000-8000-000000000002';
@@ -56,7 +57,7 @@ describe('DCS-03 / DCS-05: check-in', () => {
     expect(barcode).not.toContain('DOC123456');
     expect(barcode).not.toContain('private@example.test');
     expect(barcode).not.toContain('+15551234567');
-    expect(publish).toHaveBeenCalledWith(expect.objectContaining({ ownerId, bookingId, eventType: 'booking.checked_in' }));
+    expect(publish).toHaveBeenCalledWith(expect.objectContaining({ ownerId, bookingId, eventType: 'booking.checked_in', status: snapshot.status }));
     expect(await useCase.execute(request)).toEqual(result);
     expect(assign).toHaveBeenCalledTimes(1);
     expect(publish).toHaveBeenCalledTimes(1);
@@ -94,6 +95,7 @@ describe('DCS-03 / DCS-05: check-in', () => {
     expect(store.begun).toBe(true);
     await expect(useCase.execute({ ownerId, bookingId })).resolves.toMatchObject({ status: 'COMPLETED' });
     expect(publish).toHaveBeenCalledTimes(2);
+    expect(publish).toHaveBeenNthCalledWith(2, expect.objectContaining({ eventType: 'booking.checked_in', status: snapshot.status }));
     expect(store.passes).toHaveLength(1);
   });
 
@@ -113,5 +115,17 @@ describe('DCS-03 / DCS-05: check-in', () => {
     expect(later.checkedInPassengers).toEqual([expect.objectContaining({ passengerId, segments: expect.arrayContaining([expect.objectContaining({ segmentId, status: 'CHECKED_IN' }), expect.objectContaining({ segmentId: laterSegment, status: 'CHECKED_IN' })]) })]);
     expect(assign).toHaveBeenCalledTimes(2);
     expect(assign).toHaveBeenCalledWith(expect.objectContaining({ segmentId: laterSegment }));
+  });
+  it('Entrega 3: la recuperación publica status desde la reserva', async () => {
+    const store = new MemoryStore();
+    store.begun = true;
+    store.result = { bookingId, status: 'COMPLETED', checkedInPassengers: [{ passengerId, status: 'CHECKED_IN', segments: [{ segmentId, seat: '12A', status: 'CHECKED_IN' }] }] };
+    const snapshot = { bookingId, pnr: 'ABC123', status: 'CONFIRMED', passengers: [{ passengerId, passengerType: 'ADULT' as const, documentType: 'NATIONAL_ID' }], itineraries: [{ itineraryId: 'i', segments: [{ segmentId, flightInstanceId: flightId, flightNumber: 'FP101', departure: { at: '2026-10-20T12:00:00.000Z' } }], pricingOptions: [{ cabinClass: 'ECONOMY' }] }] };
+    const publish = jest.fn(async () => undefined);
+    const checkIn = new CheckInUseCase({ getSnapshot: async () => snapshot }, { getCoupons: async () => [] }, { assign: async () => ({ seatNumber: '12A', status: 'CHECKED_IN' }) }, { find: async () => null, findByInstance: async () => null, save: async () => undefined, update: async () => undefined }, store, { publish }, () => new Date('2026-10-19T12:00:00.000Z'), 48, 60);
+    store.listUnpublished = async () => [{ ownerId, bookingId }];
+    const recovery = new RecoverCheckInsUseCase(store, checkIn, () => new Date('2026-10-19T12:00:00.000Z'), 10);
+    await expect(recovery.execute({ limit: 10 })).resolves.toEqual({ recoveredCheckIns: 0, publishedEvents: 1 });
+    expect(publish).toHaveBeenCalledWith(expect.objectContaining({ ownerId, bookingId, pnr: snapshot.pnr, status: snapshot.status, eventType: 'booking.checked_in' }));
   });
 });

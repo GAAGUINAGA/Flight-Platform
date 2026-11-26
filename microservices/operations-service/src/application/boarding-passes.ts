@@ -23,7 +23,7 @@ export class ListBoardingPasses {
       const flight = await this.flights.findByInstance(segment.flightInstanceId);
       const status = flight?.props.status ?? segment.status;
       if (status === 'CANCELLED' || status === 'DEPARTED' || status === 'ARRIVED' || status === 'DIVERTED') continue;
-      boardingPasses.push(pass);
+      boardingPasses.push(flight?.props.departureGate ? { ...pass, gate: flight.props.departureGate } : pass);
     }
     if (!boardingPasses.length) throw new DomainError('BOARDING_PASS_NOT_AVAILABLE');
     return { bookingId: request.bookingId, boardingPasses };

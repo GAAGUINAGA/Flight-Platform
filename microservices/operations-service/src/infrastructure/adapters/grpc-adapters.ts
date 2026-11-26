@@ -61,7 +61,7 @@ export class GrpcEventPublisher implements EventPublisher {
         eventType: input.eventType,
         occurredAt: input.occurredAt,
         apiVersion: '1.5.0.0',
-        data: { bookingId: input.bookingId, ...(input.pnr ? { pnr: input.pnr } : {}) }
+        data: { bookingId: input.bookingId, ...(input.pnr ? { pnr: input.pnr } : {}), ...(input.status ? { status: input.status } : {}) }
       }
     }));
   }

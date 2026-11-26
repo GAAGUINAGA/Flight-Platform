@@ -29,7 +29,7 @@ describe('OPS-01: adaptadores gRPC', () => {
   });
   it('DCS-03: envía un identificador UUID en el evento de check-in para Webhooks', async () => {
     const publishEvent = jest.fn(() => of({ eventId: '00000000-0000-4000-8000-000000000002' }));
-    await new GrpcEventPublisher({ publishEvent }).publish({ ownerId: 'owner-1', bookingId: 'booking-1', pnr: 'ABC123', eventType: 'booking.checked_in', occurredAt: '2026-10-11T10:00:00.000Z' });
-    expect(publishEvent).toHaveBeenCalledWith(expect.objectContaining({ payload: expect.objectContaining({ eventId: expect.stringMatching(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i), eventType: 'booking.checked_in' }) }));
+    await new GrpcEventPublisher({ publishEvent }).publish({ ownerId: 'owner-1', bookingId: 'booking-1', pnr: 'ABC123', status: 'CONFIRMED', eventType: 'booking.checked_in', occurredAt: '2026-10-11T10:00:00.000Z' });
+    expect(publishEvent).toHaveBeenCalledWith(expect.objectContaining({ payload: expect.objectContaining({ eventId: expect.stringMatching(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i), eventType: 'booking.checked_in', data: { bookingId: 'booking-1', pnr: 'ABC123', status: 'CONFIRMED' } }) }));
   });
 });

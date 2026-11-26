@@ -31,7 +31,7 @@ export class CheckInUseCase {
     const hasCheckedIn = (result: CheckInResult) => result.checkedInPassengers.some((passenger) => passenger.segments.some((segment) => segment.status === 'CHECKED_IN'));
     if (prior?.result && !prior.result.checkedInPassengers.some((passenger) => passenger.segments.some((segment) => segment.status === 'NOT_CHECKED_IN'))) {
       if (hasCheckedIn(prior.result) && !prior.eventPublished) {
-        await this.events.publish({ ownerId: request.ownerId, bookingId: request.bookingId, pnr: snapshot.pnr, eventType: 'booking.checked_in', occurredAt: this.now().toISOString() });
+        await this.events.publish({ ownerId: request.ownerId, bookingId: request.bookingId, pnr: snapshot.pnr, status: snapshot.status, eventType: 'booking.checked_in', occurredAt: this.now().toISOString() });
         await this.store.markEventPublished(request.ownerId, request.bookingId);
       }
       return prior.result;
@@ -95,7 +95,7 @@ export class CheckInUseCase {
     await this.store.complete(request.ownerId, result);
     completed = true;
     if (newSuccess) {
-      await this.events.publish({ ownerId: request.ownerId, bookingId: request.bookingId, pnr: snapshot.pnr, eventType: 'booking.checked_in', occurredAt: this.now().toISOString() });
+      await this.events.publish({ ownerId: request.ownerId, bookingId: request.bookingId, pnr: snapshot.pnr, status: snapshot.status, eventType: 'booking.checked_in', occurredAt: this.now().toISOString() });
       await this.store.markEventPublished(request.ownerId, request.bookingId);
     }
     return result;
