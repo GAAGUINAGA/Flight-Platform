@@ -15,3 +15,5 @@ Desplegar la entrega 2 (búsqueda por PNR con disponibilidad, aprobada en audit-
 
 ## Cierre
 - Estado: listo para auditoría (despliegue de las entregas 2 y 3).
+## Prueba conjunta con Booking (2026-11-27)
+- Booking hizo una reserva de prueba; el check-in se hizo desde el panel de la aerolínea en producción; Booking confirmó que recibió booking.checked_in con status <y la puerta, si estaba asignada>.
